@@ -1,0 +1,17 @@
+[project]
+name = "ai-cockpit-ingestion"
+version = "0.1.0"
+description = "Input Orchestration: Airflow DAG that imports AI Cockpit initiatives from the source Excel into the shared SQLite database."
+requires-python = ">=3.11"
+dependencies = [
+    "polars>=1.9",
+    "fastexcel>=0.12",
+    "SQLAlchemy>=2.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ai_cockpit_ingestion*"]

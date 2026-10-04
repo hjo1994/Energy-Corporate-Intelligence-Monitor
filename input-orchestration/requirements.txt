@@ -1,0 +1,4 @@
+apache-airflow>=3.0
+polars>=1.9
+fastexcel>=0.12
+SQLAlchemy>=2.0
