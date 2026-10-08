@@ -80,8 +80,8 @@ class Initiative(Base):
     status = Column(String, nullable=False)  # normalized, see transforms.normalize.normalize_status
 
     # "Timing start"/"Timing delivery" in the source are quarter labels
-    # ("Q1".."Q4"), almost never a real date, and once a bare year with no
-    # quarter at all — see transforms.normalize.derive_timing_date for the
+    # ("Q1".."Q4"), never a real date; the value "2027" appears as a bare year
+    # with no quarter at all (8 rows at the time of writing) — see transforms.normalize.derive_timing_date for the
     # (flagged, best-effort) heuristic used to turn those into dates.
     date_start = Column(DateTime, nullable=True)
     date_delivery = Column(DateTime, nullable=True)

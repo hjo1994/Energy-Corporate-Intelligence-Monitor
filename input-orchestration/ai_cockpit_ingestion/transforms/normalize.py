@@ -129,16 +129,15 @@ def derive_timing_date(
     into a date.
 
     ASSUMPTION, needs Fachbereich confirmation: the source never gives a
-    real date — almost always a bare quarter label ("Q1".."Q4"), and in one
-    observed row a bare year ("2027") with no quarter at all. There is
+    real date — almost always a bare quarter label ("Q1".."Q4"), and in
+    some rows (8 at the time of writing) the bare year "2027" with no quarter at all. There is
     nothing in the data to tell us which calendar year a quarter label
     refers to, so we assume `assumed_year` (the workbook's own planning
     year) for every quarter-only value; a bare year is taken as 1 January
     of that year. This is a coarse placeholder for planning purposes, not a
     committed date — in particular it will be wrong for any initiative
     whose quarter actually falls in a year other than `assumed_year` (the
-    one observed "2027" delivery value is a concrete sign such initiatives
-    exist).
+    "2027" delivery values are a concrete sign such initiatives exist).
     """
     if raw_timing is None:
         return None
