@@ -68,7 +68,7 @@ describe("display cleanup", () => {
     expect(page.items[0].value_type).toEqual({ id: 1, name: "Connection lifecycle", description: "d" });
   });
   it("labels the catalog's literal '-' flagship", () => {
-    expect(flagshipLabel("-")).toBe("Kein Flagship");
+    expect(flagshipLabel("-")).toBe("No flagship");
     expect(flagshipLabel("CAPEX delivery")).toBe("CAPEX delivery");
   });
 });

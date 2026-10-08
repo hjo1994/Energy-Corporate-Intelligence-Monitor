@@ -37,7 +37,7 @@ export function BoardView() {
               </span>
               <span className="mono muted">{items.length}</span>
             </header>
-            {items.length === 0 && <p className="empty small">Keine Initiativen</p>}
+            {items.length === 0 && <p className="empty small">No initiatives</p>}
             {items.map((i) => (
               <button type="button" key={i.id} className="kcard" onClick={() => setOpen(i)}>
                 <span className="kcard-top">
@@ -53,7 +53,7 @@ export function BoardView() {
                         <span className="truncate">{i.owner.department ?? i.owner.name}</span>
                       </>
                     ) : (
-                      <span className="missing">kein Owner</span>
+                      <span className="missing">no owner</span>
                     )}
                   </span>
                   <span className="kcard-scores">

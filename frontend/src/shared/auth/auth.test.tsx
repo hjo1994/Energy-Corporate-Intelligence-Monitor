@@ -14,8 +14,8 @@ function renderGate() {
   return render(
     <MemoryRouter initialEntries={["/"]}>
       <Routes>
-        <Route path="/login" element={<p>Login-Seite</p>} />
-        <Route path="/*" element={<OidcGate><p>Geschützter Inhalt</p></OidcGate>} />
+        <Route path="/login" element={<p>Login page</p>} />
+        <Route path="/*" element={<OidcGate><p>Protected content</p></OidcGate>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -25,28 +25,28 @@ describe("OidcGate", () => {
   it("shows the content only to signed-in users", () => {
     setAuth({ isAuthenticated: true });
     renderGate();
-    expect(screen.getByText("Geschützter Inhalt")).toBeInTheDocument();
+    expect(screen.getByText("Protected content")).toBeInTheDocument();
   });
 
   it("sends signed-out users to the login page without rendering the content", () => {
     setAuth({ isAuthenticated: false });
     renderGate();
-    expect(screen.getByText("Login-Seite")).toBeInTheDocument();
-    expect(screen.queryByText("Geschützter Inhalt")).not.toBeInTheDocument();
+    expect(screen.getByText("Login page")).toBeInTheDocument();
+    expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
   });
 
   it("waits while the login is being checked, instead of redirecting too early", () => {
     setAuth({ isLoading: true });
     renderGate();
-    expect(screen.getByRole("status")).toHaveTextContent("Anmeldung wird geprüft");
-    expect(screen.queryByText("Login-Seite")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Checking sign-in");
+    expect(screen.queryByText("Login page")).not.toBeInTheDocument();
   });
 
   it("shows an authentication error with a way back to the login", () => {
     setAuth({ error: new Error("kaputt") });
     renderGate();
     expect(screen.getByRole("alert")).toHaveTextContent("kaputt");
-    expect(screen.getByRole("link", { name: "Zur Anmeldung" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Go to sign-in" })).toHaveAttribute("href", "/login");
   });
 });
 
@@ -88,7 +88,7 @@ describe("LoginPage", () => {
   it("starts the OIDC redirect", async () => {
     vi.mocked(authManager.userManager.signinRedirect).mockResolvedValue(undefined as never);
     render(<LoginPage />);
-    await userEvent.click(screen.getByRole("button", { name: "Anmelden" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(authManager.userManager.signinRedirect).toHaveBeenCalledWith({ nonce: expect.any(String) });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -96,7 +96,7 @@ describe("LoginPage", () => {
   it("shows why the login could not start instead of failing silently", async () => {
     vi.mocked(authManager.userManager.signinRedirect).mockRejectedValue(new Error("No authority or metadataUrl configured on settings"));
     render(<LoginPage />);
-    await userEvent.click(screen.getByRole("button", { name: "Anmelden" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No authority");
   });
 });

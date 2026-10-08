@@ -16,7 +16,7 @@ export function LogoutPage() {
 
   return (
     <div className="state">
-      <p role="status">Abmeldung läuft …</p>
+      <p role="status">Signing out …</p>
     </div>
   );
 }

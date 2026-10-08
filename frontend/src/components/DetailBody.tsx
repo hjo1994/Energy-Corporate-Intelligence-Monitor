@@ -9,7 +9,7 @@ export function DetailBody({ initiative: i }: { initiative: Initiative }) {
         <StatusBadge status={i.status} />
       </div>
       <h3>{i.name}</h3>
-      <p className="muted">{i.description ?? "Keine Beschreibung erfasst."}</p>
+      <p className="muted">{i.description ?? "No description recorded."}</p>
 
       <div className="owner-cell">
         {i.owner ? (
@@ -23,33 +23,33 @@ export function DetailBody({ initiative: i }: { initiative: Initiative }) {
             </span>
           </>
         ) : (
-          <span className="missing">Kein Owner in der Quelle erfasst</span>
+          <span className="missing">No owner recorded in the source</span>
         )}
       </div>
 
       <div className="detail-scores">
         <div>
-          <span className="label">Aufwand</span>
+          <span className="label">Effort</span>
           <EffortMeter score={i.solution_complexity_score} />
         </div>
         <div>
-          <span className="label">Mehrwert</span>
+          <span className="label">Value</span>
           <ValueMeter score={i.value_score} />
         </div>
       </div>
 
       <dl className="facts">
         <dt>Flagship</dt>
-        <dd>{i.value_type ? flagshipLabel(i.value_type.name) : <span className="missing">nicht zugeordnet</span>}</dd>
+        <dd>{i.value_type ? flagshipLabel(i.value_type.name) : <span className="missing">not assigned</span>}</dd>
         <dt>Solution Type</dt>
         <dd>
           {i.solution_type?.name ?? (
-            <span className="missing">nicht zugeordnet (Freitext in der Quelle)</span>
+            <span className="missing">not assigned (free text in the source)</span>
           )}
         </dd>
-        <dt>Start (grob)</dt>
+        <dt>Start (approx.)</dt>
         <dd>{formatQuarter(i.date_start)}</dd>
-        <dt>Lieferung (grob)</dt>
+        <dt>Delivery (approx.)</dt>
         <dd>{formatQuarter(i.date_delivery)}</dd>
       </dl>
     </div>

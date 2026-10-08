@@ -25,5 +25,5 @@ export function formatQuarter(iso: string | null): string {
 }
 
 // The Flagship catalog has a literal "-" entry meaning "no flagship".
-export const NO_FLAGSHIP_LABEL = "Kein Flagship";
+export const NO_FLAGSHIP_LABEL = "No flagship";
 export const flagshipLabel = (name: string): string => (name === "-" ? NO_FLAGSHIP_LABEL : name);

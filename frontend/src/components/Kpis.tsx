@@ -16,15 +16,15 @@ function Tile({ label, value, note, accent }: { label: string; value: string; no
 export function Kpis({ items }: { items: Initiative[] }) {
   const s = summarize(items);
   return (
-    <section className="kpis" aria-label="Kennzahlen">
-      <Tile label="Initiativen" value={String(s.total)} note="entsprechend der Filter" />
-      <Tile label="In Umsetzung" value={String(s.inProgress)} note="PoC, MVP, Implementation" accent />
+    <section className="kpis" aria-label="Key figures">
+      <Tile label="Initiatives" value={String(s.total)} note="matching the filters" />
+      <Tile label="In progress" value={String(s.inProgress)} note="PoC, MVP, Implementation" accent />
       <Tile
-        label="Ø Mehrwert"
+        label="Avg. value"
         value={s.averageValue === null ? "–" : s.averageValue.toFixed(1)}
-        note={`von 10, bei ${s.withValue} von ${s.total} erfasst`}
+        note={`out of 10, ${s.withValue} of ${s.total} rated`}
       />
-      <Tile label="Ohne Mehrwert" value={String(s.withoutValue)} note="kein Score in der Quelle" />
+      <Tile label="Without value" value={String(s.withoutValue)} note="no score in the source" />
     </section>
   );
 }

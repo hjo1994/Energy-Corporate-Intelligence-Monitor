@@ -15,7 +15,7 @@ export function OidcGate({ children }: { children: ReactNode }) {
   if (hasAuthParams() || auth.activeNavigator === "signinSilent" || auth.isLoading) {
     return (
       <Centered>
-        <p role="status">Anmeldung wird geprüft …</p>
+        <p role="status">Checking sign-in …</p>
       </Centered>
     );
   }
@@ -24,10 +24,10 @@ export function OidcGate({ children }: { children: ReactNode }) {
       <Centered>
         <div className="card state" role="alert">
           <p>
-            Anmeldefehler: {auth.error.message}
+            Sign-in error: {auth.error.message}
           </p>
           <a className="primary-link" href="/login">
-            Zur Anmeldung
+            Go to sign-in
           </a>
         </div>
       </Centered>

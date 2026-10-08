@@ -11,7 +11,7 @@ export function LoginPage() {
     setError(null);
     // Typical cause: VITE_OIDC_AUTHORITY / VITE_OIDC_CLIENT_ID were not set for this build.
     authManager.userManager.signinRedirect({ nonce: nonce() }).catch((e: unknown) => {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     });
   };
 
@@ -20,13 +20,13 @@ export function LoginPage() {
       <div className="card login-card">
         <span className="logo" aria-hidden="true" />
         <h1>AI Cockpit</h1>
-        <p className="muted">Übersicht über alle KI-Initiativen. Bitte melden Sie sich an.</p>
+        <p className="muted">Overview of all AI initiatives. Please sign in.</p>
         <button type="button" className="primary" onClick={login}>
-          Anmelden
+          Sign in
         </button>
         {error && (
           <p role="alert" className="missing">
-            Die Anmeldung konnte nicht gestartet werden: {error}. Ist die OIDC-Konfiguration (VITE_OIDC_*) für diesen Build gesetzt?
+            Sign-in could not be started: {error}. Is the OIDC configuration (VITE_OIDC_*) set for this build?
           </p>
         )}
       </div>

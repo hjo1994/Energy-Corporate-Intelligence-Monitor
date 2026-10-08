@@ -35,7 +35,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setLoad({
           state: "error",
-          message: err instanceof Error ? err.message : "Die Daten konnten nicht geladen werden.",
+          message: err instanceof Error ? err.message : "The data could not be loaded.",
         });
       },
     );

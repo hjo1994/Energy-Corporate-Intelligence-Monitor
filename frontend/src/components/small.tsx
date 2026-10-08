@@ -28,10 +28,10 @@ export function Avatar({ name, size = 26 }: { name: string; size?: number }) {
 
 /** 5 bars for the 1–10 effort score; a missing score is shown as such, not as zero. */
 export function EffortMeter({ score }: { score: number | null }) {
-  if (score === null) return <span className="missing">nicht erfasst</span>;
+  if (score === null) return <span className="missing">not recorded</span>;
   const on = scoreBars(score);
   return (
-    <span className="effort" title={`Aufwand ${formatScore(score)} von 10`}>
+    <span className="effort" title={`Effort ${formatScore(score)} of 10`}>
       <span className="effort-seg" aria-hidden="true">
         {[1, 2, 3, 4, 5].map((n) => (
           <span key={n} className={n <= on ? "on" : ""} style={{ height: 6 + n * 3 }} />
@@ -43,9 +43,9 @@ export function EffortMeter({ score }: { score: number | null }) {
 }
 
 export function ValueMeter({ score }: { score: number | null }) {
-  if (score === null) return <span className="missing">nicht erfasst</span>;
+  if (score === null) return <span className="missing">not recorded</span>;
   return (
-    <span className="value-meter" title={`Mehrwert ${formatScore(score)} von 10`}>
+    <span className="value-meter" title={`Value ${formatScore(score)} of 10`}>
       <span className="mono">{formatScore(score)}</span>
       <span className="track" aria-hidden="true">
         <span style={{ width: `${Math.min(100, score * 10)}%` }} />
@@ -56,7 +56,7 @@ export function ValueMeter({ score }: { score: number | null }) {
 
 export function OwnerCell({ initiative }: { initiative: Initiative }) {
   const owner = initiative.owner;
-  if (!owner) return <span className="missing">kein Owner</span>;
+  if (!owner) return <span className="missing">no owner</span>;
   return (
     <span className="owner-cell">
       <Avatar name={owner.name} />

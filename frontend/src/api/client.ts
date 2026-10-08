@@ -15,11 +15,11 @@ export class ApiError extends Error {
 // ServiceApi is axios underneath: failed requests arrive as errors carrying `response.status`.
 function toApiError(err: unknown): ApiError {
   const status = (err as { response?: { status?: number } } | null)?.response?.status ?? null;
-  if (status === 401) return new ApiError(status, "Sie sind nicht angemeldet oder die Sitzung ist abgelaufen. Bitte neu anmelden.");
-  if (status === 403) return new ApiError(status, "Für diese Daten fehlt die Berechtigung.");
-  if (status === 503) return new ApiError(status, "Die Datenbank ist gerade nicht erreichbar. Bitte gleich erneut versuchen.");
-  if (status === null) return new ApiError(null, "Das Backend ist nicht erreichbar.");
-  return new ApiError(status, `Die Daten konnten nicht geladen werden (HTTP ${status}).`);
+  if (status === 401) return new ApiError(status, "You are not signed in, or your session has expired. Please sign in again.");
+  if (status === 403) return new ApiError(status, "You do not have permission to view this data.");
+  if (status === 503) return new ApiError(status, "The database is temporarily unavailable. Please try again shortly.");
+  if (status === null) return new ApiError(null, "The backend cannot be reached.");
+  return new ApiError(status, `The data could not be loaded (HTTP ${status}).`);
 }
 
 async function getPage(offset: number): Promise<InitiativePage> {

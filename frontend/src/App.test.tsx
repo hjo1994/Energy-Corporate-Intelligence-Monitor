@@ -32,8 +32,8 @@ describe("app", () => {
   it("shows KPIs and flags initiatives that cannot be plotted", async () => {
     mockApi(ok);
     renderAt("/");
-    expect(await screen.findByText("Aufwand vs. Mehrwert")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("2 von 4 Initiativen sind nicht eingezeichnet");
+    expect(await screen.findByText("Effort vs. value")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("2 of 4 initiatives are not plotted");
     expect(screen.getAllByRole("button", { name: /, (Idea|PoC)$/ })).toHaveLength(2);
   });
 
@@ -51,14 +51,14 @@ describe("app", () => {
     mockApi(ok);
     renderAt("/board");
     await screen.findByRole("region", { name: "Idea" });
-    await userEvent.click(screen.getByRole("button", { name: "Ohne Business Unit" }));
+    await userEvent.click(screen.getByRole("button", { name: "No business unit" }));
     expect(screen.getByRole("region", { name: "Cancelled" })).toHaveTextContent("Delta");
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   });
 
   it("list sorts and opens a detail dialog that closes on Escape", async () => {
     mockApi(ok);
-    renderAt("/liste");
+    renderAt("/list");
     await userEvent.click(await screen.findByRole("button", { name: "Beta" }));
     expect(screen.getByRole("dialog", { name: "Beta" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
@@ -69,18 +69,18 @@ describe("app", () => {
     let calls = 0;
     mockApi(() => (++calls === 1 ? failWith(503)() : ok()));
     renderAt("/");
-    expect(await screen.findByRole("alert")).toHaveTextContent("nicht erreichbar");
-    await userEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }));
-    expect(await screen.findByText("Aufwand vs. Mehrwert")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Effort vs. value")).toBeInTheDocument();
   });
 });
 
 describe("api errors", () => {
   it.each([
-    [401, "angemeldet"],
-    [403, "Berechtigung"],
+    [401, "not signed in"],
+    [403, "permission"],
     [500, "HTTP 500"],
-    [undefined, "nicht erreichbar"],
+    [undefined, "cannot be reached"],
   ])("explains status %s", async (status, text) => {
     mockApi(failWith(status));
     renderAt("/");
@@ -90,7 +90,7 @@ describe("api errors", () => {
   it("asks the backend for the whole data set page by page", async () => {
     mockApi(ok);
     renderAt("/");
-    await screen.findByText("Aufwand vs. Mehrwert");
+    await screen.findByText("Effort vs. value");
     expect(get).toHaveBeenCalledWith("/initiatives", { limit: 500, offset: 0, sort: "name" });
   });
 });

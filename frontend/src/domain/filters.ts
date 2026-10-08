@@ -3,7 +3,7 @@ import { IN_PROGRESS_STATUSES, statusRank } from "./status";
 
 // Initiatives without an owner belong to no business unit.
 export const NO_BUSINESS_UNIT = "__none__";
-export const NO_BUSINESS_UNIT_LABEL = "Ohne Business Unit";
+export const NO_BUSINESS_UNIT_LABEL = "No business unit";
 
 export interface Filters {
   search: string;

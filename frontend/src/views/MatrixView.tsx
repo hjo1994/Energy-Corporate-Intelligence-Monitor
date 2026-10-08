@@ -7,10 +7,10 @@ import { STATUS_ORDER, statusColor } from "../domain/status";
 import { useApp } from "../store";
 
 const QUADRANTS: [string, string][] = [
-  ["tl", "Quick Wins"],
-  ["tr", "Strategische Großprojekte"],
-  ["bl", "Geringer Nutzen"],
-  ["br", "Kritisch prüfen"],
+  ["tl", "Quick wins"],
+  ["tr", "Major strategic projects"],
+  ["bl", "Low benefit"],
+  ["br", "Review critically"],
 ];
 
 export function MatrixView() {
@@ -31,13 +31,12 @@ export function MatrixView() {
       <Kpis items={visible} />
 
       <div className="split">
-        <section className="card matrix-card" aria-label="Aufwand gegen Mehrwert">
+        <section className="card matrix-card" aria-label="Effort versus value">
           <div className="matrix-head">
             <div>
-              <h2>Aufwand vs. Mehrwert</h2>
+              <h2>Effort vs. value</h2>
               <p className="muted">
-                Jeder Punkt eine Initiative; eingezeichnet werden nur Initiativen mit erfasstem Aufwand
-                und Mehrwert.
+                Each dot is one initiative; only initiatives with recorded effort and value are plotted.
               </p>
             </div>
             <ul className="legend">
@@ -51,7 +50,7 @@ export function MatrixView() {
           </div>
 
           <div className="plot-wrap">
-            <span className="axis-y">Mehrwert</span>
+            <span className="axis-y">Value</span>
             <div className="plot-col">
               <div className="plot" data-testid="plot">
                 <span className="mid-v" />
@@ -92,16 +91,16 @@ export function MatrixView() {
                 )}
               </div>
               <div className="axis-x">
-                <span>gering</span>
-                <span>Aufwand</span>
-                <span>hoch</span>
+                <span>low</span>
+                <span>Effort</span>
+                <span>high</span>
               </div>
             </div>
           </div>
           {notPlotted > 0 && (
             <p className="note" role="status">
-              {notPlotted} von {visible.length} Initiativen sind nicht eingezeichnet, weil Aufwand oder
-              Mehrwert in der Quelle fehlt. Sie sind in Liste und Board sichtbar.
+              {notPlotted} of {visible.length} initiatives are not plotted because effort or value is
+              missing in the source. They are visible in the list and board.
             </p>
           )}
         </section>
@@ -110,7 +109,7 @@ export function MatrixView() {
           {selected ? (
             <DetailBody initiative={selected} />
           ) : (
-            <p className="muted">Punkt in der Matrix anklicken, um Details zur Initiative zu sehen.</p>
+            <p className="muted">Click a dot in the matrix to see the initiative's details.</p>
           )}
         </aside>
       </div>

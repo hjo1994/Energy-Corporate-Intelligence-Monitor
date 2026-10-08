@@ -24,9 +24,9 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "name", label: "Initiative" },
   { key: "owner", label: "Owner" },
   { key: "status", label: "Status" },
-  { key: "effort", label: "Aufwand" },
-  { key: "value", label: "Mehrwert" },
-  { key: "delivery", label: "Lieferung" },
+  { key: "effort", label: "Effort" },
+  { key: "value", label: "Value" },
+  { key: "delivery", label: "Delivery" },
 ];
 
 function FilterGroup({
@@ -96,16 +96,16 @@ export function ListView() {
         />
       </aside>
 
-      <section className="card list-card" aria-label="Initiativen">
+      <section className="card list-card" aria-label="Initiatives">
         <div className="list-head">
           <span className="muted">
-            {rows.length} von {all.length} Initiativen
+            {rows.length} of {all.length} initiatives
           </span>
           <Chip
             onClick={() => setSort((s) => ({ ...s, dir: s.dir === "asc" ? "desc" : "asc" }))}
             active
           >
-            Sortierung: {COLUMNS.find((c) => c.key === sort.key)?.label} {sort.dir === "asc" ? "↑" : "↓"}
+            Sorted by: {COLUMNS.find((c) => c.key === sort.key)?.label} {sort.dir === "asc" ? "↑" : "↓"}
           </Chip>
         </div>
         <div className="table-scroll">
@@ -161,7 +161,7 @@ export function ListView() {
               ))}
             </tbody>
           </table>
-          {rows.length === 0 && <p className="empty">Keine Initiativen für diese Filter.</p>}
+          {rows.length === 0 && <p className="empty">No initiatives match these filters.</p>}
         </div>
       </section>
 

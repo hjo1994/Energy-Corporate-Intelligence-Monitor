@@ -20,7 +20,7 @@ export function DetailDialog({ initiative, onClose }: { initiative: Initiative; 
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog card" role="dialog" aria-modal="true" aria-label={initiative.name}>
         <button ref={closeRef} type="button" className="dialog-close" onClick={onClose}>
-          Schließen
+          Close
         </button>
         <DetailBody initiative={initiative} />
       </div>

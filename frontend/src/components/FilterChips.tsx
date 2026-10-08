@@ -16,7 +16,7 @@ export function BusinessUnitChips({ all }: { all: Initiative[] }) {
     <div className="chip-group" role="group" aria-label="Business Unit">
       <span className="group-label">Business Unit</span>
       <Chip active={filters.businessUnits.length === 0} onClick={() => setFilters((f) => ({ ...f, businessUnits: [] }))}>
-        Alle
+        All
       </Chip>
       {businessUnitsIn(all).map((bu) => (
         <Chip
@@ -37,7 +37,7 @@ export function StatusChips({ all }: { all: Initiative[] }) {
     <div className="chip-group" role="group" aria-label="Status">
       <span className="group-label">Status</span>
       <Chip active={filters.statuses.length === 0} onClick={() => setFilters((f) => ({ ...f, statuses: [] }))}>
-        Alle
+        All
       </Chip>
       {statusesIn(all).map((s) => (
         <Chip

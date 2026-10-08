@@ -14,23 +14,23 @@ function Shell() {
           <span className="logo" aria-hidden="true" />
           <span className="brand-name">AI Cockpit</span>
         </div>
-        <nav className="tabs" aria-label="Ansichten">
+        <nav className="tabs" aria-label="Views">
           <NavLink to="/" end>
             Matrix
           </NavLink>
-          <NavLink to="/liste">Liste</NavLink>
+          <NavLink to="/list">List</NavLink>
           <NavLink to="/board">Board</NavLink>
         </nav>
         {!AUTH_DEV_BYPASS && (
           <NavLink to="/logout" className="logout">
-            Abmelden
+            Sign out
           </NavLink>
         )}
         <label className="search">
-          <span className="sr-only">Initiative suchen</span>
+          <span className="sr-only">Search initiatives</span>
           <input
             type="search"
-            placeholder="Initiative suchen…"
+            placeholder="Search initiatives…"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           />
@@ -38,19 +38,19 @@ function Shell() {
       </header>
 
       <main>
-        {load.state === "loading" && <p className="state" role="status">Daten werden geladen …</p>}
+        {load.state === "loading" && <p className="state" role="status">Loading data …</p>}
         {load.state === "error" && (
           <div className="state card" role="alert">
             <p>{load.message}</p>
             <button type="button" className="primary" onClick={reload}>
-              Erneut versuchen
+              Try again
             </button>
           </div>
         )}
         {load.state === "ready" && (
           <Routes>
             <Route path="/" element={<MatrixView />} />
-            <Route path="/liste" element={<ListView />} />
+            <Route path="/list" element={<ListView />} />
             <Route path="/board" element={<BoardView />} />
             <Route path="*" element={<MatrixView />} />
           </Routes>

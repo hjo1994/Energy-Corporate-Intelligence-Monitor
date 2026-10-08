@@ -10,9 +10,15 @@ Requests zur Laufzeit.
 
 ## Ansichten (nach den abgenommenen Entwürfen)
 
+**Sprache der Oberfläche: Englisch** (alle sichtbaren Texte, Fehlermeldungen, `lang="en"`,
+Route `/list`). Die Texte stehen direkt in den Komponenten, es gibt bewusst keine
+i18n-Bibliothek; eine zweite Sprache wäre ein eigener Schritt. Die Meldungen im
+JSON-Body des Backends (`detail`) sind noch deutsch, das Frontend zeigt sie aber
+nicht an, sondern eigene Texte je HTTP-Status.
+
 - **Matrix** (`/`) — Aufwand × Mehrwert als Quadranten-Plot, KPI-Kacheln,
   Detailpanel zur angeklickten Initiative.
-- **Liste** (`/liste`) — sortierbare Tabelle, Filter links (Status,
+- **List** (`/list`) — sortierbare Tabelle, Filter links (Status,
   Business Unit, Flagship), Klick auf den Namen öffnet die Details.
 - **Board** (`/board`) — Spalten je Status, Karten mit Owner, Aufwand,
   Mehrwert; Klick öffnet die Details.
@@ -31,22 +37,22 @@ Initiativen wäre das neu zu überdenken.
   Pipeline-Spalten immer, On hold/Cancelled/Unknown nur wenn gefüllt.
 - **Aufwand und Mehrwert sind 1–10-Scores**, keine T-Shirt-Größen: Aufwand
   als 5 Balken plus Zahl, Mehrwert als Zahl plus Balken.
-- **Fehlende Werte werden benannt, nicht als 0 gezeigt** („nicht erfasst",
-  „kein Owner"). In der Matrix erscheinen nur Initiativen mit beiden Scores
+- **Fehlende Werte werden benannt, nicht als 0 gezeigt** („not recorded",
+  „no owner"). In der Matrix erscheinen nur Initiativen mit beiden Scores
   (aktuell 65 von 160); ein Hinweis nennt, wie viele fehlen. Identische
   Score-Paare werden auf einer kleinen Spirale gestreut, damit sie sichtbar
   bleiben.
-- **KPI-Kachel „Flagship-Initiativen" ersetzt durch „Ohne Mehrwert"** — ein
+- **KPI-Kachel „Flagship-Initiativen" ersetzt durch „Without value"** — ein
   „Flagship-Initiative"-Kennzeichen gibt es in den Daten nicht, die Lücke beim
   Mehrwert (94 von 160) ist dagegen die wichtigste Datenaussage.
 - **Initiativen ohne Owner** haben keine Business Unit und bekommen im Filter
-  den eigenen Eintrag „Ohne Business Unit" (aktuell 22).
+  den eigenen Eintrag „No business unit" (aktuell 22).
 - **„+ Neue Initiative" und Benutzer-Avatar entfallen** — die API ist
   read-only; Anmeldung läuft über den Authenticator, angezeigt wird nur ein
-  „Abmelden"-Link.
-- Der Katalog-Eintrag `-` bei Flagship heißt „Kein Flagship"; ein unsichtbares
+  „Sign out"-Link.
+- Der Katalog-Eintrag `-` bei Flagship heißt „No flagship"; ein unsichtbares
   Zeichen im Katalognamen „Connection lifecycle" wird beim Laden entfernt.
-- Start/Lieferung stehen als „Q3 2026" mit dem Zusatz „(grob)": die Quelle
+- Start/Lieferung stehen als „Q3 2026" mit dem Zusatz „(approx.)": die Quelle
   kennt nur Quartale, das Jahr ist eine Annahme (siehe Root-README).
 
 ## Authentifizierung
