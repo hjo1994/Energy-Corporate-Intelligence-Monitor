@@ -1,0 +1,56 @@
+# Source data (contains real names / internal business data — never commit)
+/data/db
+
+# SQLite prototype database
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Airflow
+airflow.db
+airflow.cfg
+logs/
+standalone_admin_password.txt
+.airflow_home/
+
+# Node / React
+node_modules/
+dist/
+build/
+.vite/
+
+# Env files
+.env
+.env.*
+!.env.example
+# frontend build-time configuration (no secrets; OIDC values stay empty in the repo)
+!frontend/.env.development
+!frontend/.env.production
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# Internal package, local copy only — never commit (see README)
+local_packages/
+
+# frontend/package-lock.json is generated in the company network (internal registry,
+# internal package). A lock created elsewhere points at the public npm and breaks the
+# build there. Remove this line once the company-side lock is committed.
+frontend/package-lock.json
+
+#solution documentation
+/solution documentation/
+
+#scripts
+/scripts/

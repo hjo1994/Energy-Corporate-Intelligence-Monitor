@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "ai-cockpit-ingestion"
+version = "0.1.0"
+description = "Input Orchestration: Airflow DAG that imports AI Cockpit initiatives"
+
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+polars = ">=1.9"
+fastexcel = ">=0.12"
+sqlalchemy = ">=1.4.36,<2.0"
+apache-airflow = "2.10.2"
+
+[[tool.poetry.source]]
+name = "artifactstore-public"
+url = "https://artifactstore.belgrid.net/pypi/EGPython/simple"
+priority = "primary"
+
+[[tool.poetry.source]]
+name = "artifactstore-private"
+url = "https://artifactstore.belgrid.net/pypi/EGPythonPrivate/simple"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
