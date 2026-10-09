@@ -17,7 +17,13 @@ JSON-Body des Backends (`detail`) sind noch deutsch, das Frontend zeigt sie aber
 nicht an, sondern eigene Texte je HTTP-Status.
 
 - **Matrix** (`/`) — Aufwand × Mehrwert als Quadranten-Plot, KPI-Kacheln,
-  Detailpanel zur angeklickten Initiative.
+  Detailpanel zur angeklickten Initiative. Darunter das **Flagships-Widget**:
+  je strategischer Säule Anzahl, Ø Mehrwert und wie viele Initiativen darin
+  überhaupt bewertet sind (der Durchschnitt ist nur so belastbar wie diese
+  Zahl). Es folgt den übrigen Filtern; ein Klick auf eine Zeile filtert über alle
+  Ansichten nach diesem Flagship. Initiativen ohne Flagship stehen als eigene
+  Zeile „Not assigned“, damit die Summe stimmt; „No flagship“ ist der
+  Katalogeintrag `-`.
 - **List** (`/list`) — sortierbare Tabelle, Filter links (Status,
   Business Unit, Flagship), Klick auf den Namen öffnet die Details.
 - **Board** (`/board`) — Spalten je Status, Karten mit Owner, Aufwand,
@@ -122,7 +128,7 @@ Hosts bräuchte CORS-Freigaben im Backend, die es nicht hat.
 
 ## Verifiziert
 
-30 Tests (Filter, Sortierung mit fehlenden Werten, KPI-Berechnung, Matrix-
+38 Tests (Filter, Flagship-Statistik und -Widget, Sortierung mit fehlenden Werten, KPI-Berechnung, Matrix-
 Layout, Anzeige-Bereinigung, Ansichten, Detaildialog, Fehlerzustände je
 HTTP-Status, Anmeldeschranke in allen Zuständen, Login-Seite, Dev-Bypass
 inkl. Produktions-Absicherung). Getestet gegen eine **Attrappe** von

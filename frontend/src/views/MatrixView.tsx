@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { BusinessUnitChips, StatusChips } from "../components/FilterChips";
 import { DetailBody } from "../components/DetailBody";
+import { FlagshipWidget } from "../components/FlagshipWidget";
 import { Kpis } from "../components/Kpis";
 import { layoutDots } from "../domain/matrix";
 import { STATUS_ORDER, statusColor } from "../domain/status";
@@ -113,6 +114,8 @@ export function MatrixView() {
           )}
         </aside>
       </div>
+
+      <FlagshipWidget />
     </>
   );
 }

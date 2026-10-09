@@ -94,3 +94,36 @@ describe("api errors", () => {
     expect(get).toHaveBeenCalledWith("/initiatives", { limit: 500, offset: 0, sort: "name" });
   });
 });
+
+describe("flagship widget", () => {
+  it("shows counts and average value per flagship, including the unassigned group", async () => {
+    mockApi(ok);
+    renderAt("/");
+    const widget = await screen.findByRole("region", { name: "Flagships" });
+    expect(within(widget).getByRole("button", { name: /CAPEX delivery/ })).toHaveTextContent("1 · avg. 8.0 (1 of 1 rated)");
+    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("3 · avg. 5.0 (1 of 3 rated)");
+  });
+
+  it("filters by the clicked flagship while keeping the other rows visible to switch back", async () => {
+    mockApi(ok);
+    renderAt("/");
+    const widget = await screen.findByRole("region", { name: "Flagships" });
+    await userEvent.click(within(widget).getByRole("button", { name: /CAPEX delivery/ }));
+
+    expect(screen.getByRole("region", { name: "Key figures" })).toHaveTextContent("1matching the filters");
+    expect(within(widget).getByRole("button", { name: /CAPEX delivery/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toBeInTheDocument();
+
+    await userEvent.click(within(widget).getByRole("button", { name: /CAPEX delivery/ }));
+    expect(screen.getByRole("region", { name: "Key figures" })).toHaveTextContent("4matching the filters");
+  });
+
+  it("follows the other filters (business unit)", async () => {
+    mockApi(ok);
+    renderAt("/");
+    await userEvent.click(await screen.findByRole("button", { name: "IT" }));
+    const widget = screen.getByRole("region", { name: "Flagships" });
+    expect(within(widget).queryByRole("button", { name: /CAPEX delivery/ })).not.toBeInTheDocument();
+    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("1 · no value rated");
+  });
+});

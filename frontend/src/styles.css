@@ -159,3 +159,14 @@ td { padding: 12px; vertical-align: middle; border-top: 1px solid var(--border);
   .search, .search input { width: 100%; }
   .plot { height: 380px; }
 }
+
+/* ---------- flagship widget ---------- */
+.flagships { padding: 22px; }
+.flagships h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.flagships > p { font-size: 13px; line-height: 1.5; max-width: 560px; margin-bottom: 14px; }
+.flag-list { display: flex; flex-direction: column; gap: 4px; }
+.flag-row { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 8px; padding: 7px 10px; }
+.flag-row:hover { background: var(--paper); }
+.flag-row[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.flag-line { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.flag-bar { display: block; height: 10px; border-radius: 3px; background: var(--accent); opacity: .55; margin-top: 5px; min-width: 4px; }

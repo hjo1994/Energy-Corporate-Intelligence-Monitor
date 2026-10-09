@@ -72,3 +72,42 @@ describe("display cleanup", () => {
     expect(flagshipLabel("CAPEX delivery")).toBe("CAPEX delivery");
   });
 });
+
+import { flagshipStats } from "./flagship";
+
+describe("flagship statistics", () => {
+  const vt = (id: number, name: string) => ({ id, name, description: null });
+  const items = [
+    make({ id: 1, name: "a", value_type: vt(1, "CAPEX delivery"), value_score: 8 }),
+    make({ id: 2, name: "b", value_type: vt(1, "CAPEX delivery"), value_score: 4 }),
+    make({ id: 3, name: "c", value_type: vt(1, "CAPEX delivery"), value_score: null }),
+    make({ id: 4, name: "d", value_type: vt(2, "-"), value_score: 3 }),
+    make({ id: 5, name: "e", value_type: vt(3, "Grid planning process") }),
+    make({ id: 6, name: "f", value_type: vt(3, "Grid planning process") }),
+    make({ id: 7, name: "g", value_type: null, value_score: 9 }),
+  ];
+  const stats = flagshipStats(items);
+
+  it("counts per flagship and averages only over initiatives that have a score", () => {
+    const capex = stats.find((s) => s.key === "CAPEX delivery")!;
+    expect(capex).toMatchObject({ count: 3, rated: 2, averageValue: 6 });
+  });
+
+  it("does not turn a missing value into zero", () => {
+    expect(stats.find((s) => s.key === "Grid planning process")).toMatchObject({ count: 2, rated: 0, averageValue: null });
+  });
+
+  it("keeps the catalog's '-' as 'No flagship' and lists unassigned initiatives so the counts add up", () => {
+    expect(stats.find((s) => s.key === "-")?.label).toBe("No flagship");
+    expect(stats.find((s) => s.key === "")).toMatchObject({ label: "Not assigned", count: 1 });
+    expect(stats.reduce((n, s) => n + s.count, 0)).toBe(items.length);
+  });
+
+  it("sorts by size and puts the unassigned group last", () => {
+    expect(stats.map((s) => s.label)).toEqual(["CAPEX delivery", "Grid planning process", "No flagship", "Not assigned"]);
+  });
+
+  it("is empty for no initiatives", () => {
+    expect(flagshipStats([])).toEqual([]);
+  });
+});
