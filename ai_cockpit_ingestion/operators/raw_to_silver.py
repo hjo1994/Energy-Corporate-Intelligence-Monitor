@@ -184,14 +184,14 @@ class RawToSilverOperator(BaseOperator):
                     unmapped_value_type_count += 1
                 value_type = value_type_rows.get(value_type_name) if value_type_name else None
 
-                status = normalize_status(row.get("Status"), initiative_name=name)
-                if status == "Unknown":
+                stage = normalize_status(row.get("Status"), initiative_name=name)
+                if stage == "Unknown":
                     unmapped_status_count += 1
 
                 initiative = Initiative(
                     name=name,
                     description=_clean_str(row.get("Description")),
-                    status=status,
+                    stage=stage,
                     date_start=derive_timing_date(
                         row.get("Timing start"),
                         assumed_year=config.PLANNING_YEAR,
