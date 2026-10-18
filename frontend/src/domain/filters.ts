@@ -1,5 +1,5 @@
 import type { Initiative } from "../api/types";
-import { IN_PROGRESS_STATUSES, statusRank } from "./status";
+import { IN_PROGRESS_STAGES, stageRank } from "./stage";
 
 // Initiatives without an owner belong to no business unit.
 export const NO_BUSINESS_UNIT = "__none__";
@@ -8,14 +8,14 @@ export const NO_BUSINESS_UNIT_LABEL = "No business unit";
 export interface Filters {
   search: string;
   businessUnits: string[];
-  statuses: string[];
+  stages: string[];
   flagships: string[];
 }
 
 export const EMPTY_FILTERS: Filters = {
   search: "",
   businessUnits: [],
-  statuses: [],
+  stages: [],
   flagships: [],
 };
 
@@ -32,8 +32,8 @@ export function applyFilters(items: Initiative[], f: Filters): Initiative[] {
     (i) =>
       (f.businessUnits.length === 0 ||
         f.businessUnits.includes(businessUnitOf(i))) &&
-      (f.statuses.length === 0 ||
-        f.statuses.includes(i.status)) &&
+      (f.stages.length === 0 ||
+        f.stages.includes(i.stage)) &&
       (f.flagships.length === 0 ||
         f.flagships.includes(flagshipOf(i) ?? "")) &&
       (q === "" ||
@@ -76,9 +76,9 @@ export function businessUnitsIn(items: Initiative[]): string[] {
   );
 }
 
-export const statusesIn = (items: Initiative[]): string[] =>
-  [...countBy(items, (i) => i.status).keys()].sort(
-    (a, b) => statusRank(a) - statusRank(b),
+export const stagesIn = (items: Initiative[]): string[] =>
+  [...countBy(items, (i) => i.stage).keys()].sort(
+    (a, b) => stageRank(a) - stageRank(b),
   );
 
 export const flagshipsIn = (items: Initiative[]): string[] =>
@@ -89,7 +89,7 @@ export const flagshipsIn = (items: Initiative[]): string[] =>
 export type SortKey =
   | "name"
   | "owner"
-  | "status"
+  | "stage"
   | "effort"
   | "value"
   | "delivery";
@@ -100,7 +100,7 @@ const sortValue: Record<
 > = {
   name: (i) => i.name.toLowerCase(),
   owner: (i) => i.owner?.name.toLowerCase() ?? null,
-  status: (i) => statusRank(i.status),
+  stage: (i) => stageRank(i.stage),
   effort: (i) => i.solution_complexity_score,
   value: (i) => i.value_score,
   delivery: (i) => i.date_delivery,
@@ -135,7 +135,7 @@ export function summarize(items: Initiative[]) {
   return {
     total: items.length,
     inProgress: items.filter((i) =>
-      IN_PROGRESS_STATUSES.includes(i.status),
+      IN_PROGRESS_STAGES.includes(i.stage),
     ).length,
     withValue: scored.length,
     withoutValue: items.length - scored.length,

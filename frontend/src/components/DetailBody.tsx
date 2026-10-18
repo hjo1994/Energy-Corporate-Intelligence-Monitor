@@ -1,12 +1,12 @@
 import type { Initiative } from "../api/types";
 import { flagshipLabel, formatQuarter } from "../domain/format";
-import { Avatar, EffortMeter, StatusBadge, ValueMeter } from "./small";
+import { Avatar, EffortMeter, StageBadge, ValueMeter } from "./small";
 
 export function DetailBody({ initiative: i }: { initiative: Initiative }) {
   return (
     <div className="detail">
       <div className="detail-head">
-        <StatusBadge status={i.status} />
+        <StageBadge stage={i.stage} />
       </div>
       <h3>{i.name}</h3>
       <p className="muted">{i.description ?? "No description recorded."}</p>

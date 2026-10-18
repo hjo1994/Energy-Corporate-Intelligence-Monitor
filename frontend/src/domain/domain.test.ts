@@ -4,10 +4,10 @@ import { formatQuarter, initials, scoreBars } from "./format";
 import { layoutDots } from "./matrix";
 
 describe("filters", () => {
-  it("combines business unit, status and search; empty filters keep everything", () => {
+  it("combines business unit, stage and search; empty filters keep everything", () => {
     expect(applyFilters(SAMPLE, EMPTY_FILTERS)).toHaveLength(4);
     expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, businessUnits: ["ETB"] }).map((i) => i.name)).toEqual(["Alpha", "Beta"]);
-    expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, statuses: ["Idea"], businessUnits: ["IT"] }).map((i) => i.name)).toEqual(["Gamma"]);
+    expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, stages: ["Idea"], businessUnits: ["IT"] }).map((i) => i.name)).toEqual(["Gamma"]);
     expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, search: "AUTOMAT" }).map((i) => i.name)).toEqual(["Alpha"]);
   });
 

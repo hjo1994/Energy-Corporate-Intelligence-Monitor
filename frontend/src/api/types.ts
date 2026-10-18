@@ -15,7 +15,7 @@ export interface Initiative {
   id: number;
   name: string;
   description: string | null;
-  status: string;
+  stage: string;
   date_start: string | null;
   date_delivery: string | null;
   value_score: number | null;

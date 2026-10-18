@@ -1,15 +1,15 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Initiative } from "../api/types";
 import { formatScore, initials, scoreBars } from "../domain/format";
-import { statusColor } from "../domain/status";
+import { stageColor } from "../domain/stage";
 
 type WithColor = CSSProperties & { "--c"?: string };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StageBadge({ stage }: { stage: string }) {
   return (
-    <span className="badge" style={{ "--c": statusColor(status) } as WithColor}>
+    <span className="badge" style={{ "--c": stageColor(stage) } as WithColor}>
       <span className="dot" />
-      {status}
+      {stage}
     </span>
   );
 }

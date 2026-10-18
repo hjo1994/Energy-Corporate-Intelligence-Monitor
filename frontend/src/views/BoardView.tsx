@@ -3,7 +3,7 @@ import type { Initiative } from "../api/types";
 import { BusinessUnitChips } from "../components/FilterChips";
 import { DetailDialog } from "../components/DetailDialog";
 import { Avatar, EffortMeter, ValueMeter } from "../components/small";
-import { STATUS_ORDER, statusColor } from "../domain/status";
+import { STAGE_ORDER, stageColor } from "../domain/stage";
 import { sortInitiatives } from "../domain/filters";
 import { useApp } from "../store";
 
@@ -20,15 +20,15 @@ export function BoardView() {
   const { all, visible } = useApp();
   const [open, setOpen] = useState<Initiative | null>(null);
 
-  const columns = STATUS_ORDER.map((status) => ({
-    status,
+  const columns = STAGE_ORDER.map((stage) => ({
+    stage,
     items: sortInitiatives(
-      visible.filter((i) => i.status === status),
+      visible.filter((i) => i.stage === stage),
       "value",
       "desc",
     ),
   })).filter(
-    (c) => ALWAYS_SHOWN.includes(c.status) || c.items.length > 0,
+    (c) => ALWAYS_SHOWN.includes(c.stage) || c.items.length > 0,
   );
 
   return (
@@ -38,17 +38,17 @@ export function BoardView() {
       </div>
 
       <div className="board">
-        {columns.map(({ status, items }) => (
+        {columns.map(({ stage, items }) => (
           <section
-            key={status}
+            key={stage}
             className="col"
-            style={{ "--c": statusColor(status) } as React.CSSProperties}
-            aria-label={status}
+            style={{ "--c": stageColor(stage) } as React.CSSProperties}
+            aria-label={stage}
           >
             <header className="col-head">
               <span className="col-title">
                 <span className="dot" />
-                {status}
+                {stage}
               </span>
 
               <span className="mono muted">{items.length}</span>

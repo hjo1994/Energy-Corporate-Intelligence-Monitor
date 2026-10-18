@@ -11,12 +11,12 @@ Schreibpfad.
 |---|---|
 | `GET /api/healthz` | Liveness, ohne Auth, prüft nicht die DB. Kein `/startup`/`/readz`: das Referenz-Deployment konfiguriert keine Probes |
 | `GET /api/auth/rights` | angemeldeter Nutzer und seine Rechte (für das Frontend) |
-| `GET /api/initiatives` | Liste; Filter `status`, `business_unit`, `department` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `status`, `value_score`, `solution_complexity_score`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type` |
+| `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `value_score`, `solution_complexity_score`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type` |
 | `GET /api/initiatives/{id}` | Einzelne Initiative |
-| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Status, Ø Scores, Anzahl mit/ohne `value_score`, Anzahl ohne Owner |
+| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage, Ø Scores, Anzahl mit/ohne `value_score`, Anzahl ohne Owner |
 | `GET /api/owners` | Owner (optional `business_unit`) |
 | `GET /api/business-units` | Distinkte `Owner.category` mit Initiativen-Anzahl |
-| `GET /api/statuses` | Status-Werte mit Anzahl |
+| `GET /api/stages` | Stage-Werte mit Anzahl |
 | `GET /api/solution-types`, `GET /api/value-types` | Lookup-Kataloge |
 
 Interaktive Doku: `/docs` (Swagger UI; lädt aktuell noch von einem CDN und

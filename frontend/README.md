@@ -12,12 +12,12 @@ Requests zur Laufzeit.
 
 - **Matrix** (`/`) — Aufwand × Mehrwert als Quadranten-Plot, KPI-Kacheln,
   Detailpanel zur angeklickten Initiative.
-- **Liste** (`/liste`) — sortierbare Tabelle, Filter links (Status,
+- **Liste** (`/liste`) — sortierbare Tabelle, Filter links (Stage,
   Business Unit, Flagship), Klick auf den Namen öffnet die Details.
-- **Board** (`/board`) — Spalten je Status, Karten mit Owner, Aufwand,
+- **Board** (`/board`) — Spalten je Stage, Karten mit Owner, Aufwand,
   Mehrwert; Klick öffnet die Details.
 
-Die Filter (Business Unit, Status, Flagship, Suche) gelten über alle
+Die Filter (Business Unit, Stage, Flagship, Suche) gelten über alle
 Ansichten hinweg. Alle Initiativen werden einmal vollständig geladen
 (seitenweise, 500 pro Anfrage); Filtern, Sortieren und die KPI-Kacheln laufen
 im Browser — damit reagieren auch die Kennzahlen auf die Filter, was
@@ -26,7 +26,7 @@ Initiativen wäre das neu zu überdenken.
 
 ## Abweichungen vom Entwurf — wegen der echten Daten
 
-- **9 statt 4 Status-Werte** (Idea, Exploration, PoC, MVP, Implementation,
+- **9 statt 4 Stage-Werte** (Idea, Exploration, PoC, MVP, Implementation,
   Production, On hold, Cancelled, Unknown). Das Board zeigt die sechs
   Pipeline-Spalten immer, On hold/Cancelled/Unknown nur wenn gefüllt.
 - **Aufwand und Mehrwert sind 1–10-Scores**, keine T-Shirt-Größen: Aufwand

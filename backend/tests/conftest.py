@@ -31,14 +31,14 @@ def db_path(tmp_path):
         s.flush()
         s.add_all(
             [
-                Initiative(name="Alpha", description="100% automation", status="Idea",
+                Initiative(name="Alpha", description="100% automation", stage="Idea",
                            value_score=8.0, solution_complexity_score=3.0,
                            owner=etb, solution_type=copilot, value_type=capex,
                            date_start=datetime.datetime(2026, 1, 1)),
-                Initiative(name="Beta", description="under_score", status="PoC",
+                Initiative(name="Beta", description="under_score", stage="PoC",
                            value_score=5.0, owner=etb),
-                Initiative(name="Gamma", status="Idea", value_score=None, owner=it),
-                Initiative(name="Delta", status="Unknown", owner=None),
+                Initiative(name="Gamma", stage="Idea", value_score=None, owner=it),
+                Initiative(name="Delta", stage="Unknown", owner=None),
             ]
         )
         s.commit()

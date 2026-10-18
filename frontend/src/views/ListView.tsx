@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Initiative } from "../api/types";
 import { DetailDialog } from "../components/DetailDialog";
-import { EffortMeter, OwnerCell, StatusBadge, ValueMeter } from "../components/small";
+import { EffortMeter, OwnerCell, StageBadge, ValueMeter } from "../components/small";
 import { Chip } from "../components/small";
 import { flagshipLabel, formatQuarter } from "../domain/format";
 import {
@@ -13,17 +13,17 @@ import {
   NO_BUSINESS_UNIT,
   NO_BUSINESS_UNIT_LABEL,
   sortInitiatives,
-  statusesIn,
+  stagesIn,
   toggle,
   type SortKey,
 } from "../domain/filters";
-import { statusColor } from "../domain/status";
+import { stageColor } from "../domain/stage";
 import { useApp } from "../store";
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "name", label: "Initiative" },
   { key: "owner", label: "Owner" },
-  { key: "status", label: "Status" },
+  { key: "stage", label: "Stage" },
   { key: "effort", label: "Effort" },
   { key: "value", label: "Value" },
   { key: "delivery", label: "Delivery" },
@@ -73,12 +73,12 @@ export function ListView() {
     <div className="split">
       <aside className="card filter-side" aria-label="Filter">
         <FilterGroup
-          title="Status"
-          options={statusesIn(all).map((s) => ({ value: s, label: s }))}
-          selected={filters.statuses}
-          counts={countBy(all, (i) => i.status)}
-          onToggle={(v) => setFilters((f) => ({ ...f, statuses: toggle(f.statuses, v) }))}
-          dot={statusColor}
+          title="Stage"
+          options={stagesIn(all).map((s) => ({ value: s, label: s }))}
+          selected={filters.stages}
+          counts={countBy(all, (i) => i.stage)}
+          onToggle={(v) => setFilters((f) => ({ ...f, stages: toggle(f.stages, v) }))}
+          dot={stageColor}
         />
 
         <FilterGroup
@@ -201,7 +201,7 @@ export function ListView() {
                   </td>
 
                   <td>
-                    <StatusBadge status={i.status} />
+                    <StageBadge stage={i.stage} />
                   </td>
 
                   <td>

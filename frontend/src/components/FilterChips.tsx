@@ -3,10 +3,10 @@ import {
   businessUnitsIn,
   NO_BUSINESS_UNIT,
   NO_BUSINESS_UNIT_LABEL,
-  statusesIn,
+  stagesIn,
   toggle,
 } from "../domain/filters";
-import { statusColor } from "../domain/status";
+import { stageColor } from "../domain/stage";
 import { useApp } from "../store";
 import { Chip } from "./small";
 
@@ -31,20 +31,20 @@ export function BusinessUnitChips({ all }: { all: Initiative[] }) {
   );
 }
 
-export function StatusChips({ all }: { all: Initiative[] }) {
+export function StageChips({ all }: { all: Initiative[] }) {
   const { filters, setFilters } = useApp();
   return (
-    <div className="chip-group" role="group" aria-label="Status">
-      <span className="group-label">Status</span>
-      <Chip active={filters.statuses.length === 0} onClick={() => setFilters((f) => ({ ...f, statuses: [] }))}>
+    <div className="chip-group" role="group" aria-label="Stage">
+      <span className="group-label">Stage</span>
+      <Chip active={filters.stages.length === 0} onClick={() => setFilters((f) => ({ ...f, stages: [] }))}>
         Alle
       </Chip>
-      {statusesIn(all).map((s) => (
+      {stagesIn(all).map((s) => (
         <Chip
           key={s}
-          dot={statusColor(s)}
-          active={filters.statuses.includes(s)}
-          onClick={() => setFilters((f) => ({ ...f, statuses: toggle(f.statuses, s) }))}
+          dot={stageColor(s)}
+          active={filters.stages.includes(s)}
+          onClick={() => setFilters((f) => ({ ...f, stages: toggle(f.stages, s) }))}
         >
           {s}
         </Chip>

@@ -20,7 +20,7 @@ def test_every_data_endpoint_requires_authentication(client, monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_MODE", "false")
     for path in [
         "/api/initiatives", "/api/initiatives/1", "/api/initiatives/summary", "/api/owners",
-        "/api/business-units", "/api/statuses", "/api/solution-types", "/api/value-types",
+        "/api/business-units", "/api/stages", "/api/solution-types", "/api/value-types",
         "/api/auth/rights",
     ]:
         assert client.get(path).status_code == 401, path
@@ -46,8 +46,8 @@ def test_list_nests_owner_and_types(client):
     assert delta["owner"] is None and delta["solution_type"] is None
 
 
-def test_filter_status_multi_and_business_unit(client):
-    assert sorted(names(client.get("/api/initiatives?status=Idea&status=PoC"))) == ["Alpha", "Beta", "Gamma"]
+def test_filter_stage_multi_and_business_unit(client):
+    assert sorted(names(client.get("/api/initiatives?stage=Idea&stage=PoC"))) == ["Alpha", "Beta", "Gamma"]
     resp = client.get("/api/initiatives?business_unit=ETB")
     assert sorted(names(resp)) == ["Alpha", "Beta"]
     assert resp.json()["total"] == 2
@@ -88,7 +88,7 @@ def test_summary(client):
     assert s["with_value_score"] == 2 and s["without_value_score"] == 2
     assert s["average_value_score"] == 6.5
     assert s["without_owner"] == 1
-    assert {x["status"]: x["count"] for x in s["by_status"]} == {"Idea": 2, "PoC": 1, "Unknown": 1}
+    assert {x["stage"]: x["count"] for x in s["by_stage"]} == {"Idea": 2, "PoC": 1, "Unknown": 1}
 
 
 def test_reference_endpoints(client):
@@ -98,7 +98,7 @@ def test_reference_endpoints(client):
     assert client.get("/api/value-types").json()[0]["name"] == "CAPEX delivery"
     bu = {b["name"]: b["count"] for b in client.get("/api/business-units").json()}
     assert bu == {"ETB": 2, "IT": 1}  # Delta has no owner -> in no business unit
-    assert {s["status"]: s["count"] for s in client.get("/api/statuses").json()}["Idea"] == 2
+    assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Idea"] == 2
 
 
 def test_database_is_opened_read_only(client, db_path):
@@ -124,10 +124,10 @@ def test_sees_file_replaced_by_atomic_rename(db_path, tmp_path):
         "CREATE TABLE owner(id INTEGER PRIMARY KEY, category TEXT, name TEXT NOT NULL, department TEXT);"
         "CREATE TABLE solution_type(id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT);"
         "CREATE TABLE value_type(id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT);"
-        "CREATE TABLE initiative(id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT, status TEXT NOT NULL,"
+        "CREATE TABLE initiative(id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT, stage TEXT NOT NULL,"
         " date_start DATETIME, date_delivery DATETIME, value_score FLOAT, solution_complexity_score FLOAT,"
         " owner_id INTEGER, value_type_id INTEGER, solution_type_id INTEGER);"
-        "INSERT INTO initiative(id, name, status) VALUES (1, 'Only', 'Idea');"
+        "INSERT INTO initiative(id, name, stage) VALUES (1, 'Only', 'Idea');"
     )
     conn.commit()
     conn.close()
@@ -156,7 +156,7 @@ def test_sql_stays_portable_to_the_cluster_database(client):
 
     statements = []
     event.listen(client.app.state.engine, "before_cursor_execute", lambda c, cur, stmt, *a: statements.append(stmt))
-    for sort in ["value_score", "solution_complexity_score", "date_delivery", "name", "status"]:
+    for sort in ["value_score", "solution_complexity_score", "date_delivery", "name", "stage"]:
         for order in ["asc", "desc"]:
             assert client.get(f"/api/initiatives?sort={sort}&order={order}").status_code == 200
     assert statements and not any("NULLS" in s.upper() for s in statements)

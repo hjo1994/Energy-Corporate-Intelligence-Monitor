@@ -51,7 +51,7 @@ class Initiative(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    status = Column(String, nullable=False)
+    stage = Column(String, nullable=False)
 
     date_start = Column(DateTime, nullable=True)
     date_delivery = Column(DateTime, nullable=True)

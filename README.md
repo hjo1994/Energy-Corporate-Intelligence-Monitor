@@ -1,6 +1,6 @@
 # AI Initiatives Cockpit
 
-Dashboard mit Übersicht über alle KI-Initiativen im Unternehmen — Owner, Status,
+Dashboard mit Übersicht über alle KI-Initiativen im Unternehmen — Owner, Stage,
 geschätzter Aufwand und Mehrwert je Initiative.
 
 ## Architektur

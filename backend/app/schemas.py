@@ -26,7 +26,7 @@ class InitiativeOut(_Out):
     id: int
     name: str
     description: str | None
-    status: str
+    stage: str
     date_start: datetime | None
     date_delivery: datetime | None
     value_score: float | None
@@ -43,8 +43,8 @@ class InitiativePage(BaseModel):
     offset: int
 
 
-class StatusCount(BaseModel):
-    status: str
+class StageCount(BaseModel):
+    stage: str
     count: int
 
 
@@ -55,7 +55,7 @@ class BusinessUnitCount(BaseModel):
 
 class Summary(BaseModel):
     total: int
-    by_status: list[StatusCount]
+    by_stage: list[StageCount]
     with_value_score: int
     without_value_score: int
     average_value_score: float | None

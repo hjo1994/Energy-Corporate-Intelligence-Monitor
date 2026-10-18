@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.auth import authorizer
 from app.db import get_session
 from app.models import Initiative, Owner
-from app.schemas import InitiativeOut, InitiativePage, StatusCount, Summary
+from app.schemas import InitiativeOut, InitiativePage, StageCount, Summary
 
 router = APIRouter(prefix="/api/initiatives", tags=["initiatives"], dependencies=[authorizer()])
 
 SortField = Literal[
     "name",
-    "status",
+    "stage",
     "value_score",
     "solution_complexity_score",
     "date_start",
@@ -23,7 +23,7 @@ SortField = Literal[
 ]
 _SORT_COLUMNS = {
     "name": Initiative.name,
-    "status": Initiative.status,
+    "stage": Initiative.stage,
     "value_score": Initiative.value_score,
     "solution_complexity_score": Initiative.solution_complexity_score,
     "date_start": Initiative.date_start,
@@ -36,7 +36,7 @@ def _escape_like(term: str) -> str:
 
 
 def _conditions(
-    status: list[str] | None,
+    stage: list[str] | None,
     business_unit: list[str] | None,
     department: list[str] | None,
     owner_id: int | None,
@@ -45,8 +45,8 @@ def _conditions(
     search: str | None,
 ) -> list:
     conditions = []
-    if status:
-        conditions.append(Initiative.status.in_(status))
+    if stage:
+        conditions.append(Initiative.stage.in_(stage))
     if business_unit:
         conditions.append(Owner.category.in_(business_unit))
     if department:
@@ -71,7 +71,7 @@ def _conditions(
 @router.get("", response_model=InitiativePage)
 def list_initiatives(
     session: Annotated[Session, Depends(get_session)],
-    status: Annotated[list[str] | None, Query()] = None,
+    stage: Annotated[list[str] | None, Query()] = None,
     business_unit: Annotated[list[str] | None, Query(description="Owner.category")] = None,
     department: Annotated[list[str] | None, Query()] = None,
     owner_id: int | None = None,
@@ -84,7 +84,7 @@ def list_initiatives(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> InitiativePage:
     conditions = _conditions(
-        status, business_unit, department, owner_id, solution_type_id, value_type_id, search
+        stage, business_unit, department, owner_id, solution_type_id, value_type_id, search
     )
 
     total = session.scalar(
@@ -115,17 +115,17 @@ def list_initiatives(
 @router.get("/summary", response_model=Summary)
 def summary(session: Annotated[Session, Depends(get_session)]) -> Summary:
     total = session.scalar(select(func.count(Initiative.id))) or 0
-    by_status = session.execute(
-        select(Initiative.status, func.count(Initiative.id))
-        .group_by(Initiative.status)
-        .order_by(func.count(Initiative.id).desc(), Initiative.status)
+    by_stage = session.execute(
+        select(Initiative.stage, func.count(Initiative.id))
+        .group_by(Initiative.stage)
+        .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()
     with_value = session.scalar(
         select(func.count(Initiative.id)).where(Initiative.value_score.is_not(None))
     ) or 0
     return Summary(
         total=total,
-        by_status=[StatusCount(status=s, count=c) for s, c in by_status],
+        by_stage=[StageCount(stage=s, count=c) for s, c in by_stage],
         with_value_score=with_value,
         without_value_score=total - with_value,
         average_value_score=session.scalar(select(func.avg(Initiative.value_score))),
