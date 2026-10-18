@@ -77,7 +77,7 @@ class Initiative(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    stage = Column(String, nullable=False)  # source column "Status", normalized, see transforms.normalize.normalize_status
+    stage = Column(String, nullable=False)  # source column "Status", normalized, see transforms.normalize.normalize_stage
 
     # "Timing start"/"Timing delivery" in the source are quarter labels
     # ("Q1".."Q4"), almost never a real date, and once a bare year with no

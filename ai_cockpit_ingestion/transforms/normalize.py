@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 # it to that quarter's first day.
 _QUARTER_START_MONTH = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}
 
-# Canonical Status values, from the Variables sheet's "Status" column
+# Canonical Stage values, from the Variables sheet's "Status" column
 # (9 values — not just Idea/Exploration/PoC/Implementation).
-_STATUS_CANONICAL = {
+_STAGE_CANONICAL = {
     "idea": "Idea",
     "exploration": "Exploration",
     "poc": "PoC",
@@ -51,24 +51,24 @@ def _normalize_for_matching(text: str) -> str:
     return text.strip().casefold()
 
 
-def normalize_status(raw_status: str | None, *, initiative_name: str) -> str:
-    """Map a raw Status cell onto a canonical Variables-sheet value.
+def normalize_stage(raw_stage: str | None, *, initiative_name: str) -> str:
+    """Map a raw Stage cell (source column "Status") onto a canonical Variables-sheet value.
 
     Falls back to "Unknown" (itself a canonical value) for anything
     unrecognized — including free-text data-entry mistakes observed in the
-    source (e.g. a Status cell containing a note like "In development by
+    source (e.g. a Stage cell containing a note like "In development by
     Delaware. ETA 7.2026" instead of picking a dropdown value) — logging the
     original text so it can be fixed at the source rather than silently
     miscategorized.
     """
-    if not raw_status or not raw_status.strip():
+    if not raw_stage or not raw_stage.strip():
         return "Unknown"
-    key = raw_status.strip().lower()
-    mapped = _STATUS_CANONICAL.get(key)
+    key = raw_stage.strip().lower()
+    mapped = _STAGE_CANONICAL.get(key)
     if mapped is None:
         logger.warning(
-            "Unrecognized Status %r for initiative %r - mapped to 'Unknown'",
-            raw_status,
+            "Unrecognized Stage %r for initiative %r - mapped to 'Unknown'",
+            raw_stage,
             initiative_name,
         )
         return "Unknown"

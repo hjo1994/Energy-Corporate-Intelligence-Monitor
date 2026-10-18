@@ -31,7 +31,7 @@ from ai_cockpit_ingestion.transforms.normalize import (
     derive_timing_date,
     derive_value_score,
     match_catalog_name,
-    normalize_status,
+    normalize_stage,
 )
 
 DEFAULT_SHEET_NAME = "EliaGroup"
@@ -123,7 +123,7 @@ class RawToSilverOperator(BaseOperator):
         Base.metadata.create_all(engine)
 
         owner_cache: dict[tuple[str, str], Owner] = {}
-        unmapped_status_count = 0
+        unmapped_stage_count = 0
         unmapped_solution_type_count = 0
         unmapped_value_type_count = 0
 
@@ -184,9 +184,9 @@ class RawToSilverOperator(BaseOperator):
                     unmapped_value_type_count += 1
                 value_type = value_type_rows.get(value_type_name) if value_type_name else None
 
-                stage = normalize_status(row.get("Status"), initiative_name=name)
+                stage = normalize_stage(row.get("Status"), initiative_name=name)
                 if stage == "Unknown":
-                    unmapped_status_count += 1
+                    unmapped_stage_count += 1
 
                 initiative = Initiative(
                     name=name,
@@ -223,11 +223,11 @@ class RawToSilverOperator(BaseOperator):
         # rename instead of the whole import.
         os.replace(tmp_path, db_path)
         self.log.info("Replaced %s with newly imported data (%d initiatives)", db_path, df.height)
-        if unmapped_status_count:
+        if unmapped_stage_count:
             self.log.warning(
-                "%d of %d initiatives had an unrecognized Status value, mapped to 'Unknown' "
+                "%d of %d initiatives had an unrecognized Stage value, mapped to 'Unknown' "
                 "— see preceding warnings for details",
-                unmapped_status_count,
+                unmapped_stage_count,
                 df.height,
             )
         if unmapped_solution_type_count:

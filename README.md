@@ -36,7 +36,7 @@ input-orchestration/
     config.py                 # SOURCE_DIR, DB_PATH, PLANNING_YEAR etc. aus Env-Variablen
     models.py                 # SQLAlchemy-Modelle (Initiative, Owner, SolutionType, ValueType)
     transforms/
-      normalize.py            # Status-/Aufwand-/Mehrwert-/Timing-Normalisierung
+      normalize.py            # Stage-/Aufwand-/Mehrwert-/Timing-Normalisierung
     operators/
       source_file_sensor.py
       raw_to_silver.py
