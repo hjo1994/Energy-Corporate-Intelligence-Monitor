@@ -64,13 +64,13 @@ class RiskClassification(Base):
 
 class BusinessTransaction(Base):
     """Lineage written by the input orchestration: the bronze record
-    (BronceTableName + BronceID) an initiative was last built from."""
+    (BronzeTableName + BronzeID) an initiative was last built from."""
 
     __tablename__ = "BusinessTransaction"
 
     id = Column("ID", Integer, primary_key=True)
-    bronce_id = Column("BronceID", Integer, nullable=False)
-    bronce_table_name = Column("BronceTableName", String, nullable=False)
+    bronze_id = Column("BronzeID", Integer, nullable=False)
+    bronze_table_name = Column("BronzeTableName", String, nullable=False)
 
 
 class Initiative(Base):

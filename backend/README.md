@@ -46,7 +46,7 @@ nicht mehr im Quellblatt steht. Liste, Summary, `/api/business-units` und
 zeigt auch inaktive, `GET /api/initiatives/{id}` liefert jede. Jede
 Initiative trägt `is_active` und `business_transaction_id` (der Lauf, der sie
 zuletzt angelegt/geändert hat: Tabelle `BusinessTransaction` mit
-`BronceTableName` + `BronceID` = die Bronze-Zeile, aus der sie gebaut wurde;
+`BronzeTableName` + `BronzeID` = die Bronze-Zeile, aus der sie gebaut wurde;
 dort stehen `Timestamp` und `SourceFileID`). Tabellen- und Spaltennamen der
 DB entsprechen dem Datenmodell (PascalCase, z. B. `Initiative.DateStart`,
 `OwnerID`); die API-Felder bleiben snake_case (`date_start`, `owner`).

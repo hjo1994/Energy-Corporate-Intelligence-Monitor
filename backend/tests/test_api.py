@@ -173,7 +173,7 @@ def test_sees_file_replaced_by_rename(db_path, tmp_path):
     engine.dispose()
     conn = sqlite3.connect(new)
     conn.execute(
-        "INSERT INTO BusinessTransaction(ID, BronceID, BronceTableName) VALUES (1, 1, 'IT_Initiatives_Extract')"
+        "INSERT INTO BusinessTransaction(ID, BronzeID, BronzeTableName) VALUES (1, 1, 'IT_Initiatives_Extract')"
     )
     conn.execute(
         "INSERT INTO Initiative(ID, Name, Stage, RiskClassificationID, Timestamp, KeyHash, RowHash, IsActive,"
