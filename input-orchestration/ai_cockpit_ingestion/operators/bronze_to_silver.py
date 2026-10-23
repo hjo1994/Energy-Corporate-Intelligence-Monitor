@@ -161,14 +161,21 @@ class BronzeToSilverOperator(BaseOperator):
 
             names = [i.name for i in initiatives]
             unit_owner_ids = select(Owner.id).where(Owner.category == source.business_unit)
-            deleted = session.execute(
-                delete(Initiative).where(
-                    or_(
-                        Initiative.owner_id.in_(unit_owner_ids),
-                        Initiative.owner_id.is_(None) & Initiative.name.in_(names),
+            # SQLAlchemy 1.4 (Airflow 2.x) already put the new initiatives into the session
+            # through the owner backref; an autoflush here would insert them first and the
+            # DELETE would then remove them again. No old initiative is loaded in the session,
+            # so there is nothing to synchronize either (1.4 cannot evaluate the subquery).
+            with session.no_autoflush:
+                deleted = session.execute(
+                    delete(Initiative)
+                    .where(
+                        or_(
+                            Initiative.owner_id.in_(unit_owner_ids),
+                            Initiative.owner_id.is_(None) & Initiative.name.in_(names),
+                        )
                     )
-                )
-            ).rowcount
+                    .execution_options(synchronize_session=False)
+                ).rowcount
             session.add_all(initiatives)
 
         engine.dispose()
