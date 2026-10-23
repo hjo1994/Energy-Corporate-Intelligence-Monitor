@@ -8,24 +8,31 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import authorizer
 from app.db import get_session
-from app.models import Initiative, Owner
-from app.schemas import InitiativeOut, InitiativePage, StatusCount, Summary
+from app.derived import annual_cost_sql, hypothetical_value_sql, potential_value_sql
+from app.models import Initiative, Owner, RiskClassification
+from app.schemas import InitiativeOut, InitiativePage, RiskClassificationCount, StageCount, Summary
 
 router = APIRouter(prefix="/api/initiatives", tags=["initiatives"], dependencies=[authorizer()])
 
 SortField = Literal[
     "name",
-    "status",
-    "value_score",
+    "stage",
+    "potential_value_eur",
+    "hypothetical_value_eur",
+    "annual_cost_eur",
     "solution_complexity_score",
+    "risk_classification",
     "date_start",
     "date_delivery",
 ]
 _SORT_COLUMNS = {
     "name": Initiative.name,
-    "status": Initiative.status,
-    "value_score": Initiative.value_score,
+    "stage": Initiative.stage,
+    "potential_value_eur": potential_value_sql,
+    "hypothetical_value_eur": hypothetical_value_sql,
+    "annual_cost_eur": annual_cost_sql,
     "solution_complexity_score": Initiative.solution_complexity_score,
+    "risk_classification": Initiative.risk_classification_id,
     "date_start": Initiative.date_start,
     "date_delivery": Initiative.date_delivery,
 }
@@ -36,17 +43,18 @@ def _escape_like(term: str) -> str:
 
 
 def _conditions(
-    status: list[str] | None,
+    stage: list[str] | None,
     business_unit: list[str] | None,
     department: list[str] | None,
     owner_id: int | None,
     solution_type_id: int | None,
     value_type_id: int | None,
+    risk_classification_id: list[int] | None,
     search: str | None,
 ) -> list:
     conditions = []
-    if status:
-        conditions.append(Initiative.status.in_(status))
+    if stage:
+        conditions.append(Initiative.stage.in_(stage))
     if business_unit:
         conditions.append(Owner.category.in_(business_unit))
     if department:
@@ -57,6 +65,8 @@ def _conditions(
         conditions.append(Initiative.solution_type_id == solution_type_id)
     if value_type_id is not None:
         conditions.append(Initiative.value_type_id == value_type_id)
+    if risk_classification_id:
+        conditions.append(Initiative.risk_classification_id.in_(risk_classification_id))
     if search and search.strip():
         pattern = f"%{_escape_like(search.strip())}%"
         conditions.append(
@@ -71,12 +81,13 @@ def _conditions(
 @router.get("", response_model=InitiativePage)
 def list_initiatives(
     session: Annotated[Session, Depends(get_session)],
-    status: Annotated[list[str] | None, Query()] = None,
+    stage: Annotated[list[str] | None, Query()] = None,
     business_unit: Annotated[list[str] | None, Query(description="Owner.category")] = None,
     department: Annotated[list[str] | None, Query()] = None,
     owner_id: int | None = None,
     solution_type_id: int | None = None,
     value_type_id: int | None = None,
+    risk_classification_id: Annotated[list[int] | None, Query()] = None,
     search: Annotated[str | None, Query(description="Substring in name/description")] = None,
     sort: SortField = "name",
     order: Literal["asc", "desc"] = "asc",
@@ -84,7 +95,8 @@ def list_initiatives(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> InitiativePage:
     conditions = _conditions(
-        status, business_unit, department, owner_id, solution_type_id, value_type_id, search
+        stage, business_unit, department, owner_id, solution_type_id, value_type_id,
+        risk_classification_id, search,
     )
 
     total = session.scalar(
@@ -101,6 +113,7 @@ def list_initiatives(
             joinedload(Initiative.owner),
             joinedload(Initiative.solution_type),
             joinedload(Initiative.value_type),
+            joinedload(Initiative.risk_classification),
         )
         # `IS NULL` first = missing values last in either direction. Portable on purpose: the
         # cluster's SQLite 3.26 has no NULLS LAST (needs 3.30) and MySQL never had it.
@@ -115,20 +128,38 @@ def list_initiatives(
 @router.get("/summary", response_model=Summary)
 def summary(session: Annotated[Session, Depends(get_session)]) -> Summary:
     total = session.scalar(select(func.count(Initiative.id))) or 0
-    by_status = session.execute(
-        select(Initiative.status, func.count(Initiative.id))
-        .group_by(Initiative.status)
-        .order_by(func.count(Initiative.id).desc(), Initiative.status)
+    by_stage = session.execute(
+        select(Initiative.stage, func.count(Initiative.id))
+        .group_by(Initiative.stage)
+        .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()
-    with_value = session.scalar(
-        select(func.count(Initiative.id)).where(Initiative.value_score.is_not(None))
-    ) or 0
+    by_risk = session.execute(
+        select(RiskClassification.id, RiskClassification.name, func.count(Initiative.id))
+        .join(Initiative, Initiative.risk_classification_id == RiskClassification.id)
+        .group_by(RiskClassification.id, RiskClassification.name)
+        .order_by(RiskClassification.id)
+    ).all()
+    with_potential, total_potential, average_potential, total_hypothetical, total_cost = session.execute(
+        select(
+            func.count(potential_value_sql),
+            func.sum(potential_value_sql),
+            func.avg(potential_value_sql),
+            func.sum(hypothetical_value_sql),
+            func.sum(annual_cost_sql),
+        )
+    ).one()
     return Summary(
         total=total,
-        by_status=[StatusCount(status=s, count=c) for s, c in by_status],
-        with_value_score=with_value,
-        without_value_score=total - with_value,
-        average_value_score=session.scalar(select(func.avg(Initiative.value_score))),
+        by_stage=[StageCount(stage=s, count=c) for s, c in by_stage],
+        by_risk_classification=[
+            RiskClassificationCount(id=i, name=n, count=c) for i, n, c in by_risk
+        ],
+        with_potential_value=with_potential,
+        without_potential_value=total - with_potential,
+        total_potential_value_eur=total_potential,
+        average_potential_value_eur=average_potential,
+        total_hypothetical_value_eur=total_hypothetical,
+        total_annual_cost_eur=total_cost,
         average_solution_complexity_score=session.scalar(
             select(func.avg(Initiative.solution_complexity_score))
         ),
@@ -150,6 +181,7 @@ def get_initiative(
             joinedload(Initiative.owner),
             joinedload(Initiative.solution_type),
             joinedload(Initiative.value_type),
+            joinedload(Initiative.risk_classification),
         )
     ).first()
     if initiative is None:

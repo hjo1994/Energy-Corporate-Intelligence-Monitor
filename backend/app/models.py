@@ -45,24 +45,57 @@ class ValueType(Base):
     initiatives = relationship("Initiative", back_populates="value_type")
 
 
+class RiskClassification(Base):
+    """The five levels of the risk pyramid in the Rahmenbetriebsvereinbarung KI.
+    The primary key is the level itself (1-5).
+    """
+
+    __tablename__ = "risk_classification"
+
+    id = Column(Integer, primary_key=True, autoincrement=False)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    derived_action = Column(String, nullable=True)
+
+    initiatives = relationship("Initiative", back_populates="risk_classification")
+
+
 class Initiative(Base):
     __tablename__ = "initiative"
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    status = Column(String, nullable=False)
+    stage = Column(String, nullable=False)
 
     date_start = Column(DateTime, nullable=True)
     date_delivery = Column(DateTime, nullable=True)
 
-    value_score = Column(Float, nullable=True)
+    # Value buckets in EUR per year, estimated by the input-orchestration value
+    # heuristic; their sum is the hypothetical value.
+    efficiency_score_eur = Column(Float, nullable=True)
+    quality_score_eur = Column(Float, nullable=True)
+    risk_reduction_score_eur = Column(Float, nullable=True)
+    strategic_value_score_eur = Column(Float, nullable=True)
+
     solution_complexity_score = Column(Float, nullable=True)
+
+    # Discount factors: potential = sum(buckets) x confidence x delivery.
+    confidence_score = Column(Float, nullable=True)
+    delivery_score = Column(Float, nullable=True)
+
+    one_time_costs = Column(Float, nullable=True)
+    operating_costs = Column(Float, nullable=True)  # EUR per year
+    depreciation_years = Column(Integer, nullable=True)
 
     owner_id = Column(Integer, ForeignKey("owner.id"), nullable=True)
     value_type_id = Column(Integer, ForeignKey("value_type.id"), nullable=True)
     solution_type_id = Column(Integer, ForeignKey("solution_type.id"), nullable=True)
+    risk_classification_id = Column(Integer, ForeignKey("risk_classification.id"), nullable=False)
+
+    timestamp = Column(DateTime, nullable=False)
 
     owner = relationship("Owner", back_populates="initiatives")
     value_type = relationship("ValueType", back_populates="initiatives")
     solution_type = relationship("SolutionType", back_populates="initiatives")
+    risk_classification = relationship("RiskClassification", back_populates="initiatives")

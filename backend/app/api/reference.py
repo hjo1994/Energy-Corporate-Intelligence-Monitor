@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import authorizer
 from app.db import get_session
-from app.models import Initiative, Owner, SolutionType, ValueType
-from app.schemas import BusinessUnitCount, OwnerOut, StatusCount, TypeOut
+from app.models import Initiative, Owner, RiskClassification, SolutionType, ValueType
+from app.schemas import BusinessUnitCount, OwnerOut, RiskClassificationOut, StageCount, TypeOut
 
 router = APIRouter(prefix="/api", tags=["reference"], dependencies=[authorizer()])
 
@@ -52,11 +52,19 @@ def list_business_units(
     return [BusinessUnitCount(name=name, count=count) for name, count in rows]
 
 
-@router.get("/statuses", response_model=list[StatusCount])
-def list_statuses(session: Annotated[Session, Depends(get_session)]) -> list[StatusCount]:
+@router.get("/stages", response_model=list[StageCount])
+def list_stages(session: Annotated[Session, Depends(get_session)]) -> list[StageCount]:
     rows = session.execute(
-        select(Initiative.status, func.count(Initiative.id))
-        .group_by(Initiative.status)
-        .order_by(func.count(Initiative.id).desc(), Initiative.status)
+        select(Initiative.stage, func.count(Initiative.id))
+        .group_by(Initiative.stage)
+        .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()
-    return [StatusCount(status=s, count=c) for s, c in rows]
+    return [StageCount(stage=s, count=c) for s, c in rows]
+
+
+@router.get("/risk-classifications", response_model=list[RiskClassificationOut])
+def list_risk_classifications(
+    session: Annotated[Session, Depends(get_session)],
+) -> list[RiskClassification]:
+    """All five levels of the Rahmenbetriebsvereinbarung KI, including unused ones."""
+    return list(session.scalars(select(RiskClassification).order_by(RiskClassification.id)))
