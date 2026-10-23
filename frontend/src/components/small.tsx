@@ -1,15 +1,27 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Initiative } from "../api/types";
-import { formatScore, initials, scoreBars } from "../domain/format";
-import { statusColor } from "../domain/status";
+import { formatEur, formatScore, initials, scoreBars, valueFraction } from "../domain/format";
+import { stageColor } from "../domain/stage";
 
 type WithColor = CSSProperties & { "--c"?: string };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StageBadge({ stage }: { stage: string }) {
   return (
-    <span className="badge" style={{ "--c": statusColor(status) } as WithColor}>
+    <span className="badge" style={{ "--c": stageColor(stage) } as WithColor}>
       <span className="dot" />
-      {status}
+      {stage}
+    </span>
+  );
+}
+
+const RISK_COLOR = ["#2f6b3a", "#6b8f3a", "#b9792e", "#a8483e", "#6e1f1a"];
+
+/** Risk level 1-5 of the Rahmenbetriebsvereinbarung KI (an estimate, not a formal classification). */
+export function RiskBadge({ risk }: { risk: Initiative["risk_classification"] }) {
+  if (!risk) return <span className="missing">not classified</span>;
+  return (
+    <span className="badge" title={`${risk.name} (estimated)`} style={{ "--c": RISK_COLOR[risk.id - 1] ?? "#888" } as WithColor}>
+      {risk.id} · {risk.name}
     </span>
   );
 }
@@ -42,13 +54,14 @@ export function EffortMeter({ score }: { score: number | null }) {
   );
 }
 
-export function ValueMeter({ score }: { score: number | null }) {
-  if (score === null) return <span className="missing">not recorded</span>;
+/** Estimated potential in EUR per year; the bar uses a log scale (1k–1M €). */
+export function ValueMeter({ eur }: { eur: number | null }) {
+  if (eur === null) return <span className="missing">not estimated</span>;
   return (
-    <span className="value-meter" title={`Value ${formatScore(score)} of 10`}>
-      <span className="mono">{formatScore(score)}</span>
+    <span className="value-meter" title={`Potential ${formatEur(eur)} per year (estimate)`}>
+      <span className="mono">{formatEur(eur)}</span>
       <span className="track" aria-hidden="true">
-        <span style={{ width: `${Math.min(100, score * 10)}%` }} />
+        <span style={{ width: `${valueFraction(eur) * 100}%` }} />
       </span>
     </span>
   );

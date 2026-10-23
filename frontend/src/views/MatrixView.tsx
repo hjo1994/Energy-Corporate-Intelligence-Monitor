@@ -1,10 +1,10 @@
 import { useState, type CSSProperties } from "react";
-import { BusinessUnitChips, StatusChips } from "../components/FilterChips";
+import { BusinessUnitChips, StageChips } from "../components/FilterChips";
 import { DetailBody } from "../components/DetailBody";
 import { FlagshipWidget } from "../components/FlagshipWidget";
 import { Kpis } from "../components/Kpis";
 import { layoutDots } from "../domain/matrix";
-import { STATUS_ORDER, statusColor } from "../domain/status";
+import { STAGE_ORDER, stageColor } from "../domain/stage";
 import { useApp } from "../store";
 
 const QUADRANTS: [string, string][] = [
@@ -27,23 +27,24 @@ export function MatrixView() {
     <>
       <div className="filter-row">
         <BusinessUnitChips all={all} />
-        <StatusChips all={all} />
+        <StageChips all={all} />
       </div>
       <Kpis items={visible} />
 
       <div className="split">
-        <section className="card matrix-card" aria-label="Effort versus value">
+        <section className="card matrix-card" aria-label="Effort versus potential">
           <div className="matrix-head">
             <div>
-              <h2>Effort vs. value</h2>
+              <h2>Effort vs. potential</h2>
               <p className="muted">
-                Each dot is one initiative; only initiatives with recorded effort and value are plotted.
+                Each dot is one initiative; only initiatives with recorded effort are plotted. Potential is
+                the estimated value in € per year (log scale, 1k € to 1 M €).
               </p>
             </div>
             <ul className="legend">
-              {STATUS_ORDER.filter((s) => dots.some((d) => d.initiative.status === s)).map((s) => (
+              {STAGE_ORDER.filter((s) => dots.some((d) => d.initiative.stage === s)).map((s) => (
                 <li key={s}>
-                  <span className="dot" style={{ background: statusColor(s) }} />
+                  <span className="dot" style={{ background: stageColor(s) }} />
                   {s}
                 </li>
               ))}
@@ -51,7 +52,7 @@ export function MatrixView() {
           </div>
 
           <div className="plot-wrap">
-            <span className="axis-y">Value</span>
+            <span className="axis-y">Potential ≈ €/yr</span>
             <div className="plot-col">
               <div className="plot" data-testid="plot">
                 <span className="mid-v" />
@@ -66,7 +67,7 @@ export function MatrixView() {
                     key={i.id}
                     type="button"
                     className={`pt${i.id === selectedId ? " sel" : ""}`}
-                    aria-label={`${i.name}, ${i.status}`}
+                    aria-label={`${i.name}, ${i.stage}`}
                     aria-pressed={i.id === selectedId}
                     title={i.name}
                     onClick={() => setSelectedId(i.id === selectedId ? null : i.id)}
@@ -74,7 +75,7 @@ export function MatrixView() {
                       {
                         left: `calc(${x}% + ${dx}px)`,
                         top: `calc(${y}% + ${dy}px)`,
-                        background: statusColor(i.status),
+                        background: stageColor(i.stage),
                       } as CSSProperties
                     }
                   />
@@ -100,7 +101,7 @@ export function MatrixView() {
           </div>
           {notPlotted > 0 && (
             <p className="note" role="status">
-              {notPlotted} of {visible.length} initiatives are not plotted because effort or value is
+              {notPlotted} of {visible.length} initiatives are not plotted because their effort is
               missing in the source. They are visible in the list and board.
             </p>
           )}

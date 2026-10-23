@@ -3,7 +3,7 @@ import type { Initiative } from "../api/types";
 import { BusinessUnitChips } from "../components/FilterChips";
 import { DetailDialog } from "../components/DetailDialog";
 import { Avatar, EffortMeter, ValueMeter } from "../components/small";
-import { STATUS_ORDER, statusColor } from "../domain/status";
+import { STAGE_ORDER, stageColor } from "../domain/stage";
 import { sortInitiatives } from "../domain/filters";
 import { useApp } from "../store";
 
@@ -13,14 +13,14 @@ export function BoardView() {
   const { all, visible } = useApp();
   const [open, setOpen] = useState<Initiative | null>(null);
 
-  const columns = STATUS_ORDER.map((status) => ({
-    status,
+  const columns = STAGE_ORDER.map((stage) => ({
+    stage,
     items: sortInitiatives(
-      visible.filter((i) => i.status === status),
-      "value",
+      visible.filter((i) => i.stage === stage),
+      "potential",
       "desc",
     ),
-  })).filter((c) => ALWAYS_SHOWN.includes(c.status) || c.items.length > 0);
+  })).filter((c) => ALWAYS_SHOWN.includes(c.stage) || c.items.length > 0);
 
   return (
     <>
@@ -28,12 +28,12 @@ export function BoardView() {
         <BusinessUnitChips all={all} />
       </div>
       <div className="board">
-        {columns.map(({ status, items }) => (
-          <section key={status} className="col" style={{ "--c": statusColor(status) } as React.CSSProperties} aria-label={status}>
+        {columns.map(({ stage, items }) => (
+          <section key={stage} className="col" style={{ "--c": stageColor(stage) } as React.CSSProperties} aria-label={stage}>
             <header className="col-head">
               <span className="col-title">
                 <span className="dot" />
-                {status}
+                {stage}
               </span>
               <span className="mono muted">{items.length}</span>
             </header>
@@ -58,7 +58,7 @@ export function BoardView() {
                   </span>
                   <span className="kcard-scores">
                     <EffortMeter score={i.solution_complexity_score} />
-                    <ValueMeter score={i.value_score} />
+                    <ValueMeter eur={i.potential_value_eur} />
                   </span>
                 </span>
               </button>

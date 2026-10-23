@@ -103,6 +103,8 @@ main { display: flex; flex-direction: column; gap: 22px; }
 /* ---------- detail ---------- */
 .detail { display: flex; flex-direction: column; gap: 16px; }
 .detail h3 { font-size: 16px; font-weight: 700; }
+.detail-head { display: flex; gap: 8px; flex-wrap: wrap; }
+.facts-title { margin: 0 0 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
 .detail p { font-size: 13px; line-height: 1.5; }
 .detail-scores { display: flex; gap: 28px; flex-wrap: wrap; }
 .detail-scores > div { display: flex; flex-direction: column; gap: 6px; }

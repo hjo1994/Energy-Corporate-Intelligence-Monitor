@@ -8,9 +8,10 @@ export interface FlagshipStat {
   key: string;
   label: string;
   count: number;
-  /** initiatives of this flagship that have a value score */
-  rated: number;
-  averageValue: number | null;
+  /** initiatives of this flagship that have an estimated potential */
+  estimated: number;
+  /** sum of the estimated potential (EUR per year) */
+  totalPotential: number | null;
 }
 
 // One row per strategic pillar, biggest first; initiatives without a flagship come last so
@@ -25,13 +26,13 @@ export function flagshipStats(items: Initiative[]): FlagshipStat[] {
   }
 
   const stats = [...groups].map(([key, group]) => {
-    const scores = group.map((i) => i.value_score).filter((s): s is number => s !== null);
+    const values = group.map((i) => i.potential_value_eur).filter((v): v is number => v !== null);
     return {
       key,
       label: key === "" ? NOT_ASSIGNED_LABEL : flagshipLabel(key),
       count: group.length,
-      rated: scores.length,
-      averageValue: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
+      estimated: values.length,
+      totalPotential: values.length ? values.reduce((a, b) => a + b, 0) : null,
     };
   });
 

@@ -1,5 +1,6 @@
 import type { Initiative } from "../api/types";
-import { summarize } from "../domain/filters";
+import { ELEVATED_RISK_FROM, summarize } from "../domain/filters";
+import { formatEur } from "../domain/format";
 
 function Tile({ label, value, note, accent }: { label: string; value: string; note: string; accent?: boolean }) {
   return (
@@ -20,11 +21,15 @@ export function Kpis({ items }: { items: Initiative[] }) {
       <Tile label="Initiatives" value={String(s.total)} note="matching the filters" />
       <Tile label="In progress" value={String(s.inProgress)} note="PoC, MVP, Implementation" accent />
       <Tile
-        label="Avg. value"
-        value={s.averageValue === null ? "–" : s.averageValue.toFixed(1)}
-        note={`out of 10, ${s.withValue} of ${s.total} rated`}
+        label="Potential per year"
+        value={formatEur(s.totalPotential)}
+        note={`estimate, ${s.withPotential} of ${s.total} estimated · cost ${formatEur(s.totalAnnualCost)}/yr`}
       />
-      <Tile label="Without value" value={String(s.withoutValue)} note="no score in the source" />
+      <Tile
+        label={`Risk level ${ELEVATED_RISK_FROM}+`}
+        value={String(s.elevatedRisk)}
+        note="estimated; works council involvement"
+      />
     </section>
   );
 }

@@ -1,9 +1,9 @@
 import { applyFilters, toggle } from "../domain/filters";
 import { flagshipStats } from "../domain/flagship";
-import { formatScore } from "../domain/format";
+import { formatEur } from "../domain/format";
 import { useApp } from "../store";
 
-/** Initiatives and average value per strategic pillar; a click filters by that flagship. */
+/** Initiatives and estimated potential per strategic pillar; a click filters by that flagship. */
 export function FlagshipWidget() {
   const { all, filters, setFilters } = useApp();
 
@@ -15,8 +15,8 @@ export function FlagshipWidget() {
     <section className="card flagships" aria-label="Flagships">
       <h2>Flagships</h2>
       <p className="muted">
-        Initiatives and average value per strategic pillar. Click a row to filter by it; the average
-        is only as reliable as the number of ratings behind it.
+        Initiatives and estimated potential (€ per year) per strategic pillar. Click a row to filter
+        by it. The potential is a heuristic estimate, not a business case.
       </p>
       {stats.length === 0 && <p className="empty small">No initiatives match the filters.</p>}
       <div className="flag-list">
@@ -31,8 +31,8 @@ export function FlagshipWidget() {
             <span className="flag-line">
               <span>{s.label}</span>
               <span className="muted">
-                {s.count} · {s.averageValue === null ? "no value rated" : `avg. ${formatScore(s.averageValue)}`}
-                {s.averageValue !== null && ` (${s.rated} of ${s.count} rated)`}
+                {s.count} · {s.totalPotential === null ? "no potential estimated" : `${formatEur(s.totalPotential)}/yr`}
+                {s.totalPotential !== null && s.estimated < s.count && ` (${s.estimated} of ${s.count} estimated)`}
               </span>
             </span>
             <span className="flag-bar" style={{ width: `${(s.count / largest) * 100}%` }} />

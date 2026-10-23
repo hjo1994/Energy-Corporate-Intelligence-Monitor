@@ -32,7 +32,7 @@ describe("app", () => {
   it("shows KPIs and flags initiatives that cannot be plotted", async () => {
     mockApi(ok);
     renderAt("/");
-    expect(await screen.findByText("Effort vs. value")).toBeInTheDocument();
+    expect(await screen.findByText("Effort vs. potential")).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent("2 of 4 initiatives are not plotted");
     expect(screen.getAllByRole("button", { name: /, (Idea|PoC)$/ })).toHaveLength(2);
   });
@@ -45,6 +45,8 @@ describe("app", () => {
     expect(within(panel).getByText("Alpha")).toBeInTheDocument();
     expect(within(panel).getByText("CAPEX delivery")).toBeInTheDocument();
     expect(within(panel).getByText("Q3 2026")).toBeInTheDocument();
+    expect(within(panel).getByRole("region", { name: "Value estimate" })).toHaveTextContent("Potential≈ 54k €");
+    expect(within(panel).getByText("3 – Mittleres Risiko (estimated)")).toBeInTheDocument();
   });
 
   it("filters by business unit across views and keeps them in sync", async () => {
@@ -71,7 +73,7 @@ describe("app", () => {
     renderAt("/");
     expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("Effort vs. value")).toBeInTheDocument();
+    expect(await screen.findByText("Effort vs. potential")).toBeInTheDocument();
   });
 });
 
@@ -90,18 +92,18 @@ describe("api errors", () => {
   it("asks the backend for the whole data set page by page", async () => {
     mockApi(ok);
     renderAt("/");
-    await screen.findByText("Effort vs. value");
+    await screen.findByText("Effort vs. potential");
     expect(get).toHaveBeenCalledWith("/initiatives", { limit: 500, offset: 0, sort: "name" });
   });
 });
 
 describe("flagship widget", () => {
-  it("shows counts and average value per flagship, including the unassigned group", async () => {
+  it("shows counts and estimated potential per flagship, including the unassigned group", async () => {
     mockApi(ok);
     renderAt("/");
     const widget = await screen.findByRole("region", { name: "Flagships" });
-    expect(within(widget).getByRole("button", { name: /CAPEX delivery/ })).toHaveTextContent("1 · avg. 8.0 (1 of 1 rated)");
-    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("3 · avg. 5.0 (1 of 3 rated)");
+    expect(within(widget).getByRole("button", { name: /CAPEX delivery/ })).toHaveTextContent("1 · ≈ 54k €/yr");
+    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("3 · ≈ 25k €/yr (2 of 3 estimated)");
   });
 
   it("filters by the clicked flagship while keeping the other rows visible to switch back", async () => {
@@ -124,6 +126,6 @@ describe("flagship widget", () => {
     await userEvent.click(await screen.findByRole("button", { name: "IT" }));
     const widget = screen.getByRole("region", { name: "Flagships" });
     expect(within(widget).queryByRole("button", { name: /CAPEX delivery/ })).not.toBeInTheDocument();
-    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("1 · no value rated");
+    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("1 · ≈ 20k €/yr");
   });
 });

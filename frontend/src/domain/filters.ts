@@ -1,5 +1,5 @@
 import type { Initiative } from "../api/types";
-import { IN_PROGRESS_STATUSES, statusRank } from "./status";
+import { IN_PROGRESS_STAGES, stageRank } from "./stage";
 
 // Initiatives without an owner belong to no business unit.
 export const NO_BUSINESS_UNIT = "__none__";
@@ -8,11 +8,11 @@ export const NO_BUSINESS_UNIT_LABEL = "No business unit";
 export interface Filters {
   search: string;
   businessUnits: string[];
-  statuses: string[];
+  stages: string[];
   flagships: string[];
 }
 
-export const EMPTY_FILTERS: Filters = { search: "", businessUnits: [], statuses: [], flagships: [] };
+export const EMPTY_FILTERS: Filters = { search: "", businessUnits: [], stages: [], flagships: [] };
 
 export const businessUnitOf = (i: Initiative): string => i.owner?.category ?? NO_BUSINESS_UNIT;
 export const flagshipOf = (i: Initiative): string | null => i.value_type?.name ?? null;
@@ -22,7 +22,7 @@ export function applyFilters(items: Initiative[], f: Filters): Initiative[] {
   return items.filter(
     (i) =>
       (f.businessUnits.length === 0 || f.businessUnits.includes(businessUnitOf(i))) &&
-      (f.statuses.length === 0 || f.statuses.includes(i.status)) &&
+      (f.stages.length === 0 || f.stages.includes(i.stage)) &&
       (f.flagships.length === 0 || f.flagships.includes(flagshipOf(i) ?? "")) &&
       (q === "" ||
         i.name.toLowerCase().includes(q) ||
@@ -50,20 +50,21 @@ export function businessUnitsIn(items: Initiative[]): string[] {
   );
 }
 
-export const statusesIn = (items: Initiative[]): string[] =>
-  [...countBy(items, (i) => i.status).keys()].sort((a, b) => statusRank(a) - statusRank(b));
+export const stagesIn = (items: Initiative[]): string[] =>
+  [...countBy(items, (i) => i.stage).keys()].sort((a, b) => stageRank(a) - stageRank(b));
 
 export const flagshipsIn = (items: Initiative[]): string[] =>
   [...countBy(items, flagshipOf).keys()].sort((a, b) => a.localeCompare(b));
 
-export type SortKey = "name" | "owner" | "status" | "effort" | "value" | "delivery";
+export type SortKey = "name" | "owner" | "stage" | "effort" | "potential" | "risk" | "delivery";
 
 const sortValue: Record<SortKey, (i: Initiative) => string | number | null> = {
   name: (i) => i.name.toLowerCase(),
   owner: (i) => i.owner?.name.toLowerCase() ?? null,
-  status: (i) => statusRank(i.status),
+  stage: (i) => stageRank(i.stage),
   effort: (i) => i.solution_complexity_score,
-  value: (i) => i.value_score,
+  potential: (i) => i.potential_value_eur,
+  risk: (i) => i.risk_classification?.id ?? null,
   delivery: (i) => i.date_delivery,
 };
 
@@ -83,15 +84,22 @@ export function sortInitiatives(items: Initiative[], key: SortKey, dir: "asc" | 
   });
 }
 
+// Risk levels from which the Rahmenbetriebsvereinbarung KI requires the works council's involvement.
+export const ELEVATED_RISK_FROM = 3;
+
 export function summarize(items: Initiative[]) {
-  const scored = items.filter((i) => i.value_score !== null);
+  const estimated = items.filter((i) => i.potential_value_eur !== null);
+  const costed = items.filter((i) => i.annual_cost_eur !== null);
   return {
     total: items.length,
-    inProgress: items.filter((i) => IN_PROGRESS_STATUSES.includes(i.status)).length,
-    withValue: scored.length,
-    withoutValue: items.length - scored.length,
-    averageValue: scored.length
-      ? scored.reduce((sum, i) => sum + (i.value_score as number), 0) / scored.length
+    inProgress: items.filter((i) => IN_PROGRESS_STAGES.includes(i.stage)).length,
+    withPotential: estimated.length,
+    totalPotential: estimated.length
+      ? estimated.reduce((sum, i) => sum + (i.potential_value_eur as number), 0)
       : null,
+    totalAnnualCost: costed.length
+      ? costed.reduce((sum, i) => sum + (i.annual_cost_eur as number), 0)
+      : null,
+    elevatedRisk: items.filter((i) => (i.risk_classification?.id ?? 0) >= ELEVATED_RISK_FROM).length,
   };
 }

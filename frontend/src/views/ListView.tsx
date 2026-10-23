@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Initiative } from "../api/types";
 import { DetailDialog } from "../components/DetailDialog";
-import { EffortMeter, OwnerCell, StatusBadge, ValueMeter } from "../components/small";
+import { EffortMeter, OwnerCell, RiskBadge, StageBadge, ValueMeter } from "../components/small";
 import { Chip } from "../components/small";
 import { flagshipLabel, formatQuarter } from "../domain/format";
 import {
@@ -13,19 +13,20 @@ import {
   NO_BUSINESS_UNIT,
   NO_BUSINESS_UNIT_LABEL,
   sortInitiatives,
-  statusesIn,
+  stagesIn,
   toggle,
   type SortKey,
 } from "../domain/filters";
-import { statusColor } from "../domain/status";
+import { stageColor } from "../domain/stage";
 import { useApp } from "../store";
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "name", label: "Initiative" },
   { key: "owner", label: "Owner" },
-  { key: "status", label: "Status" },
+  { key: "stage", label: "Stage" },
   { key: "effort", label: "Effort" },
-  { key: "value", label: "Value" },
+  { key: "potential", label: "Potential ≈ €/yr" },
+  { key: "risk", label: "Risk" },
   { key: "delivery", label: "Delivery" },
 ];
 
@@ -61,7 +62,7 @@ function FilterGroup({
 
 export function ListView() {
   const { all, visible, filters, setFilters } = useApp();
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "value", dir: "desc" });
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "potential", dir: "desc" });
   const [open, setOpen] = useState<Initiative | null>(null);
 
   const rows = sortInitiatives(visible, sort.key, sort.dir);
@@ -70,12 +71,12 @@ export function ListView() {
     <div className="split">
       <aside className="card filter-side" aria-label="Filter">
         <FilterGroup
-          title="Status"
-          options={statusesIn(all).map((s) => ({ value: s, label: s }))}
-          selected={filters.statuses}
-          counts={countBy(all, (i) => i.status)}
-          onToggle={(v) => setFilters((f) => ({ ...f, statuses: toggle(f.statuses, v) }))}
-          dot={statusColor}
+          title="Stage"
+          options={stagesIn(all).map((s) => ({ value: s, label: s }))}
+          selected={filters.stages}
+          counts={countBy(all, (i) => i.stage)}
+          onToggle={(v) => setFilters((f) => ({ ...f, stages: toggle(f.stages, v) }))}
+          dot={stageColor}
         />
         <FilterGroup
           title="Business Unit"
@@ -148,13 +149,16 @@ export function ListView() {
                     <OwnerCell initiative={i} />
                   </td>
                   <td>
-                    <StatusBadge status={i.status} />
+                    <StageBadge stage={i.stage} />
                   </td>
                   <td>
                     <EffortMeter score={i.solution_complexity_score} />
                   </td>
                   <td>
-                    <ValueMeter score={i.value_score} />
+                    <ValueMeter eur={i.potential_value_eur} />
+                  </td>
+                  <td>
+                    <RiskBadge risk={i.risk_classification} />
                   </td>
                   <td className="muted">{formatQuarter(i.date_delivery)}</td>
                 </tr>
