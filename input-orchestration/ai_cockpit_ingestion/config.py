@@ -1,17 +1,18 @@
-"""Environment-based configuration for the Input Orchestration DAG."""
+"""Environment-based configuration for the Input Orchestration DAGs."""
 import os
 from pathlib import Path
 
 SOURCE_DIR = Path(os.environ.get("SOURCE_DIR", "/opt/airflow/data/source"))
-SOURCE_FILENAME_GLOB = os.environ.get("SOURCE_FILENAME_GLOB", "*.xlsx")
+# Narrow on purpose: the source folder also holds other workbooks (e.g. the
+# "Value sizing" sheet), and the sensor picks the newest match.
+SOURCE_FILENAME_GLOB = os.environ.get("SOURCE_FILENAME_GLOB", "2026 AI Initiatives*.xlsx")
 
 # The source workbook has one raw sheet per business unit (IT, 50Hertz,
-# Corporate & OneSAP+, ETB) with inconsistent columns, plus one already
-# consolidated "EliaGroup" sheet (verified: same ~160 rows as the sum of the
-# four raw sheets, each tagged with its originating BU in the "Source"
-# column). We read that single consolidated sheet rather than reconciling
-# four different raw schemas ourselves.
-SOURCE_SHEET = os.environ.get("SOURCE_SHEET", "EliaGroup")
+# Corporate & OneSAP+, ETB) — see sources.SOURCES. RawToBronze loads each
+# into its own extract table. The workbook's consolidated "EliaGroup" sheet
+# is no longer read: it lags behind the raw sheets (160 vs. 165 initiatives
+# at the time of writing).
+VARIABLES_SHEET = os.environ.get("VARIABLES_SHEET", "Variables")
 
 DB_PATH = Path(os.environ.get("AI_COCKPIT_DB_PATH", "/opt/airflow/data/db/ai_cockpit.db"))
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Local dev runner for the Input Orchestration DAG — no Kubernetes, no
+# Local dev runner for the Input Orchestration DAGs — no Kubernetes, no
 # Docker, just this folder's venv. Sets up an isolated AIRFLOW_HOME under
 # this folder and execs whatever `airflow` subcommand is passed through,
 # e.g.:
 #   ./scripts/run_local.sh standalone
-#   ./scripts/run_local.sh dags trigger ai_initiatives_import
+#   ./scripts/run_local.sh dags trigger raw_to_bronze
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

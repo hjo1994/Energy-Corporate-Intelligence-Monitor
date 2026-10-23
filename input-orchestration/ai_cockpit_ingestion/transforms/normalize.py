@@ -1,8 +1,8 @@
-"""Pure normalization helpers for the raw-to-silver transform.
+"""Pure normalization helpers for the bronze-to-silver transform.
 
 The source workbook mixes several encodings for the same concept across its
-four business-unit sheets (consolidated into the "EliaGroup" sheet that the
-raw-to-silver operator reads). These helpers make that explicit instead of
+four business-unit sheets (loaded 1:1 into the extract tables and read
+from there by the bronze-to-silver operator). These helpers make that explicit instead of
 silently guessing — kept dependency-free and unit-testable on their own.
 """
 from __future__ import annotations
@@ -43,6 +43,16 @@ _TSHIRT_SCORE = {"XS": 1.0, "S": 3.0, "M": 5.0, "L": 7.0, "XL": 9.0}
 # Variables sheet itself (e.g. "Connection lif﻿ecycle"), stripped only
 # for catalog *matching* — never written into stored names/descriptions.
 _INVISIBLE_CHARS = ("﻿", "​", "‌", "‍")
+
+
+def clean_text(value) -> str | None:
+    """Trim a raw cell and collapse inner whitespace (incl. the non-breaking
+    spaces some names carry from copy-paste); empty -> None.
+    """
+    if value is None:
+        return None
+    text = " ".join(str(value).replace("\xa0", " ").split())
+    return text or None
 
 
 def _normalize_for_matching(text: str) -> str:
@@ -93,32 +103,6 @@ def derive_solution_complexity_score(solution_feasibility, complexity) -> float 
         return score
     if complexity is not None:
         return float(complexity)
-    return None
-
-
-def derive_value_score(raw_value) -> float | None:
-    """Initiative.value_score: 50Hertz encodes it as a T-shirt size, ETB as
-    a direct 1-10 number, IT and Corporate & OneSAP+ do not track it at all
-    in the source (stays None — never fabricated as a placeholder).
-
-    The source column mixes both encodings, so a dataframe reader that
-    infers a single dtype for the whole column (e.g. Polars, when some
-    rows are "M" and others "9") hands the ETB numbers to us as numeric
-    strings rather than ints/floats — handled explicitly below rather than
-    silently losing them to the T-shirt lookup.
-    """
-    if raw_value is None:
-        return None
-    if isinstance(raw_value, bool):
-        return None
-    if isinstance(raw_value, (int, float)):
-        return float(raw_value)
-    if isinstance(raw_value, str):
-        text = raw_value.strip()
-        try:
-            return float(text)
-        except ValueError:
-            return tshirt_to_score(text)
     return None
 
 

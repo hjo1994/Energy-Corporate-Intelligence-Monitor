@@ -1,111 +1,129 @@
-# Input Orchestration — Airflow DAG
+# Input Orchestration — Airflow DAGs (Bronze → Silber)
 
-Eigenes Kubernetes-Deployment. Ein DAG (`dags/ai_initiatives_import_dag.py`)
-mit zwei Operatoren:
+Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
+`solution documentation/Architecture.drawio` und `Logical Data Model.drawio`:
 
-1. **`SourceFileSensor`** (`ai_cockpit_ingestion/operators/source_file_sensor.py`)
-   — wartet im Quellordner auf eine `.xlsx`-Datei, prüft dass sie fertig
-   geschrieben ist (Größe stabil über ein kurzes Intervall) und dass sie sich
-   seit dem letzten erfolgreichen Import geändert hat (Marker-Datei
-   `.ai_cockpit_import.last_processed` im Quellordner).
-2. **`RawToSilverOperator`** (`ai_cockpit_ingestion/operators/raw_to_silver.py`)
-   — liest das Sheet `EliaGroup` (Initiativen) und `Variables` (Typ-Kataloge)
-   mit Polars, normalisiert die Felder (`ai_cockpit_ingestion/transforms/normalize.py`)
-   und schreibt sie über SQLAlchemy in eine neue SQLite-Datei, die dann per
-   atomarem `rename()` die aktive Datei ersetzt (siehe Interim-Entscheidung
-   im Root-README).
+| DAG | Datei | Auslöser | Schreibt |
+| --- | --- | --- | --- |
+| `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
+| `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
+| `bronze_to_silver_<quelle>` (4×) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Asset der jeweiligen Extract-Tabelle | Initiative (Silber) |
 
-Die Quell-Excel hat vier Rohdaten-Sheets (IT, 50Hertz, Corporate & OneSAP+,
-ETB) mit uneinheitlichen Spalten, plus ein bereits konsolidiertes Sheet
-`EliaGroup`, das denselben Datenbestand mit einheitlichem Spaltenschema und
-einer `Source`-Spalte pro Zeile enthält (geprüft: Zeilenzahl ≈ Summe der vier
-Rohblätter). Raw-to-Silver liest nur dieses eine Sheet, statt vier
-unterschiedliche Rohschemata selbst zusammenzuführen.
+1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
+   `2026 AI Initiatives*.xlsx` (Größe stabil, mtime neuer als die Marker-Datei
+   `.ai_cockpit_import.last_processed`). Danach lädt je Quellblatt ein
+   `RawToBronzeOperator` die Zeilen 1:1 als Text in seine Extract-Tabelle
+   (`IT_Initiatives_Extract`, `50Hertz_Initiatives_Extract`,
+   `CorporateOneSAP_Initiatives_Extract`, `ETB_Initiatives_Extract`) plus
+   `_LoadTimestamp`, `_SourceFile`, `_SourceRow`. Leere Zeilen (ohne Name)
+   werden übersprungen; fehlt eine Spalte des Datenmodells im Blatt, bricht
+   der Task ab. Jeder Load-Task emittiert das Asset seiner Tabelle.
+2. **SeedConfig** — Config-Tabellen sind einmalig zu befüllende
+   Konfiguration. Der DAG legt nur fehlende Einträge an (nie Update/Delete):
+   SolutionType/ValueType aus dem Blatt `Variables`, RiskClassification mit
+   den 5 Stufen der Rahmenbetriebsvereinbarung KI, Owner aus den
+   Owner/Department-Paaren der Extract-Tabellen (Category = Business Unit).
+   Einmal nach dem ersten `raw_to_bronze`-Lauf starten.
+3. **BronzeToSilver (Meta-DAG)** — `build_bronze_to_silver_dag()` erzeugt aus
+   einem Template je Eintrag in `ai_cockpit_ingestion/sources.py` einen DAG
+   `bronze_to_silver_<key>`, der auf das Asset seiner Extract-Tabelle
+   scheduled ist. Der `BronzeToSilverOperator` normalisiert Status → Stage
+   und Timing, verknüpft **nur bestehende** Config-Einträge (Unbekanntes
+   bleibt NULL und wird geloggt), schätzt die Value-Attribute
+   (`transforms/value_heuristic.py`) und die Risikostufe
+   (`transforms/risk_heuristic.py`) und ersetzt in einer Transaktion die
+   Initiativen seiner Business Unit. Eine neue Quelle braucht nur einen
+   neuen `SourceConfig`-Eintrag.
+
+Die Marker-Datei wird erst gesetzt, wenn alle vier Extrakte geladen sind.
+
+## Heuristiken (Schätzungen, keine Messwerte)
+
+- **Value** (`value_heuristic.py`, „Heuristik v2: Buckets einzeln“ aus dem
+  Thread *Nutzen-Quantifizierung*, 1:1 portiert aus `data/value_heuristic.py`):
+  Jeder der vier Buckets wird mit seiner eigenen Value-Sizing-Formel
+  gerechnet. Treiber: Value-Score → Reichweite, SolutionType-Familie →
+  Wirkung je Fall, Flagship → Kosten je Fehler/Ereignis/Verzug. Hypothetischer
+  Nutzen = Summe der Buckets; Potenzial = Summe × ConfidenceScore ×
+  DeliveryScore. Gegen `data/value_estimates_heuristic.csv` geprüft:
+  identisch für alle 160 Initiativen des alten EliaGroup-Blatts.
+- **Risiko** (`risk_heuristic.py`): Regelkette aus Name/Beschreibung/
+  Expected Outcome/Added Value und SolutionType. Automatisierte
+  Entscheidungen/Profilbildung über Beschäftigte → 4; Beschäftigtendaten,
+  Leistungs-/Verhaltensauswertung → 3; Assistenten/Ticket-Routing → 2;
+  technische Modelle ohne Personenbezug → 1; sonst 2. Stufe 5 wird nie
+  geschätzt. Übereinstimmung mit `risiko/risk_classification_estimates.csv`:
+  147 von 160 (alle Stufe-4-Fälle, 13 von 14 Stufe-3-Fällen).
+
+## Datenbank
+
+Interim weiter eine SQLite-Datei (`AI_COCKPIT_DB_PATH`). Weil jetzt mehrere
+DAGs in dieselbe Datei schreiben, entfällt der frühere atomare
+Datei-Tausch: Jeder Task schreibt in genau einer kurzen Transaktion
+(Backend sieht bis zum Commit den alten Stand), parallele Schreiber warten
+über das SQLite-Busy-Timeout (120 s). Tabellen legt `db.get_engine()`
+idempotent an.
 
 ## Struktur
 
 ```
 input-orchestration/
-  pyproject.toml              # macht ai_cockpit_ingestion im Airflow-Image importierbar
-  requirements.txt            # apache-airflow>=3.0
-  scripts/
-    run_local.sh              # lokaler Airflow-Lauf ohne Docker/K8s, siehe unten
   dags/
-    ai_initiatives_import_dag.py
+    raw_to_bronze_dag.py
+    seed_config_dag.py
+    bronze_to_silver_dag.py      # Meta-DAG: ein DAG je Extract-Tabelle
   ai_cockpit_ingestion/
-    config.py                 # SOURCE_DIR, DB_PATH, PLANNING_YEAR etc. aus Env-Variablen
-    models.py                 # SQLAlchemy-Modelle (Initiative, Owner, SolutionType, ValueType)
-    transforms/
-      normalize.py            # Status-/Aufwand-/Mehrwert-/Timing-Normalisierung
+    config.py                    # SOURCE_DIR, SOURCE_FILENAME_GLOB, DB_PATH, PLANNING_YEAR
+    sources.py                   # die 4 Quellblätter: Tabelle, Business Unit, Spalten
+    models.py                    # Bronze-, Config- und Silber-Tabellen (SQLAlchemy)
+    db.py
     operators/
       source_file_sensor.py
-      raw_to_silver.py
+      raw_to_bronze.py
+      seed_config.py
+      bronze_to_silver.py
+    transforms/
+      normalize.py               # Status-/Timing-/Komplexitäts-Normalisierung, Katalog-Matching
+      value_heuristic.py
+      risk_heuristic.py
+  tests/test_transforms.py
 ```
 
 ## Lokal ausführen
 
 ```bash
-./scripts/run_local.sh standalone          # einmalig: legt .venv + .airflow_home an, startet Airflow
-./scripts/run_local.sh dags unpause ai_initiatives_import
-./scripts/run_local.sh dags trigger ai_initiatives_import
+./scripts/run_local.sh standalone              # einmalig: .venv + .airflow_home, startet Airflow
+./scripts/run_local.sh dags unpause raw_to_bronze
+./scripts/run_local.sh dags trigger raw_to_bronze
+./scripts/run_local.sh dags trigger seed_config      # einmalig, nach dem ersten Bronze-Lauf
+for d in it 50hertz corporate_onesap etb; do ./scripts/run_local.sh dags unpause bronze_to_silver_$d; done
 ```
 
-Beobachtet standardmäßig `../data/` (wo die echte Quell-Excel liegt) und
-schreibt die SQLite-Ausgabe nach `.airflow_home/ai_cockpit.db` — beides per
-Env-Variable überschreibbar (`SOURCE_DIR`, `AI_COCKPIT_DB_PATH`). Sowohl
-`.venv/` als auch `.airflow_home/` sind gitignored.
+Beim allerersten Lauf starten die Silber-DAGs schon nach `raw_to_bronze` und
+schlagen fehl, solange die Config leer ist. Deshalb die Silber-DAGs erst nach
+`seed_config` aktivieren (oder danach einmal manuell triggern). Um eine
+unveränderte Excel erneut zu laden, die Marker-Datei in `data/` löschen.
 
-**Wichtig — Airflow 3, nicht 2.x:** Die zuerst installierte Version war
-`apache-airflow` latest = **3.3.2**; mein ursprünglicher Code war gegen die
-2.x-API geschrieben. Die alten Importpfade (`airflow.sensors.base`,
-`airflow.models.BaseOperator`, `from airflow import DAG`) funktionieren in 3.x
-nur noch über einen Deprecation-Shim. Umgestellt auf die kanonischen
-Airflow-3-Importe: `airflow.sdk.bases.sensor.BaseSensorOperator`,
-`airflow.sdk.BaseOperator`, `airflow.sdk.DAG`.
+**Airflow 3, nicht 2.x:** kanonische Importe aus `airflow.sdk` (`DAG`,
+`BaseOperator`, `Asset`, `task`, `bases.sensor.BaseSensorOperator`).
 
-`ai_cockpit_ingestion/models.py` ist eine von Hand gepflegte Kopie des
-Backend-Datenmodells (separate Deployments/Images, kein gemeinsames Paket in
-diesem Prototyp-Stadium — siehe Kommentar im Modul).
+## Verifiziert (23.10.2026)
 
-## Verifiziert
+Echter lokaler Lauf mit Airflow 3.3.2 (`airflow standalone`) gegen die echte
+Quell-Excel:
 
-**End-to-End über einen echten lokalen Airflow-3-Lauf** (Scheduler,
-DAG-Processor, Triggerer, API-Server — via `scripts/run_local.sh standalone`):
-DAG gegen die echte Quell-Excel ausgeführt, beide Tasks erfolgreich,
-`.airflow_home/ai_cockpit.db` enthält die erwarteten 160 Initiativen/74
-Owner. Dabei auch den Re-Run-Schutz bestätigt: ein zweiter, manuell
-getriggerter Lauf direkt danach erkennt korrekt "Datei unverändert seit
-letztem Import" und überspringt den Import (`SourceFileSensor`,
-Marker-Datei), statt unnötig neu zu schreiben.
+- `raw_to_bronze`: 17 IT, 53 50Hertz, 29 Corporate & OneSAP+, 66 ETB = 165
+  Zeilen. Das frühere EliaGroup-Blatt hatte nur 160 (u. a. fehlen dort „Ask
+  Nova“, „Smart Image Database (SID)“).
+- `seed_config`: 11 SolutionType, 7 ValueType, 5 RiskClassification, 80 Owner.
+- Alle vier `bronze_to_silver_*` liefen automatisch über die Assets an,
+  parallel, erfolgreich: 165 Initiativen. Risikostufen 59 × 1, 87 × 2,
+  13 × 3, 6 × 4. Summe ≈ 39,8 Mio. € hypothetisch, ≈ 9,8 Mio. € Potenzial,
+  ≈ 15,6 Mio. € Kosten/Jahr.
+- Erneuter Lauf eines Silber-DAGs ersetzt nur die eigenen Zeilen (weiter 165).
+- `pytest tests/`: 7 Tests grün.
 
-Nach der Umstellung auf `SolutionType`/`ValueType` als Referenz-/Lookup-
-Tabellen (Marker-Datei gelöscht, DAG erneut erfolgreich durchgelaufen):
-11 `SolutionType`- und 7 `ValueType`-Einträge aus dem `Variables`-Sheet
-seedet, 69/160 Initiativen mit `SolutionType` verknüpft (43 % — der Rest ist
-Freitext statt Katalog-Auswahl, siehe Root-README), 156/160 mit `ValueType`,
-66/160 mit `value_score`, 67/160 mit `solution_complexity_score`.
-
-Die Transform-Logik selbst wurde zusätzlich standalone gegen die echte
-Quell-Excel laufen lassen: dabei zwei Datenqualitätsfälle gefunden, die der
-Code jetzt explizit behandelt statt sie zu verschlucken:
-
-- Ein Status-Wert war Freitext statt Dropdown-Auswahl
-  (`"In development by Delaware. ETA 7.2026"`) — wird wie jeder nicht
-  erkannte Status auf `"Unknown"` gemappt, mit Warn-Log des Originalwerts.
-  Insgesamt 18 von 160 Zeilen (11 %) landen aktuell auf `"Unknown"`.
-- Die `Value`-Spalte mischt T-Shirt-Größen (Text) und 1–10-Zahlen in
-  derselben Spalte; ein Dataframe-Reader, der dafür einen einzigen Spaltentyp
-  wählt (Polars: `String`), liefert die ETB-Zahlen dann als `"9"` statt `9`
-  — `derive_value_score` behandelt das jetzt explizit.
-
-Nicht erkannte `Status`-Werte sind kein Implementierungsfehler, sondern ein
-Hinweis auf Dateneingabe-Probleme in der Quelle — siehe Root-README für die
-vollständige Liste der Status-/Feasibility-Werte laut `Variables`-Sheet (9
-Status- statt der im ersten Dashboard-Entwurf verwendeten 4, 5 statt 4
-Feasibility-Größen XS–XL) und die noch zu bestätigenden Mapping-Annahmen.
-
-Noch nicht gemacht: Unit-Tests für `transforms/normalize.py`; ein echter
-Lauf gegen die SQLite-Datei auf einem RWX-Volume mit zwei getrennten
-Pods (Input Orchestration + Backend) — bisher nur lokal auf einer Platte
-verifiziert, das eigentliche Interim-Risiko (Netzwerk-Storage-Locking)
-ist damit noch nicht getestet.
+Bekannte Datenlücken (Quelle, kein Code-Fehler): 23 Initiativen ohne Owner
+in der Excel (22 ETB, 1 Corporate) → `owner_id` NULL; 102 mit Freitext statt
+Katalog-SolutionType → `solution_type_id` NULL; 19 mit nicht erkanntem
+Status → Stage `Unknown`.
