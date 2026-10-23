@@ -72,11 +72,11 @@ Eine Umbenennung ist damit „alte Initiative deaktiviert, neue angelegt“.
 Weil der RowHash die Quelle hasht, wirkt ein später ergänzter Owner
 (`seed_config`) erst bei einer Quelländerung oder mit `force`.
 
-**BusinessTransaction** (`BusinessTransaction`: `ID`, `BronceID`,
-`BronceTableName`, Schreibweise wie im Datenmodell): ein Eintrag je
+**BusinessTransaction** (`BusinessTransaction`: `ID`, `BronzeID`,
+`BronzeTableName`): ein Eintrag je
 Bronze-Zeile, aus der eine Initiative angelegt oder geändert wurde. Die
 Initiative zeigt per `BusinessTransactionID` darauf: Initiative →
-BusinessTransaction → Bronze-Zeile (`BronceTableName`, `BronceID`) →
+BusinessTransaction → Bronze-Zeile (`BronzeTableName`, `BronzeID`) →
 `Timestamp`, `SourceFileID`. Unveränderte Initiativen bekommen keinen neuen
 Eintrag, deaktivierte behalten ihren. RawToBronze schreibt keine
 BusinessTransaction. Laufzähler (inserted, updated, unchanged, deactivated,

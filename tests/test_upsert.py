@@ -104,8 +104,8 @@ def test_insert_unchanged_update_deactivate_and_force(engine):
         assert len(s.execute(select(EXTRACT_TABLES[IT.extract_table])).all()) == 6
         # one BusinessTransaction per inserted initiative, pointing to its bronze record
         bts = s.scalars(select(BusinessTransaction)).all()
-        assert len(bts) == 3 and {b.bronce_table_name for b in bts} == {IT.extract_table}
-        assert sorted(b.bronce_id for b in bts) == [1, 2, 3]
+        assert len(bts) == 3 and {b.bronze_table_name for b in bts} == {IT.extract_table}
+        assert sorted(b.bronze_id for b in bts) == [1, 2, 3]
 
     # change Alpha, drop Beta, add Delta; Number/Impediments changes alone are no delta
     _load(engine, [_row("Alpha", Status="PoC"), _row("Gamma", Number="7", Impediments="x"), _row("Delta")])

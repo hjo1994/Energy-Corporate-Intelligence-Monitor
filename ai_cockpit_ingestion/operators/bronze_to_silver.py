@@ -23,7 +23,7 @@ Upsert of the latest bronze load (see transforms.upsert_keys):
 - active row of this extract whose key is missing from the load -> is_active = False
 
 Every inserted or updated initiative gets a new BusinessTransaction row
-pointing to the bronze record it was built from (BronceTableName + BronceID)
+pointing to the bronze record it was built from (BronzeTableName + BronzeID)
 and references it; deactivated rows keep theirs. "Rows of this extract" are
 those whose BusinessTransaction points into the same extract table, so the
 generated DAGs never touch each other's rows. Run counts go to the log and
@@ -134,7 +134,7 @@ class BronzeToSilverOperator(BaseOperator):
                 counts["unchanged"] += 1
                 continue
             fields = _silver_fields(row, lookups, unmatched)
-            transaction = BusinessTransaction(bronce_id=row["ID"], bronce_table_name=source.extract_table)
+            transaction = BusinessTransaction(bronze_id=row["ID"], bronze_table_name=source.extract_table)
             if current is None:
                 session.add(
                     Initiative(
@@ -155,7 +155,7 @@ class BronzeToSilverOperator(BaseOperator):
         # Soft delete: active rows of this extract that the load no longer has.
         # Conflicting keys are still present in the source, so they are kept.
         previous_transactions = select(BusinessTransaction.id).where(
-            BusinessTransaction.bronce_table_name == source.extract_table
+            BusinessTransaction.bronze_table_name == source.extract_table
         )
         for row in session.scalars(
             select(Initiative).where(

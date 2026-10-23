@@ -14,7 +14,7 @@ matching the layers in `Architecture.drawio`:
 - Silver: Initiative, upserted by the DAGs the BronzeToSilver meta DAG
   generates (one per extract table).
 - BusinessTransaction: one row per bronze record that BronzeToSilver turned
-  into an inserted or changed initiative (BronceTableName + BronceID). The
+  into an inserted or changed initiative (BronzeTableName + BronzeID). The
   initiative points to it, so every silver row can be traced to its bronze
   record and from there to Timestamp and SourceFileID.
 
@@ -131,16 +131,16 @@ class RiskClassification(Base):
 class BusinessTransaction(Base):
     """One bronze record turned into an inserted or changed initiative.
 
-    BronceID is the ID of that record in the extract table named by
-    BronceTableName (spelling as in the data model). It cannot be a database
+    BronzeID is the ID of that record in the extract table named by
+    BronzeTableName. It cannot be a database
     foreign key because it points into one of four tables.
     """
 
     __tablename__ = "BusinessTransaction"
 
     id = Column("ID", Integer, primary_key=True)
-    bronce_id = Column("BronceID", Integer, nullable=False)
-    bronce_table_name = Column("BronceTableName", String, nullable=False)
+    bronze_id = Column("BronzeID", Integer, nullable=False)
+    bronze_table_name = Column("BronzeTableName", String, nullable=False)
 
 
 # --- Silver -----------------------------------------------------------------
