@@ -1,8 +1,8 @@
-"""Pure normalization helpers for the raw-to-silver transform.
+"""Pure normalization helpers for the bronze-to-silver transform.
 
 The source workbook mixes several encodings for the same concept across its
-four business-unit sheets (consolidated into the "EliaGroup" sheet that the
-raw-to-silver operator reads). These helpers make that explicit instead of
+four business-unit sheets (loaded 1:1 into the extract tables and read
+from there by the bronze-to-silver operator). These helpers make that explicit instead of
 silently guessing — kept dependency-free and unit-testable on their own.
 """
 from __future__ import annotations
@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 # it to that quarter's first day.
 _QUARTER_START_MONTH = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}
 
-# Canonical Stage values, from the Variables sheet's "Status" column
+# Canonical Status values, from the Variables sheet's "Status" column
 # (9 values — not just Idea/Exploration/PoC/Implementation).
-_STAGE_CANONICAL = {
+_STATUS_CANONICAL = {
     "idea": "Idea",
     "exploration": "Exploration",
     "poc": "PoC",
@@ -45,6 +45,16 @@ _TSHIRT_SCORE = {"XS": 1.0, "S": 3.0, "M": 5.0, "L": 7.0, "XL": 9.0}
 _INVISIBLE_CHARS = ("﻿", "​", "‌", "‍")
 
 
+def clean_text(value) -> str | None:
+    """Trim a raw cell and collapse inner whitespace (incl. the non-breaking
+    spaces some names carry from copy-paste); empty -> None.
+    """
+    if value is None:
+        return None
+    text = " ".join(str(value).replace("\xa0", " ").split())
+    return text or None
+
+
 def _normalize_for_matching(text: str) -> str:
     for ch in _INVISIBLE_CHARS:
         text = text.replace(ch, "")
@@ -52,11 +62,11 @@ def _normalize_for_matching(text: str) -> str:
 
 
 def normalize_stage(raw_stage: str | None, *, initiative_name: str) -> str:
-    """Map a raw Stage cell (source column "Status") onto a canonical Variables-sheet value.
+    """Map a raw Status cell onto a canonical Variables-sheet value.
 
     Falls back to "Unknown" (itself a canonical value) for anything
     unrecognized — including free-text data-entry mistakes observed in the
-    source (e.g. a Stage cell containing a note like "In development by
+    source (e.g. a Status cell containing a note like "In development by
     Delaware. ETA 7.2026" instead of picking a dropdown value) — logging the
     original text so it can be fixed at the source rather than silently
     miscategorized.
@@ -64,10 +74,10 @@ def normalize_stage(raw_stage: str | None, *, initiative_name: str) -> str:
     if not raw_stage or not raw_stage.strip():
         return "Unknown"
     key = raw_stage.strip().lower()
-    mapped = _STAGE_CANONICAL.get(key)
+    mapped = _STATUS_CANONICAL.get(key)
     if mapped is None:
         logger.warning(
-            "Unrecognized Stage %r for initiative %r - mapped to 'Unknown'",
+            "Unrecognized Status %r for initiative %r - mapped to 'Unknown'",
             raw_stage,
             initiative_name,
         )
@@ -96,32 +106,6 @@ def derive_solution_complexity_score(solution_feasibility, complexity) -> float 
     return None
 
 
-def derive_value_score(raw_value) -> float | None:
-    """Initiative.value_score: 50Hertz encodes it as a T-shirt size, ETB as
-    a direct 1-10 number, IT and Corporate & OneSAP+ do not track it at all
-    in the source (stays None — never fabricated as a placeholder).
-
-    The source column mixes both encodings, so a dataframe reader that
-    infers a single dtype for the whole column (e.g. Polars, when some
-    rows are "M" and others "9") hands the ETB numbers to us as numeric
-    strings rather than ints/floats — handled explicitly below rather than
-    silently losing them to the T-shirt lookup.
-    """
-    if raw_value is None:
-        return None
-    if isinstance(raw_value, bool):
-        return None
-    if isinstance(raw_value, (int, float)):
-        return float(raw_value)
-    if isinstance(raw_value, str):
-        text = raw_value.strip()
-        try:
-            return float(text)
-        except ValueError:
-            return tshirt_to_score(text)
-    return None
-
-
 def derive_timing_date(
     raw_timing, *, assumed_year: int, initiative_name: str, field_label: str
 ) -> datetime.datetime | None:
@@ -129,16 +113,15 @@ def derive_timing_date(
     into a date.
 
     ASSUMPTION, needs Fachbereich confirmation: the source never gives a
-    real date — almost always a bare quarter label ("Q1".."Q4"), and in one
-    observed row a bare year ("2027") with no quarter at all. There is
+    real date — almost always a bare quarter label ("Q1".."Q4"), and in
+    some rows (8 at the time of writing) the bare year "2027" with no quarter at all. There is
     nothing in the data to tell us which calendar year a quarter label
     refers to, so we assume `assumed_year` (the workbook's own planning
     year) for every quarter-only value; a bare year is taken as 1 January
     of that year. This is a coarse placeholder for planning purposes, not a
     committed date — in particular it will be wrong for any initiative
     whose quarter actually falls in a year other than `assumed_year` (the
-    one observed "2027" delivery value is a concrete sign such initiatives
-    exist).
+    "2027" delivery values are a concrete sign such initiatives exist).
     """
     if raw_timing is None:
         return None

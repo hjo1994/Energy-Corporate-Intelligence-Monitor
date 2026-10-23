@@ -5,8 +5,8 @@ Guards against two real failure modes: (1) picking up a file mid-copy, by
 requiring its size to be stable across a short interval, and (2)
 reprocessing an unchanged file on every DAG run, by only reporting "found"
 once the file's mtime is newer than the last run it successfully handed off
-to the raw-to-silver operator (tracked via a small marker file in the same
-folder — touched by RawToSilverOperator after a successful import).
+to the RawToBronze DAG (tracked via a small marker file in the same
+folder — touched by its mark_source_processed task once all extracts loaded).
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class SourceFileSensor(BaseSensorOperator):
 
     On success, pushes the resolved path to XCom (key "source_file_path")
     and its modification time (key "source_file_mtime"), so the downstream
-    raw-to-silver operator does not repeat the glob/selection logic.
+    RawToBronze load tasks do not repeat the glob/selection logic.
     """
 
     template_fields = ("source_dir", "filename_glob")
