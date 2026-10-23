@@ -45,8 +45,11 @@ nicht mehr im Quellblatt steht. Liste, Summary, `/api/business-units` und
 `/api/stages` zählen nur aktive; `GET /api/initiatives?include_inactive=true`
 zeigt auch inaktive, `GET /api/initiatives/{id}` liefert jede. Jede
 Initiative trägt `is_active` und `business_transaction_id` (der Lauf, der sie
-zuletzt angelegt/geändert hat; Tabelle `business_transaction` mit Quelldatei
-und Bronze-Load, siehe README der Input Orchestration).
+zuletzt angelegt/geändert hat: Tabelle `BusinessTransaction` mit
+`BronceTableName` + `BronceID` = die Bronze-Zeile, aus der sie gebaut wurde;
+dort stehen `Timestamp` und `SourceFileID`). Tabellen- und Spaltennamen der
+DB entsprechen dem Datenmodell (PascalCase, z. B. `Initiative.DateStart`,
+`OwnerID`); die API-Felder bleiben snake_case (`date_start`, `owner`).
 
 Interaktive Doku: `/api/docs` (Swagger UI offline aus `swagger-ui-bundle`,
 `app/docs.py`), Schema unter `/api/openapi.json`.

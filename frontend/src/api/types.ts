@@ -46,7 +46,7 @@ export interface Initiative {
   risk_classification: RiskRef | null;
   /** always true here: the backend hides initiatives no longer in their source sheet */
   is_active: boolean;
-  /** lineage: the input-orchestration run that last inserted or changed this initiative */
+  /** lineage: BusinessTransaction pointing to the bronze record this initiative was last built from */
   business_transaction_id: number;
 }
 

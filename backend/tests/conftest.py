@@ -33,9 +33,7 @@ def db_path(tmp_path):
         s.add_all([etb, it, copilot, capex, low, medium, unused])
         s.flush()
         now = datetime.datetime(2026, 10, 23)
-        bt = BusinessTransaction(kind="bronze_to_silver", extract_table="ETB_Initiatives_Extract",
-                                 business_unit="ETB", source_file="source.xlsx", status="success",
-                                 started_at=now)
+        bt = BusinessTransaction(bronce_id=1, bronce_table_name="ETB_Initiatives_Extract")
         s.add(bt)
         s.flush()
         upsert = lambda key: dict(key_hash=key, row_hash=f"row-{key}", is_active=True,  # noqa: E731

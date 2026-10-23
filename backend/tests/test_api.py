@@ -149,8 +149,8 @@ def test_sees_rows_committed_by_the_writer(db_path):
 
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "INSERT INTO initiative(name, stage, risk_classification_id, timestamp, key_hash, row_hash, is_active,"
-        " business_transaction_id) VALUES ('Epsilon', 'Idea', 1, '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
+        "INSERT INTO Initiative(Name, Stage, RiskClassificationID, Timestamp, KeyHash, RowHash, IsActive,"
+        " BusinessTransactionID) VALUES ('Epsilon', 'Idea', 1, '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -173,12 +173,11 @@ def test_sees_file_replaced_by_rename(db_path, tmp_path):
     engine.dispose()
     conn = sqlite3.connect(new)
     conn.execute(
-        "INSERT INTO business_transaction(id, kind, extract_table, business_unit, status, force, started_at)"
-        " VALUES (1, 'bronze_to_silver', 'IT_Initiatives_Extract', 'IT', 'success', 0, '2026-10-23 00:00:00')"
+        "INSERT INTO BusinessTransaction(ID, BronceID, BronceTableName) VALUES (1, 1, 'IT_Initiatives_Extract')"
     )
     conn.execute(
-        "INSERT INTO initiative(id, name, stage, risk_classification_id, timestamp, key_hash, row_hash, is_active,"
-        " business_transaction_id) VALUES (1, 'Only', 'Idea', 1, '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
+        "INSERT INTO Initiative(ID, Name, Stage, RiskClassificationID, Timestamp, KeyHash, RowHash, IsActive,"
+        " BusinessTransactionID) VALUES (1, 'Only', 'Idea', 1, '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
