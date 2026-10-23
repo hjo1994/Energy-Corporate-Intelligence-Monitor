@@ -149,8 +149,8 @@ def test_sees_rows_committed_by_the_writer(db_path):
 
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "INSERT INTO initiative(name, stage, risk_classification_id, timestamp)"
-        " VALUES ('Epsilon', 'Idea', 1, '2026-10-23 00:00:00')"
+        "INSERT INTO initiative(name, stage, risk_classification_id, timestamp, key_hash, row_hash, is_active,"
+        " business_transaction_id) VALUES ('Epsilon', 'Idea', 1, '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -173,8 +173,12 @@ def test_sees_file_replaced_by_rename(db_path, tmp_path):
     engine.dispose()
     conn = sqlite3.connect(new)
     conn.execute(
-        "INSERT INTO initiative(id, name, stage, risk_classification_id, timestamp)"
-        " VALUES (1, 'Only', 'Idea', 1, '2026-10-23 00:00:00')"
+        "INSERT INTO business_transaction(id, kind, extract_table, business_unit, status, force, started_at)"
+        " VALUES (1, 'bronze_to_silver', 'IT_Initiatives_Extract', 'IT', 'success', 0, '2026-10-23 00:00:00')"
+    )
+    conn.execute(
+        "INSERT INTO initiative(id, name, stage, risk_classification_id, timestamp, key_hash, row_hash, is_active,"
+        " business_transaction_id) VALUES (1, 'Only', 'Idea', 1, '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -208,3 +212,13 @@ def test_sql_stays_portable_to_the_cluster_database(client):
         for order in ["asc", "desc"]:
             assert client.get(f"/api/initiatives?sort={sort}&order={order}").status_code == 200
     assert statements and not any("NULLS" in s.upper() for s in statements)
+
+
+def test_soft_deleted_initiatives_are_hidden_unless_asked_for(client):
+    assert "Omega" not in names(client.get("/api/initiatives"))
+    body = client.get("/api/initiatives?include_inactive=true").json()
+    omega = next(i for i in body["items"] if i["name"] == "Omega")
+    assert body["total"] == 5 and omega["is_active"] is False and omega["business_transaction_id"] == 1
+    assert client.get("/api/initiatives/summary").json()["total"] == 4
+    assert {b["name"]: b["count"] for b in client.get("/api/business-units").json()}["ETB"] == 2
+    assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Idea"] == 2

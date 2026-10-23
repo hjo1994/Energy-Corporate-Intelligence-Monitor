@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.main import get_app
-from app.models import Base, Initiative, Owner, RiskClassification, SolutionType, ValueType
+from app.models import Base, BusinessTransaction, Initiative, Owner, RiskClassification, SolutionType, ValueType
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +33,13 @@ def db_path(tmp_path):
         s.add_all([etb, it, copilot, capex, low, medium, unused])
         s.flush()
         now = datetime.datetime(2026, 10, 23)
+        bt = BusinessTransaction(kind="bronze_to_silver", extract_table="ETB_Initiatives_Extract",
+                                 business_unit="ETB", source_file="source.xlsx", status="success",
+                                 started_at=now)
+        s.add(bt)
+        s.flush()
+        upsert = lambda key: dict(key_hash=key, row_hash=f"row-{key}", is_active=True,  # noqa: E731
+                                  business_transaction=bt)
         s.add_all(
             [
                 # potential = (10k+20k+30k+40k) x 0.6 x 0.9 = 54,000; cost = 75k/3 + 19k = 44,000
@@ -42,16 +49,19 @@ def db_path(tmp_path):
                            confidence_score=0.6, delivery_score=0.9, solution_complexity_score=3.0,
                            one_time_costs=75000.0, operating_costs=19000.0, depreciation_years=3,
                            owner=etb, solution_type=copilot, value_type=capex, risk_classification=medium,
-                           date_start=datetime.datetime(2026, 1, 1), timestamp=now),
+                           date_start=datetime.datetime(2026, 1, 1), timestamp=now, **upsert("alpha")),
                 # potential = 4 x 5k x 0.35 x 0.65 = 4,550; cost = 30k/3 + 7.5k = 17,500
                 Initiative(name="Beta", description="under_score", stage="PoC",
                            efficiency_score_eur=5000.0, quality_score_eur=5000.0,
                            risk_reduction_score_eur=5000.0, strategic_value_score_eur=5000.0,
                            confidence_score=0.35, delivery_score=0.65,
                            one_time_costs=30000.0, operating_costs=7500.0, depreciation_years=3,
-                           owner=etb, risk_classification=low, timestamp=now),
-                Initiative(name="Gamma", stage="Idea", owner=it, risk_classification=low, timestamp=now),
-                Initiative(name="Delta", stage="Unknown", owner=None, risk_classification=low, timestamp=now),
+                           owner=etb, risk_classification=low, timestamp=now, **upsert("beta")),
+                Initiative(name="Gamma", stage="Idea", owner=it, risk_classification=low, timestamp=now, **upsert("gamma")),
+                Initiative(name="Delta", stage="Unknown", owner=None, risk_classification=low, timestamp=now, **upsert("delta")),
+                # no longer in its source sheet: soft-deleted, hidden by default
+                Initiative(name="Omega", stage="Idea", owner=etb, risk_classification=medium, timestamp=now,
+                           **(upsert("omega") | {"is_active": False})),
             ]
         )
         s.commit()

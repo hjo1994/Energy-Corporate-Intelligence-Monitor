@@ -23,6 +23,8 @@ export function make(over: Partial<Initiative> & { id: number; name: string }): 
     solution_type: null,
     value_type: null,
     risk_classification: null,
+    is_active: true,
+    business_transaction_id: 1,
     ...over,
   };
 }

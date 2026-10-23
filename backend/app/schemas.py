@@ -61,6 +61,8 @@ class InitiativeOut(_Out):
     solution_type: TypeOut | None
     value_type: TypeOut | None
     risk_classification: RiskClassificationRef | None
+    is_active: bool
+    business_transaction_id: int
 
     @model_validator(mode="before")
     @classmethod

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import authorizer
@@ -45,7 +45,7 @@ def list_business_units(
     """
     rows = session.execute(
         select(Owner.category, func.count(Initiative.id))
-        .outerjoin(Initiative, Initiative.owner_id == Owner.id)
+        .outerjoin(Initiative, and_(Initiative.owner_id == Owner.id, Initiative.is_active.is_(True)))
         .group_by(Owner.category)
         .order_by(Owner.category)
     ).all()
@@ -56,6 +56,7 @@ def list_business_units(
 def list_stages(session: Annotated[Session, Depends(get_session)]) -> list[StageCount]:
     rows = session.execute(
         select(Initiative.stage, func.count(Initiative.id))
+        .where(Initiative.is_active.is_(True))
         .group_by(Initiative.stage)
         .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()

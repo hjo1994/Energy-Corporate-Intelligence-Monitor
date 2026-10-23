@@ -12,6 +12,9 @@ from app.derived import annual_cost_sql, hypothetical_value_sql, potential_value
 from app.models import Initiative, Owner, RiskClassification
 from app.schemas import InitiativeOut, InitiativePage, RiskClassificationCount, StageCount, Summary
 
+# Initiatives no longer in their source sheet are kept (soft delete) but hidden by default.
+ACTIVE = Initiative.is_active.is_(True)
+
 router = APIRouter(prefix="/api/initiatives", tags=["initiatives"], dependencies=[authorizer()])
 
 SortField = Literal[
@@ -51,8 +54,9 @@ def _conditions(
     value_type_id: int | None,
     risk_classification_id: list[int] | None,
     search: str | None,
+    include_inactive: bool = False,
 ) -> list:
-    conditions = []
+    conditions = [] if include_inactive else [ACTIVE]
     if stage:
         conditions.append(Initiative.stage.in_(stage))
     if business_unit:
@@ -89,6 +93,9 @@ def list_initiatives(
     value_type_id: int | None = None,
     risk_classification_id: Annotated[list[int] | None, Query()] = None,
     search: Annotated[str | None, Query(description="Substring in name/description")] = None,
+    include_inactive: Annotated[
+        bool, Query(description="Also initiatives no longer in their source sheet (soft-deleted)")
+    ] = False,
     sort: SortField = "name",
     order: Literal["asc", "desc"] = "asc",
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
@@ -96,7 +103,7 @@ def list_initiatives(
 ) -> InitiativePage:
     conditions = _conditions(
         stage, business_unit, department, owner_id, solution_type_id, value_type_id,
-        risk_classification_id, search,
+        risk_classification_id, search, include_inactive,
     )
 
     total = session.scalar(
@@ -127,15 +134,17 @@ def list_initiatives(
 
 @router.get("/summary", response_model=Summary)
 def summary(session: Annotated[Session, Depends(get_session)]) -> Summary:
-    total = session.scalar(select(func.count(Initiative.id))) or 0
+    total = session.scalar(select(func.count(Initiative.id)).where(ACTIVE)) or 0
     by_stage = session.execute(
         select(Initiative.stage, func.count(Initiative.id))
+        .where(ACTIVE)
         .group_by(Initiative.stage)
         .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()
     by_risk = session.execute(
         select(RiskClassification.id, RiskClassification.name, func.count(Initiative.id))
         .join(Initiative, Initiative.risk_classification_id == RiskClassification.id)
+        .where(ACTIVE)
         .group_by(RiskClassification.id, RiskClassification.name)
         .order_by(RiskClassification.id)
     ).all()
@@ -146,7 +155,7 @@ def summary(session: Annotated[Session, Depends(get_session)]) -> Summary:
             func.avg(potential_value_sql),
             func.sum(hypothetical_value_sql),
             func.sum(annual_cost_sql),
-        )
+        ).where(ACTIVE)
     ).one()
     return Summary(
         total=total,
@@ -161,10 +170,10 @@ def summary(session: Annotated[Session, Depends(get_session)]) -> Summary:
         total_hypothetical_value_eur=total_hypothetical,
         total_annual_cost_eur=total_cost,
         average_solution_complexity_score=session.scalar(
-            select(func.avg(Initiative.solution_complexity_score))
+            select(func.avg(Initiative.solution_complexity_score)).where(ACTIVE)
         ),
         without_owner=session.scalar(
-            select(func.count(Initiative.id)).where(Initiative.owner_id.is_(None))
+            select(func.count(Initiative.id)).where(ACTIVE, Initiative.owner_id.is_(None))
         )
         or 0,
     )
