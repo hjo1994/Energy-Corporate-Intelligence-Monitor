@@ -11,7 +11,7 @@ flagship that is not in the config is left NULL and logged, so it can be
 added to the config deliberately. Every initiative gets a risk level (1-4
 are always estimable, 5 is never estimated).
 
-Upsert (one BusinessTransaction per run, see transforms.upsert_keys):
+Upsert of the latest bronze load (see transforms.upsert_keys):
 
 - key_hash unknown                          -> insert (new ID)
 - key_hash known, row_hash differs or row inactive -> update in place (ID kept)
@@ -22,24 +22,26 @@ Upsert (one BusinessTransaction per run, see transforms.upsert_keys):
   row (if any) stays as it is
 - active row of this extract whose key is missing from the load -> is_active = False
 
-Inserted, updated and deactivated rows point to the new BusinessTransaction.
-"Rows of this extract" are those whose last BusinessTransaction read the same
-extract table, so the generated DAGs never touch each other's rows.
+Every inserted or updated initiative gets a new BusinessTransaction row
+pointing to the bronze record it was built from (BronceTableName + BronceID)
+and references it; deactivated rows keep theirs. "Rows of this extract" are
+those whose BusinessTransaction points into the same extract table, so the
+generated DAGs never touch each other's rows. Run counts go to the log and
+the task's return value (XCom).
 """
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 
 from airflow.models.baseoperator import BaseOperator
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion import config
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.lineage import STATUS_SUCCESS, latest_bronze_load, mark_failed, start_transaction, utcnow
+from ai_cockpit_ingestion.lineage import latest_load_filter, utcnow
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
-    KIND_BRONZE_TO_SILVER,
     BusinessTransaction,
     Initiative,
     Owner,
@@ -68,55 +70,31 @@ class BronzeToSilverOperator(BaseOperator):
         self.source_key = source_key
         self.db_path = db_path
 
-    def execute(self, context) -> int:
+    def execute(self, context) -> dict:
         source = SOURCES_BY_KEY[self.source_key]
         table = EXTRACT_TABLES[source.extract_table]
         force = bool((context.get("params") or {}).get("force", False))
         engine = get_engine(self.db_path)
-
-        with Session(engine) as session:
-            load = latest_bronze_load(session, source.extract_table)
-            if load is None:
-                raise RuntimeError(f"{source.extract_table} has no successful load — run RawToBronze first")
-            load_id, source_file, load_timestamp = load.id, load.source_file, load.load_timestamp
-
-        transaction_id = start_transaction(
-            engine,
-            kind=KIND_BRONZE_TO_SILVER,
-            extract_table=source.extract_table,
-            business_unit=source.business_unit,
-            source_file=source_file,
-            load_timestamp=load_timestamp,
-            source_business_transaction_id=load_id,
-            force=force,
-        )
         try:
             with Session(engine) as session, session.begin():
                 bronze_rows = [
                     dict(r._mapping)
-                    for r in session.execute(
-                        select(table).where(table.c._BusinessTransactionId == load_id).order_by(table.c._SourceRow)
-                    )
+                    for r in session.execute(select(table).where(latest_load_filter(table)).order_by(table.c.ID))
                 ]
-                counts = self._upsert(session, source, bronze_rows, transaction_id, force)
-                session.execute(
-                    update(BusinessTransaction)
-                    .where(BusinessTransaction.id == transaction_id)
-                    .values(status=STATUS_SUCCESS, finished_at=utcnow(), rows_read=len(bronze_rows), **counts)
-                )
-        except Exception as error:
-            mark_failed(engine, transaction_id, error)
-            raise
+                if not bronze_rows:
+                    raise RuntimeError(f"{source.extract_table} is empty — run RawToBronze first")
+                counts = self._upsert(session, source, bronze_rows, force)
         finally:
             engine.dispose()
 
         self.log.info(
-            "%s: business transaction %d (bronze load %d, force=%s) for business unit %r: %s",
-            source.extract_table, transaction_id, load_id, force, source.business_unit, counts,
+            "%s: load %s (%s), force=%s, business unit %r, %d rows read: %s",
+            source.extract_table, bronze_rows[0]["Timestamp"], bronze_rows[0]["SourceFileID"], force,
+            source.business_unit, len(bronze_rows), counts,
         )
-        return transaction_id
+        return counts
 
-    def _upsert(self, session: Session, source, bronze_rows: list[dict], transaction_id: int, force: bool) -> dict:
+    def _upsert(self, session: Session, source, bronze_rows: list[dict], force: bool) -> dict:
         counts = {"inserted": 0, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0}
         now = utcnow()
         hash_columns = row_hash_columns(source.columns)
@@ -128,7 +106,7 @@ class BronzeToSilverOperator(BaseOperator):
 
         to_apply: dict[str, tuple[str, dict]] = {}
         for key, entries in by_key.items():
-            rows_txt = ", ".join(f"row {r['_SourceRow']}" for _, r in entries)
+            rows_txt = ", ".join(f"ID {r['ID']}" for _, r in entries)
             if len({h for h, _ in entries}) == 1:
                 if len(entries) > 1:
                     self.log.warning(
@@ -156,11 +134,12 @@ class BronzeToSilverOperator(BaseOperator):
                 counts["unchanged"] += 1
                 continue
             fields = _silver_fields(row, lookups, unmatched)
+            transaction = BusinessTransaction(bronce_id=row["ID"], bronce_table_name=source.extract_table)
             if current is None:
                 session.add(
                     Initiative(
                         **fields, key_hash=key, row_hash=digest, is_active=True,
-                        business_transaction_id=transaction_id, timestamp=now,
+                        business_transaction=transaction, timestamp=now,
                     )
                 )
                 counts["inserted"] += 1
@@ -169,15 +148,14 @@ class BronzeToSilverOperator(BaseOperator):
                     setattr(current, name, value)
                 current.row_hash = digest
                 current.is_active = True
-                current.business_transaction_id = transaction_id
+                current.business_transaction = transaction
                 current.timestamp = now
                 counts["updated"] += 1
 
         # Soft delete: active rows of this extract that the load no longer has.
         # Conflicting keys are still present in the source, so they are kept.
         previous_transactions = select(BusinessTransaction.id).where(
-            BusinessTransaction.kind == KIND_BRONZE_TO_SILVER,
-            BusinessTransaction.extract_table == source.extract_table,
+            BusinessTransaction.bronce_table_name == source.extract_table
         )
         for row in session.scalars(
             select(Initiative).where(
@@ -185,8 +163,7 @@ class BronzeToSilverOperator(BaseOperator):
             )
         ):
             if row.key_hash not in by_key:
-                row.is_active = False
-                row.business_transaction_id = transaction_id
+                row.is_active = False  # keeps its BusinessTransaction: no bronze record behind this change
                 row.timestamp = now
                 counts["deactivated"] += 1
 

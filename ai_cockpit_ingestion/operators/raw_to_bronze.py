@@ -4,32 +4,20 @@ table (see sources.SOURCES).
 No cleaning or type casting here — every cell is stored as text exactly as
 in the sheet, only rows without a Name are skipped (the 50Hertz sheet, for
 example, has ~1M formatted but empty rows). The extract is append-only:
-each load is one BusinessTransaction; its rows are appended in one database
-transaction, all stamped with that transaction's ID, and earlier loads are
-never updated or deleted. BronzeToSilver reads the latest successful load
-(lineage.latest_bronze_load).
+each load appends its rows in one database transaction, all with the same
+Timestamp and the source file in SourceFileID; earlier loads are never
+updated or deleted. Readers take the latest load (lineage.latest_load_filter).
 """
 from __future__ import annotations
 
 import polars as pl
 from airflow.models.baseoperator import BaseOperator
-from sqlalchemy import insert, update
-from sqlalchemy.orm import Session
+from sqlalchemy import insert
 
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.lineage import STATUS_SUCCESS, mark_failed, start_transaction, utcnow
-from ai_cockpit_ingestion.models import (
-    EXTRACT_TABLES,
-    KIND_RAW_TO_BRONZE,
-    LOAD_COLUMNS,
-    RECORD_ID_COLUMN,
-    BusinessTransaction,
-)
+from ai_cockpit_ingestion.lineage import utcnow
+from ai_cockpit_ingestion.models import EXTRACT_TABLES, LOAD_COLUMNS, RECORD_ID_COLUMN
 from ai_cockpit_ingestion.sources import SOURCES_BY_KEY
-
-# Sheet row of the first data row (row 1 is the header).
-FIRST_DATA_ROW = 2
-
 
 TECHNICAL_COLUMNS = (RECORD_ID_COLUMN, *LOAD_COLUMNS)
 
@@ -87,47 +75,26 @@ class RawToBronzeOperator(BaseOperator):
                 "Sheet %r has columns not in the data model, not loaded: %s", source.sheet_name, unexpected
             )
 
-        df = df.with_row_index("_idx").filter(
+        df = df.filter(
             pl.col("Name").is_not_null() & (pl.col("Name").str.strip_chars() != "")
         )
         load_timestamp = utcnow()
-        engine = get_engine(self.db_path)
-        transaction_id = start_transaction(
-            engine,
-            kind=KIND_RAW_TO_BRONZE,
-            extract_table=source.extract_table,
-            business_unit=source.business_unit,
-            source_file=str(source_file_path),
-            load_timestamp=load_timestamp,
-        )
+        # Inserted in sheet order, so ID follows the sheet's row order within a load.
         rows = [
             {
                 **{column: _cell_text(row[column]) for column in source.columns},
-                "_BusinessTransactionId": transaction_id,
-                "_LoadTimestamp": load_timestamp,
-                "_SourceFile": str(source_file_path),
-                "_SourceRow": row["_idx"] + FIRST_DATA_ROW,
+                "Timestamp": load_timestamp,
+                "SourceFileID": str(source_file_path),
             }
             for row in df.iter_rows(named=True)
         ]
 
         table = EXTRACT_TABLES[source.extract_table]
-        try:
-            with Session(engine) as session, session.begin():
-                if rows:
-                    session.execute(insert(table), rows)
-                session.execute(
-                    update(BusinessTransaction)
-                    .where(BusinessTransaction.id == transaction_id)
-                    .values(status=STATUS_SUCCESS, finished_at=utcnow(), rows_read=len(rows), inserted=len(rows))
-                )
-        except Exception as error:
-            mark_failed(engine, transaction_id, error)
-            raise
-        finally:
-            engine.dispose()
+        engine = get_engine(self.db_path)
+        with engine.begin() as connection:
+            if rows:
+                connection.execute(insert(table), rows)
+        engine.dispose()
 
-        self.log.info(
-            "Appended %d rows to %s (business transaction %d)", len(rows), source.extract_table, transaction_id
-        )
-        return transaction_id
+        self.log.info("Appended %d rows to %s (load %s)", len(rows), source.extract_table, load_timestamp)
+        return len(rows)

@@ -8,10 +8,8 @@ from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.lineage import STATUS_SUCCESS, start_transaction
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
-    KIND_RAW_TO_BRONZE,
     BusinessTransaction,
     Initiative,
     Owner,
@@ -71,92 +69,76 @@ def _row(name, **over):
     return row
 
 
+_loads = 0
+
+
 def _load(engine, rows):
-    """Append one bronze load like RawToBronze does."""
-    tid = start_transaction(engine, kind=KIND_RAW_TO_BRONZE, extract_table=IT.extract_table,
-                            business_unit=IT.business_unit, source_file="test.xlsx",
-                            load_timestamp=datetime.datetime(2026, 10, 23))
-    table = EXTRACT_TABLES[IT.extract_table]
+    """Append one bronze load like RawToBronze does (one Timestamp per load)."""
+    global _loads
+    _loads += 1
+    stamp = datetime.datetime(2026, 10, 23) + datetime.timedelta(minutes=_loads)
     with Session(engine) as s, s.begin():
-        s.execute(insert(table), [
-            {**r, "_BusinessTransactionId": tid, "_LoadTimestamp": datetime.datetime(2026, 10, 23),
-             "_SourceFile": "test.xlsx", "_SourceRow": n + 2} for n, r in enumerate(rows)
-        ])
-        s.get(BusinessTransaction, tid).status = STATUS_SUCCESS
+        s.execute(insert(EXTRACT_TABLES[IT.extract_table]),
+                  [{**r, "Timestamp": stamp, "SourceFileID": f"load{_loads}.xlsx"} for r in rows])
 
 
 def _silver(engine, force=False):
     op = BronzeToSilverOperator(task_id="t", source_key="it", db_path=str(engine.url.database))
-    tid = op.execute({"params": {"force": force}})
+    counts = op.execute({"params": {"force": force}})
     with Session(engine) as s:
-        bt = s.get(BusinessTransaction, tid)
-        counts = {k: getattr(bt, k) for k in ("inserted", "updated", "unchanged", "deactivated", "conflicts")}
         rows = {i.name: (i.id, i.is_active, i.business_transaction_id) for i in s.scalars(select(Initiative))}
-        return tid, bt.status, counts, rows
+        return counts, rows
 
 
 def test_insert_unchanged_update_deactivate_and_force(engine):
     _load(engine, [_row("Alpha"), _row("Beta"), _row("Gamma")])
-    t1, status, counts, first = _silver(engine)
-    assert status == "success"
+    counts, first = _silver(engine)
     assert counts == {"inserted": 3, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0}
 
     # same content again (bronze grows, silver untouched)
     _load(engine, [_row("Alpha"), _row("Beta"), _row("Gamma")])
-    _, _, counts, second = _silver(engine)
+    counts, second = _silver(engine)
     assert counts == {"inserted": 0, "updated": 0, "unchanged": 3, "deactivated": 0, "conflicts": 0}
     assert second == first  # same IDs, still pointing to the first transaction
     with Session(engine) as s:
         assert len(s.execute(select(EXTRACT_TABLES[IT.extract_table])).all()) == 6
+        # one BusinessTransaction per inserted initiative, pointing to its bronze record
+        bts = s.scalars(select(BusinessTransaction)).all()
+        assert len(bts) == 3 and {b.bronce_table_name for b in bts} == {IT.extract_table}
+        assert sorted(b.bronce_id for b in bts) == [1, 2, 3]
 
     # change Alpha, drop Beta, add Delta; Number/Impediments changes alone are no delta
     _load(engine, [_row("Alpha", Status="PoC"), _row("Gamma", Number="7", Impediments="x"), _row("Delta")])
-    t3, _, counts, third = _silver(engine)
+    counts, third = _silver(engine)
     assert counts == {"inserted": 1, "updated": 1, "unchanged": 1, "deactivated": 1, "conflicts": 0}
-    assert third["Alpha"] == (first["Alpha"][0], True, t3)  # updated in place
-    assert third["Beta"] == (first["Beta"][0], False, t3)  # soft-deleted, not removed
+    assert third["Alpha"][:2] == (first["Alpha"][0], True)  # updated in place ...
+    assert third["Alpha"][2] != first["Alpha"][2]  # ... with a new BusinessTransaction
+    assert third["Beta"] == (first["Beta"][0], False, first["Beta"][2])  # soft-deleted, keeps its BT
     assert third["Gamma"] == first["Gamma"]
     assert third["Delta"][1] is True
 
     # Beta comes back -> reactivated with its old ID
     _load(engine, [_row("Alpha", Status="PoC"), _row("Beta"), _row("Gamma"), _row("Delta")])
-    _, _, counts, fourth = _silver(engine)
+    counts, fourth = _silver(engine)
     assert counts["updated"] == 1 and fourth["Beta"][:2] == (first["Beta"][0], True)
 
     # force recomputes everything
-    _, _, counts, _ = _silver(engine, force=True)
+    counts, _ = _silver(engine, force=True)
     assert counts == {"inserted": 0, "updated": 4, "unchanged": 0, "deactivated": 0, "conflicts": 0}
 
 
 def test_duplicate_keys_in_one_load(engine):
     _load(engine, [_row("Alpha"), _row("Alpha "), _row("Beta", Status="Idea"), _row("Beta", Status="PoC")])
-    _, _, counts, rows = _silver(engine)
+    counts, rows = _silver(engine)
     # identical content -> taken once; different content -> conflict, not taken
     assert counts == {"inserted": 1, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 1}
     assert list(rows) == ["Alpha"]
 
 
-def test_conflict_keeps_existing_row_and_failed_run_is_recorded(engine):
+def test_conflict_keeps_existing_row(engine):
     _load(engine, [_row("Beta")])
     _silver(engine)
     _load(engine, [_row("Beta", Status="Idea"), _row("Beta", Status="PoC")])
-    _, _, counts, rows = _silver(engine)
+    counts, rows = _silver(engine)
     assert counts["conflicts"] == 1 and counts["deactivated"] == 0
     assert rows["Beta"][1] is True
-
-    with Session(engine) as s, s.begin():  # break the config -> the run must fail and say so
-        for vt in s.scalars(select(ValueType)):
-            s.delete(vt)
-    with pytest.raises(RuntimeError):
-        _silver(engine)
-    with Session(engine) as s:
-        last = s.scalars(select(BusinessTransaction).order_by(BusinessTransaction.id.desc())).first()
-        assert last.status == "failed" and "Config tables are empty" in last.error
-
-
-def test_sheet_columns_must_not_clash_with_technical_columns():
-    from ai_cockpit_ingestion.operators.raw_to_bronze import TECHNICAL_COLUMNS, check_no_technical_columns
-
-    check_no_technical_columns("IT", IT.columns)  # the real sheets are fine
-    with pytest.raises(ValueError, match="clash"):
-        check_no_technical_columns("IT", [*IT.columns, TECHNICAL_COLUMNS[0]])

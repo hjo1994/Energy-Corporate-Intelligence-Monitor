@@ -16,9 +16,10 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
    `RawToBronzeOperator` die Zeilen 1:1 als Text in seine Extract-Tabelle
    (`IT_Initiatives_Extract`, `50Hertz_Initiatives_Extract`,
    `CorporateOneSAP_Initiatives_Extract`, `ETB_Initiatives_Extract`).
-   **Append-only:** Jeder Load ist eine BusinessTransaction und hängt seine
-   Zeilen an (`_RecordId`, `_BusinessTransactionId`, `_LoadTimestamp`,
-   `_SourceFile`, `_SourceRow`); frühere Loads bleiben. Leere Zeilen (ohne Name)
+   **Append-only:** Jeder Load hängt seine Zeilen an, mit `ID` (fortlaufend,
+   in Blattreihenfolge), `Timestamp` (gleich für alle Zeilen eines Loads) und
+   `SourceFileID` (Pfad der Quelldatei); frühere Loads bleiben. Hat ein Blatt
+   selbst eine Spalte mit einem dieser Namen, bricht der Load ab. Leere Zeilen (ohne Name)
    werden übersprungen; fehlt eine Spalte des Datenmodells im Blatt, bricht
    der Task ab. Jeder Load-Task emittiert das Dataset seiner Tabelle.
 2. **SeedConfig** — Config-Tabellen sind einmalig zu befüllende
@@ -64,22 +65,22 @@ NBSP zusammenfassen, Zero-Width-Zeichen entfernen, NULL → "", Teile mit
 | KeyHash bekannt, RowHash gleich | unchanged, nichts geschrieben (BusinessTransactionID bleibt) |
 | Key im Load doppelt, gleicher RowHash | einmal übernommen, Warnung (heute ETB „AC_012 check reporting“) |
 | Key im Load doppelt, unterschiedlicher RowHash | Konflikt: nicht übernommen, beide Zeilen geloggt, bestehende Silber-Zeile bleibt |
-| aktive Initiative fehlt im neuen Load | Soft-Delete `is_active = false` (Backend blendet sie aus); taucht sie wieder auf, wird sie mit alter ID reaktiviert |
+| aktive Initiative fehlt im neuen Load | Soft-Delete `IsActive = false` (Backend blendet sie aus); taucht sie wieder auf, wird sie mit alter ID reaktiviert |
 | DAG-Parameter `force = true` | jede bekannte Initiative wird neu berechnet (z. B. nach Heuristik- oder Config-Änderung) |
 
 Eine Umbenennung ist damit „alte Initiative deaktiviert, neue angelegt“.
 Weil der RowHash die Quelle hasht, wirkt ein später ergänzter Owner
 (`seed_config`) erst bei einer Quelländerung oder mit `force`.
 
-**BusinessTransaction** (`business_transaction`): eine Zeile je
-RawToBronze-Load (je Extract-Tabelle) und je BronzeToSilver-Lauf, mit Art,
-Extract-Tabelle, Business Unit, Quelldatei, LoadTimestamp, gelesenem
-Bronze-Load (`source_business_transaction_id`), Status
-(running/success/failed, Fehlertext), `force`, Start/Ende und Zählern
-(rows_read, inserted, updated, unchanged, deactivated, conflicts). Bronze-
-Zeilen tragen die ID ihres Loads, jede Initiative die ID des Laufs, der sie
-zuletzt angelegt/geändert/deaktiviert hat: Initiative →
-BusinessTransaction → Bronze-Load → Quelldatei.
+**BusinessTransaction** (`BusinessTransaction`: `ID`, `BronceID`,
+`BronceTableName`, Schreibweise wie im Datenmodell): ein Eintrag je
+Bronze-Zeile, aus der eine Initiative angelegt oder geändert wurde. Die
+Initiative zeigt per `BusinessTransactionID` darauf: Initiative →
+BusinessTransaction → Bronze-Zeile (`BronceTableName`, `BronceID`) →
+`Timestamp`, `SourceFileID`. Unveränderte Initiativen bekommen keinen neuen
+Eintrag, deaktivierte behalten ihren. RawToBronze schreibt keine
+BusinessTransaction. Laufzähler (inserted, updated, unchanged, deactivated,
+conflicts) stehen im Task-Log und als Rückgabewert (XCom).
 
 Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
 oder in der UI „Trigger DAG w/ config“.
@@ -104,7 +105,10 @@ oder in der UI „Trigger DAG w/ config“.
 
 ## Datenbank
 
-Interim weiter eine SQLite-Datei (`AI_COCKPIT_DB_PATH`). Weil jetzt mehrere
+Interim weiter eine SQLite-Datei (`AI_COCKPIT_DB_PATH`). Tabellen- und
+Spaltennamen sind exakt die des Datenmodells (PascalCase, z. B.
+`Initiative.DateStart`, FK-Spalten `<Tabelle>ID`); im Python-Code heißen die
+Attribute snake_case. `IsActive` steht noch nicht im Datenmodell. Weil jetzt mehrere
 DAGs in dieselbe Datei schreiben, entfällt der frühere atomare
 Datei-Tausch: Jeder Task schreibt in genau einer kurzen Transaktion
 (Backend sieht bis zum Commit den alten Stand), parallele Schreiber warten
@@ -130,7 +134,7 @@ mit dem Schema vor der Upsert-Strategie muss einmal neu aufgebaut werden
     sources.py                   # die 4 Quellblätter: Tabelle, Business Unit, Spalten
     models.py                    # Bronze-, Config- und Silber-Tabellen (SQLAlchemy)
     db.py
-    lineage.py                   # BusinessTransaction anlegen / abschließen
+    lineage.py                   # neuester Load einer Extract-Tabelle
     operators/
       source_file_sensor.py
       raw_to_bronze.py

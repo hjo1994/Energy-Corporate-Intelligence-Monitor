@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.lineage import latest_bronze_load
+from ai_cockpit_ingestion.lineage import latest_load_filter
 from ai_cockpit_ingestion.models import EXTRACT_TABLES, Owner, RiskClassification, SolutionType, ValueType
 from ai_cockpit_ingestion.sources import SOURCES
 from ai_cockpit_ingestion.transforms.normalize import clean_text
@@ -102,9 +102,8 @@ class SeedConfigOperator(BaseOperator):
         count = 0
         for source in SOURCES:
             table = EXTRACT_TABLES[source.extract_table]
-            load = latest_bronze_load(session, source.extract_table)
-            rows = [] if load is None else session.execute(
-                select(table.c["Owner"], table.c["Department"]).where(table.c._BusinessTransactionId == load.id)
+            rows = session.execute(
+                select(table.c["Owner"], table.c["Department"]).where(latest_load_filter(table))
             ).all()
             if not rows:
                 self.log.warning("%s is empty — run RawToBronze first", source.extract_table)
