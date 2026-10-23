@@ -1,4 +1,4 @@
-// The 9 canonical stage values of the source workbook, in pipeline order.
+// The 9 canonical stage values (normalized from the workbook's Status), in pipeline order.
 export const STAGE_ORDER = [
   "Idea",
   "Exploration",

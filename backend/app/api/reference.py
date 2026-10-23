@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import authorizer
 from app.db import get_session
-from app.models import Initiative, Owner, SolutionType, ValueType
-from app.schemas import BusinessUnitCount, OwnerOut, StageCount, TypeOut
+from app.models import Initiative, Owner, RiskClassification, SolutionType, ValueType
+from app.schemas import BusinessUnitCount, OwnerOut, RiskClassificationOut, StageCount, TypeOut
 
 router = APIRouter(prefix="/api", tags=["reference"], dependencies=[authorizer()])
 
@@ -60,3 +60,11 @@ def list_stages(session: Annotated[Session, Depends(get_session)]) -> list[Stage
         .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()
     return [StageCount(stage=s, count=c) for s, c in rows]
+
+
+@router.get("/risk-classifications", response_model=list[RiskClassificationOut])
+def list_risk_classifications(
+    session: Annotated[Session, Depends(get_session)],
+) -> list[RiskClassification]:
+    """All five levels of the Rahmenbetriebsvereinbarung KI, including unused ones."""
+    return list(session.scalars(select(RiskClassification).order_by(RiskClassification.id)))

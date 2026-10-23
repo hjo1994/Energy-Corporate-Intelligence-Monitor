@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchAllInitiatives } from "./api/client";
 import type { Initiative } from "./api/types";
 import { applyFilters, EMPTY_FILTERS, type Filters } from "./domain/filters";
@@ -36,74 +28,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-
     setLoad({ state: "loading" });
-
     fetchAllInitiatives().then(
       (items) => !cancelled && setLoad({ state: "ready", items }),
       (err: unknown) => {
         if (cancelled) return;
-
         setLoad({
           state: "error",
-          message:
-            err instanceof Error
-              ? err.message
-              : "The data could not be loaded.",
+          message: err instanceof Error ? err.message : "The data could not be loaded.",
         });
       },
     );
-
     return () => {
       cancelled = true;
     };
   }, [attempt]);
 
-  const reload = useCallback(
-    () => setAttempt((n) => n + 1),
-    [],
-  );
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const setFilters = useCallback((update: (f: Filters) => Filters) => setFiltersState(update), []);
 
-  const setFilters = useCallback(
-    (update: (f: Filters) => Filters) => setFiltersState(update),
-    [],
-  );
-
-  const all = useMemo(
-    () => (load.state === "ready" ? load.items : []),
-    [load],
-  );
-
-  const visible = useMemo(
-    () => applyFilters(all, filters),
-    [all, filters],
-  );
+  const all = useMemo(() => (load.state === "ready" ? load.items : []), [load]);
+  const visible = useMemo(() => applyFilters(all, filters), [all, filters]);
 
   const value = useMemo(
-    () => ({
-      load,
-      reload,
-      filters,
-      setFilters,
-      all,
-      visible,
-    }),
+    () => ({ load, reload, filters, setFilters, all, visible }),
     [load, reload, filters, setFilters, all, visible],
   );
-
-  return (
-    <Ctx.Provider value={value}>
-      {children}
-    </Ctx.Provider>
-  );
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useApp(): AppState {
   const v = useContext(Ctx);
-
-  if (!v) {
-    throw new Error("useApp must be used inside <AppProvider>");
-  }
-
+  if (!v) throw new Error("useApp must be used inside <AppProvider>");
   return v;
 }
