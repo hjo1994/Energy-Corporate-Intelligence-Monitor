@@ -39,6 +39,15 @@ und in Python für die Antwort):
 
 Fehlt ein Eingangswert, ist der abgeleitete Wert `null` (nie 0).
 
+**Soft-Delete und Herkunft:** Die Input Orchestration löscht keine
+Initiativen mehr, sondern setzt `is_active = false`, wenn eine Initiative
+nicht mehr im Quellblatt steht. Liste, Summary, `/api/business-units` und
+`/api/stages` zählen nur aktive; `GET /api/initiatives?include_inactive=true`
+zeigt auch inaktive, `GET /api/initiatives/{id}` liefert jede. Jede
+Initiative trägt `is_active` und `business_transaction_id` (der Lauf, der sie
+zuletzt angelegt/geändert hat; Tabelle `business_transaction` mit Quelldatei
+und Bronze-Load, siehe README der Input Orchestration).
+
 Interaktive Doku: `/api/docs` (Swagger UI offline aus `swagger-ui-bundle`,
 `app/docs.py`), Schema unter `/api/openapi.json`.
 
@@ -145,7 +154,7 @@ AI_COCKPIT_DB_PATH=../input-orchestration/.airflow_home/ai_cockpit.db \
 .venv/bin/python -m pytest
 ```
 
-Verifiziert (23.10.2026): 20 Tests (Filter inkl. Risikostufe, Suche inkl.
+Verifiziert (23.10.2026): 21 Tests (Filter inkl. Risikostufe, Soft-Delete, Suche inkl.
 `%`/`_`-Escaping, abgeleitete Werte, Sortierung mit NULLs, Paginierung,
 Summary, Read-only, neue Commits des Writers und Datei-Austausch per Rename
 sichtbar, 503 bei fehlender DB, Auth, portables SQL, Startkommando der
