@@ -152,3 +152,11 @@ def test_conflict_keeps_existing_row_and_failed_run_is_recorded(engine):
     with Session(engine) as s:
         last = s.scalars(select(BusinessTransaction).order_by(BusinessTransaction.id.desc())).first()
         assert last.status == "failed" and "Config tables are empty" in last.error
+
+
+def test_sheet_columns_must_not_clash_with_technical_columns():
+    from ai_cockpit_ingestion.operators.raw_to_bronze import TECHNICAL_COLUMNS, check_no_technical_columns
+
+    check_no_technical_columns("IT", IT.columns)  # the real sheets are fine
+    with pytest.raises(ValueError, match="clash"):
+        check_no_technical_columns("IT", [*IT.columns, TECHNICAL_COLUMNS[0]])

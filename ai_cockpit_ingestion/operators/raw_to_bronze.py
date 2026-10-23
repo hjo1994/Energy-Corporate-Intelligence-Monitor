@@ -18,11 +18,31 @@ from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.db import get_engine
 from ai_cockpit_ingestion.lineage import STATUS_SUCCESS, mark_failed, start_transaction, utcnow
-from ai_cockpit_ingestion.models import EXTRACT_TABLES, KIND_RAW_TO_BRONZE, BusinessTransaction
+from ai_cockpit_ingestion.models import (
+    EXTRACT_TABLES,
+    KIND_RAW_TO_BRONZE,
+    LOAD_COLUMNS,
+    RECORD_ID_COLUMN,
+    BusinessTransaction,
+)
 from ai_cockpit_ingestion.sources import SOURCES_BY_KEY
 
 # Sheet row of the first data row (row 1 is the header).
 FIRST_DATA_ROW = 2
+
+
+TECHNICAL_COLUMNS = (RECORD_ID_COLUMN, *LOAD_COLUMNS)
+
+
+def check_no_technical_columns(sheet_name: str, sheet_columns) -> None:
+    """A sheet column named like one of the loader's own columns would be
+    silently confused with it, so such a sheet is rejected."""
+    clashes = [c for c in sheet_columns if c.strip() in TECHNICAL_COLUMNS]
+    if clashes:
+        raise ValueError(
+            f"Sheet {sheet_name!r} has columns {clashes} that clash with the extract table's "
+            f"technical columns {list(TECHNICAL_COLUMNS)} — rename them in the workbook"
+        )
 
 
 def _cell_text(value) -> str | None:
@@ -56,6 +76,7 @@ class RawToBronzeOperator(BaseOperator):
         df = pl.read_excel(
             source_file_path, sheet_name=source.sheet_name, engine="calamine", infer_schema_length=0
         )
+        check_no_technical_columns(source.sheet_name, df.columns)
         missing = [c for c in source.columns if c not in df.columns]
         unexpected = [c for c in df.columns if c not in source.columns and not c.startswith("__UNNAMED")]
         if missing:
