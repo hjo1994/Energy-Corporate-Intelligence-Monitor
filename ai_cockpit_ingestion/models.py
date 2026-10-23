@@ -5,13 +5,18 @@ matching the layers in `Architecture.drawio`:
 
 - Bronze: one extract table per raw source sheet (IT_Initiatives_Extract,
   50Hertz_Initiatives_Extract, CorporateOneSAP_Initiatives_Extract,
-  ETB_Initiatives_Extract). Every sheet column 1:1 and as text, plus the load
-  columns _LoadTimestamp, _SourceFile and _SourceRow. Written by the
-  RawToBronze DAG, generated from `sources.SOURCES`.
+  ETB_Initiatives_Extract). Append-only: every load adds its rows, nothing is
+  updated or deleted. Every sheet column 1:1 and as text, plus the record ID
+  _RecordId, the load's _BusinessTransactionId and the load columns
+  _LoadTimestamp, _SourceFile and _SourceRow. Written by the RawToBronze DAG,
+  generated from `sources.SOURCES`.
 - Config: reference tables Owner, SolutionType, ValueType and
   RiskClassification.
-- Silver: Initiative, written by the DAGs the BronzeToSilver meta DAG
+- Silver: Initiative, upserted by the DAGs the BronzeToSilver meta DAG
   generates (one per extract table).
+- BusinessTransaction: one row per RawToBronze load (per extract table) and
+  per BronzeToSilver run. Bronze records and initiatives point to theirs, so
+  every silver row can be traced back to the bronze load and source file.
 
 The Backend service defines its own copy of the silver/config models —
 Input Orchestration and Backend are separate deployments/images, so for
@@ -20,7 +25,7 @@ common package. Keep both in sync.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Table
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import declarative_base, relationship
 
 from ai_cockpit_ingestion.sources import SOURCES
@@ -29,16 +34,19 @@ Base = declarative_base()
 
 # --- Bronze -----------------------------------------------------------------
 
-LOAD_COLUMNS = ("_LoadTimestamp", "_SourceFile", "_SourceRow")
+RECORD_ID_COLUMN = "_RecordId"
+LOAD_COLUMNS = ("_BusinessTransactionId", "_LoadTimestamp", "_SourceFile", "_SourceRow")
 
 
 def _extract_table(name: str, columns: tuple[str, ...]) -> Table:
-    # No surrogate key: the extract is replaced as a whole on every load, and
-    # _SourceRow (the sheet's row number) already identifies a row.
+    # Append-only: _RecordId identifies a record across all loads,
+    # _BusinessTransactionId groups the records of one load.
     return Table(
         name,
         Base.metadata,
+        Column(RECORD_ID_COLUMN, Integer, primary_key=True, autoincrement=True),
         *(Column(column, String, nullable=True) for column in columns),
+        Column("_BusinessTransactionId", Integer, ForeignKey("business_transaction.id"), nullable=False),
         Column("_LoadTimestamp", DateTime, nullable=False),
         Column("_SourceFile", String, nullable=False),
         Column("_SourceRow", Integer, nullable=False),
@@ -111,6 +119,44 @@ class RiskClassification(Base):
     initiatives = relationship("Initiative", back_populates="risk_classification")
 
 
+# --- Lineage ----------------------------------------------------------------
+
+
+class BusinessTransaction(Base):
+    """One RawToBronze load of an extract table or one BronzeToSilver run.
+
+    Created with status "running" in its own short database transaction
+    before the work starts, then set to "success" in the same transaction as
+    the data it describes, or to "failed" if that transaction rolled back.
+    """
+
+    __tablename__ = "business_transaction"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String, nullable=False)  # KIND_RAW_TO_BRONZE / KIND_BRONZE_TO_SILVER
+    extract_table = Column(String, nullable=False)
+    business_unit = Column(String, nullable=False)
+    source_file = Column(String, nullable=True)
+    load_timestamp = Column(DateTime, nullable=True)  # _LoadTimestamp of the bronze load written/read
+    # BronzeToSilver: the RawToBronze transaction whose records were read.
+    source_business_transaction_id = Column(Integer, ForeignKey("business_transaction.id"), nullable=True)
+    status = Column(String, nullable=False)  # running / success / failed
+    force = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    rows_read = Column(Integer, nullable=True)
+    inserted = Column(Integer, nullable=True)
+    updated = Column(Integer, nullable=True)
+    unchanged = Column(Integer, nullable=True)
+    deactivated = Column(Integer, nullable=True)
+    conflicts = Column(Integer, nullable=True)
+    error = Column(String, nullable=True)
+
+
+KIND_RAW_TO_BRONZE = "raw_to_bronze"
+KIND_BRONZE_TO_SILVER = "bronze_to_silver"
+
+
 # --- Silver -----------------------------------------------------------------
 
 
@@ -150,10 +196,21 @@ class Initiative(Base):
     solution_type_id = Column(Integer, ForeignKey("solution_type.id"), nullable=True)
     risk_classification_id = Column(Integer, ForeignKey("risk_classification.id"), nullable=False)
 
-    # When this silver row was written.
+    # Upsert bookkeeping, see transforms.upsert_keys: key_hash decides
+    # update vs. insert (the sources carry no initiative ID), row_hash whether
+    # the source row changed at all.
+    key_hash = Column(String(64), nullable=False, unique=True)
+    row_hash = Column(String(64), nullable=False)
+    # False once the initiative is no longer in its source sheet (soft delete).
+    is_active = Column(Boolean, nullable=False, default=True)
+    # The BronzeToSilver run that last inserted, changed or deactivated this row.
+    business_transaction_id = Column(Integer, ForeignKey("business_transaction.id"), nullable=False)
+
+    # When this silver row was last inserted, changed or deactivated.
     timestamp = Column(DateTime, nullable=False)
 
     owner = relationship("Owner", back_populates="initiatives")
     value_type = relationship("ValueType", back_populates="initiatives")
     solution_type = relationship("SolutionType", back_populates="initiatives")
     risk_classification = relationship("RiskClassification", back_populates="initiatives")
+    business_transaction = relationship("BusinessTransaction")

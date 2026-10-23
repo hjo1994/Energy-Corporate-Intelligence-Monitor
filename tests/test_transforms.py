@@ -1,17 +1,17 @@
 """Unit tests for the pure transforms and the source/model wiring (no Airflow
 or source workbook needed): pytest tests/
 """
-from ai_cockpit_ingestion.models import EXTRACT_TABLES, LOAD_COLUMNS
+from ai_cockpit_ingestion.models import EXTRACT_TABLES, LOAD_COLUMNS, RECORD_ID_COLUMN
 from ai_cockpit_ingestion.sources import SOURCES
 from ai_cockpit_ingestion.transforms.normalize import clean_text
 from ai_cockpit_ingestion.transforms.risk_heuristic import RISK_LEVELS, estimate_risk_level
 from ai_cockpit_ingestion.transforms.value_heuristic import estimate_value
 
 
-def test_extract_tables_mirror_sheet_columns_plus_load_columns():
+def test_extract_tables_mirror_sheet_columns_plus_record_id_and_load_columns():
     for source in SOURCES:
         columns = [c.name for c in EXTRACT_TABLES[source.extract_table].columns]
-        assert columns == [*source.columns, *LOAD_COLUMNS]
+        assert columns == [RECORD_ID_COLUMN, *source.columns, *LOAD_COLUMNS]
 
 
 def test_clean_text_collapses_nbsp_and_empties():

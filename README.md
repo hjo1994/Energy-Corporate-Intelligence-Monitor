@@ -15,15 +15,17 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
    `.ai_cockpit_import.last_processed`). Danach lädt je Quellblatt ein
    `RawToBronzeOperator` die Zeilen 1:1 als Text in seine Extract-Tabelle
    (`IT_Initiatives_Extract`, `50Hertz_Initiatives_Extract`,
-   `CorporateOneSAP_Initiatives_Extract`, `ETB_Initiatives_Extract`) plus
-   `_LoadTimestamp`, `_SourceFile`, `_SourceRow`. Leere Zeilen (ohne Name)
+   `CorporateOneSAP_Initiatives_Extract`, `ETB_Initiatives_Extract`).
+   **Append-only:** Jeder Load ist eine BusinessTransaction und hängt seine
+   Zeilen an (`_RecordId`, `_BusinessTransactionId`, `_LoadTimestamp`,
+   `_SourceFile`, `_SourceRow`); frühere Loads bleiben. Leere Zeilen (ohne Name)
    werden übersprungen; fehlt eine Spalte des Datenmodells im Blatt, bricht
    der Task ab. Jeder Load-Task emittiert das Dataset seiner Tabelle.
 2. **SeedConfig** — Config-Tabellen sind einmalig zu befüllende
    Konfiguration. Der DAG legt nur fehlende Einträge an (nie Update/Delete):
    SolutionType/ValueType aus dem Blatt `Variables`, RiskClassification mit
    den 5 Stufen der Rahmenbetriebsvereinbarung KI, Owner aus den
-   Owner/Department-Paaren der Extract-Tabellen (Category = Business Unit).
+   Owner/Department-Paaren des jeweils letzten Loads (Category = Business Unit).
    Nach dem ersten `raw_to_bronze`-Lauf manuell starten, später erneut, wenn
    neue Owner oder Katalogeinträge dazukommen (Silber legt keine an).
 3. **BronzeToSilver (Meta-DAG)** — `build_bronze_to_silver_dag()` erzeugt aus
@@ -33,11 +35,54 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
    und Timing, verknüpft **nur bestehende** Config-Einträge (Unbekanntes
    bleibt NULL und wird geloggt), schätzt die Value-Attribute
    (`transforms/value_heuristic.py`) und die Risikostufe
-   (`transforms/risk_heuristic.py`) und ersetzt in einer Transaktion die
-   Initiativen seiner Business Unit. Eine neue Quelle braucht nur einen
-   neuen `SourceConfig`-Eintrag.
+   (`transforms/risk_heuristic.py`) und **upsertet** die Initiativen seiner
+   Business Unit (siehe „Upsert-Strategie“). Eine neue Quelle braucht nur
+   einen neuen `SourceConfig`-Eintrag.
 
 Die Marker-Datei wird erst gesetzt, wenn alle vier Extrakte geladen sind.
+
+## Upsert-Strategie (Silber)
+
+Die Quellblätter haben keine Initiative-ID (`Number` ist eine
+Zeilennummer-Formel `=ROW()-ROW(...)`, im Corporate-Blatt feste 1…n). Silber
+erkennt „dieselbe Initiative“ deshalb über zwei SHA-256-Hashes
+(`transforms/upsert_keys.py`). Normalisierung: trimmen, Whitespace inkl.
+NBSP zusammenfassen, Zero-Width-Zeichen entfernen, NULL → "", Teile mit
+`\x1f` verkettet.
+
+- **KeyHash** (Identität) = Business Unit + Name (zusätzlich casefold).
+- **RowHash** (Delta) = die Quellspalten, die in Silber einfließen: Name,
+  Description, Owner, Department, Flagship, AI Layer, Status, Solution Type,
+  Solution Feasibility, High-Level Cost Assessment, Expected Outcome und, wo
+  vorhanden, Added Value, Value, Complexity, Timing start, Timing delivery.
+  Nicht: Number, Strategic Link (ETB), Impediments, 2026, Kolom1, Lade-/ID-Spalten.
+
+| Fall | Ergebnis |
+| --- | --- |
+| KeyHash neu | Insert (neue ID) |
+| KeyHash bekannt, RowHash anders (oder Zeile inaktiv) | Update in place: ID bleibt, alle Werte inkl. Heuristiken neu, neue BusinessTransactionID |
+| KeyHash bekannt, RowHash gleich | unchanged, nichts geschrieben (BusinessTransactionID bleibt) |
+| Key im Load doppelt, gleicher RowHash | einmal übernommen, Warnung (heute ETB „AC_012 check reporting“) |
+| Key im Load doppelt, unterschiedlicher RowHash | Konflikt: nicht übernommen, beide Zeilen geloggt, bestehende Silber-Zeile bleibt |
+| aktive Initiative fehlt im neuen Load | Soft-Delete `is_active = false` (Backend blendet sie aus); taucht sie wieder auf, wird sie mit alter ID reaktiviert |
+| DAG-Parameter `force = true` | jede bekannte Initiative wird neu berechnet (z. B. nach Heuristik- oder Config-Änderung) |
+
+Eine Umbenennung ist damit „alte Initiative deaktiviert, neue angelegt“.
+Weil der RowHash die Quelle hasht, wirkt ein später ergänzter Owner
+(`seed_config`) erst bei einer Quelländerung oder mit `force`.
+
+**BusinessTransaction** (`business_transaction`): eine Zeile je
+RawToBronze-Load (je Extract-Tabelle) und je BronzeToSilver-Lauf, mit Art,
+Extract-Tabelle, Business Unit, Quelldatei, LoadTimestamp, gelesenem
+Bronze-Load (`source_business_transaction_id`), Status
+(running/success/failed, Fehlertext), `force`, Start/Ende und Zählern
+(rows_read, inserted, updated, unchanged, deactivated, conflicts). Bronze-
+Zeilen tragen die ID ihres Loads, jede Initiative die ID des Laufs, der sie
+zuletzt angelegt/geändert/deaktiviert hat: Initiative →
+BusinessTransaction → Bronze-Load → Quelldatei.
+
+Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
+oder in der UI „Trigger DAG w/ config“.
 
 ## Heuristiken (Schätzungen, keine Messwerte)
 
@@ -64,7 +109,9 @@ DAGs in dieselbe Datei schreiben, entfällt der frühere atomare
 Datei-Tausch: Jeder Task schreibt in genau einer kurzen Transaktion
 (Backend sieht bis zum Commit den alten Stand), parallele Schreiber warten
 über das SQLite-Busy-Timeout (120 s). Tabellen legt `db.get_engine()`
-idempotent an.
+idempotent an — neue Spalten in bestehenden Tabellen aber nicht: Eine DB
+mit dem Schema vor der Upsert-Strategie muss einmal neu aufgebaut werden
+(Datei löschen, `raw_to_bronze` → `seed_config` → `bronze_to_silver_*`).
 
 ## Struktur
 
@@ -83,6 +130,7 @@ idempotent an.
     sources.py                   # die 4 Quellblätter: Tabelle, Business Unit, Spalten
     models.py                    # Bronze-, Config- und Silber-Tabellen (SQLAlchemy)
     db.py
+    lineage.py                   # BusinessTransaction anlegen / abschließen
     operators/
       source_file_sensor.py
       raw_to_bronze.py
@@ -92,7 +140,9 @@ idempotent an.
       normalize.py               # Status-/Timing-/Komplexitäts-Normalisierung, Katalog-Matching
       value_heuristic.py
       risk_heuristic.py
+      upsert_keys.py             # KeyHash / RowHash
   tests/test_transforms.py
+  tests/test_upsert.py           # Hashes und Upsert gegen eine Temp-DB
 ```
 
 ## Airflow 2.10 (dieser Branch)
@@ -144,17 +194,21 @@ unveränderte Excel erneut zu laden, die Marker-Datei
 
 ## Verifiziert (23.10.2026, Airflow 2.10.2, Python 3.11, SQLAlchemy 1.4.54)
 
-Lokal gegen `data/sources/2026_AI_Initiatives_Elia_Group.xlsx`:
+Lokal gegen `data/sources/2026_AI_Initiatives_Elia_Group.xlsx`, frische DB:
 
-- Alle 6 DAGs laden ohne Import-Fehler.
-- `raw_to_bronze`: 17 IT, 53 50Hertz, 29 Corporate & OneSAP+, 66 ETB = 165 Zeilen.
-- `seed_config`: 11 SolutionType, 7 ValueType, 5 RiskClassification, 80 Owner.
-- `bronze_to_silver_*`: 165 Initiativen, Risikostufen 59 × 1, 87 × 2, 13 × 3,
-  6 × 4, ≈ 9,8 Mio. € Potenzial — identisch mit dem Lauf auf `main`
-  (Airflow 3). Erneuter Lauf ersetzt nur die eigenen Zeilen.
-- Mit laufendem Scheduler starteten alle vier Silber-DAGs automatisch
-  (`dataset_triggered`) nach einem `raw_to_bronze`-Lauf.
-- `pytest tests/`: 7 Tests grün.
+- Alle 6 DAGs laden ohne Import-Fehler; `pytest tests/`: 12 Tests grün.
+- Lauf 1: `raw_to_bronze` 165 Zeilen, `seed_config` 11/7/5/80,
+  `bronze_to_silver_*` **164 inserted** (17 IT, 53 50Hertz, 29 Corporate,
+  65 ETB): „AC_012 check reporting“ steht in ETB zweimal mit identischem
+  Inhalt (eine Variante mit Leerzeichen am Ende) und wird einmal übernommen.
+- Lauf 2 (unveränderte Excel, Marker gelöscht): Bronze verdoppelt (z. B.
+  IT 34 Zeilen), Silber 164 × unchanged, alle IDs identisch.
+- Lauf 3 (Kopie der Excel, im Blatt IT eine Zeile geändert, eine gelöscht,
+  eine neu): IT 1 inserted, 1 updated, 15 unchanged, 1 deactivated; alle
+  übrigen 163 IDs unverändert.
+- `force = true` auf IT: 17 updated.
+- Mit laufendem Scheduler starteten die Silber-DAGs wie bisher automatisch
+  über die Datasets.
 
 **Nicht lokal geprüft:** Installation über den Firmen-Spiegel und
 `poetry.lock`, der `dependency_loader` im Cluster, das echte Plattform-Image.

@@ -3,19 +3,22 @@ table (see sources.SOURCES).
 
 No cleaning or type casting here — every cell is stored as text exactly as
 in the sheet, only rows without a Name are skipped (the 50Hertz sheet, for
-example, has ~1M formatted but empty rows). Each load replaces the whole
-extract in one transaction, so readers never see a half-written table.
+example, has ~1M formatted but empty rows). The extract is append-only:
+each load is one BusinessTransaction; its rows are appended in one database
+transaction, all stamped with that transaction's ID, and earlier loads are
+never updated or deleted. BronzeToSilver reads the latest successful load
+(lineage.latest_bronze_load).
 """
 from __future__ import annotations
 
-import datetime
-
 import polars as pl
 from airflow.models.baseoperator import BaseOperator
-from sqlalchemy import delete, insert
+from sqlalchemy import insert, update
+from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.models import EXTRACT_TABLES
+from ai_cockpit_ingestion.lineage import STATUS_SUCCESS, mark_failed, start_transaction, utcnow
+from ai_cockpit_ingestion.models import EXTRACT_TABLES, KIND_RAW_TO_BRONZE, BusinessTransaction
 from ai_cockpit_ingestion.sources import SOURCES_BY_KEY
 
 # Sheet row of the first data row (row 1 is the header).
@@ -66,10 +69,20 @@ class RawToBronzeOperator(BaseOperator):
         df = df.with_row_index("_idx").filter(
             pl.col("Name").is_not_null() & (pl.col("Name").str.strip_chars() != "")
         )
-        load_timestamp = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        load_timestamp = utcnow()
+        engine = get_engine(self.db_path)
+        transaction_id = start_transaction(
+            engine,
+            kind=KIND_RAW_TO_BRONZE,
+            extract_table=source.extract_table,
+            business_unit=source.business_unit,
+            source_file=str(source_file_path),
+            load_timestamp=load_timestamp,
+        )
         rows = [
             {
                 **{column: _cell_text(row[column]) for column in source.columns},
+                "_BusinessTransactionId": transaction_id,
                 "_LoadTimestamp": load_timestamp,
                 "_SourceFile": str(source_file_path),
                 "_SourceRow": row["_idx"] + FIRST_DATA_ROW,
@@ -78,12 +91,22 @@ class RawToBronzeOperator(BaseOperator):
         ]
 
         table = EXTRACT_TABLES[source.extract_table]
-        engine = get_engine(self.db_path)
-        with engine.begin() as connection:
-            connection.execute(delete(table))
-            if rows:
-                connection.execute(insert(table), rows)
-        engine.dispose()
+        try:
+            with Session(engine) as session, session.begin():
+                if rows:
+                    session.execute(insert(table), rows)
+                session.execute(
+                    update(BusinessTransaction)
+                    .where(BusinessTransaction.id == transaction_id)
+                    .values(status=STATUS_SUCCESS, finished_at=utcnow(), rows_read=len(rows), inserted=len(rows))
+                )
+        except Exception as error:
+            mark_failed(engine, transaction_id, error)
+            raise
+        finally:
+            engine.dispose()
 
-        self.log.info("Loaded %d rows into %s", len(rows), source.extract_table)
-        return len(rows)
+        self.log.info(
+            "Appended %d rows to %s (business transaction %d)", len(rows), source.extract_table, transaction_id
+        )
+        return transaction_id

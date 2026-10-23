@@ -4,7 +4,9 @@ a single template.
 For every entry in sources.SOURCES, `build_bronze_to_silver_dag` renders a
 DAG `bronze_to_silver_<key>` that is scheduled on the Dataset its RawToBronze
 load task emits — so a fresh extract is turned into silver automatically,
-and each source can also be re-run on its own. A new source sheet only needs
+and each source can also be re-run on its own (trigger with
+{"force": true} to recompute every initiative, see BronzeToSilverOperator).
+A new source sheet only needs
 a new SourceConfig entry, no new DAG code.
 """
 from __future__ import annotations
@@ -25,6 +27,7 @@ import datetime
 
 from airflow import DAG
 from airflow.datasets import Dataset
+from airflow.models.param import Param
 
 from ai_cockpit_ingestion import config
 from ai_cockpit_ingestion.operators.bronze_to_silver import BronzeToSilverOperator
@@ -40,6 +43,14 @@ def build_bronze_to_silver_dag(source: SourceConfig) -> DAG:
         catchup=False,
         max_active_runs=1,
         tags=["ai-cockpit", "input-orchestration", "silver"],
+        params={
+            "force": Param(
+                False,
+                type="boolean",
+                description="Recompute every initiative even if its source row is unchanged "
+                "(e.g. after a heuristic or config change).",
+            )
+        },
     ) as dag:
         BronzeToSilverOperator(
             task_id="bronze_to_silver",
