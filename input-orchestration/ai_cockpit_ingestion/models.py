@@ -97,7 +97,7 @@ class ValueType(Base):
 
 class RiskClassification(Base):
     """The five levels of the risk pyramid in the Rahmenbetriebsvereinbarung
-    KI (Abb. 1-3), seeded by RawToBronze — see transforms.risk_heuristic.
+    KI (Abb. 1-3), seeded by the seed_config DAG — see transforms.risk_heuristic.
     The primary key is the level itself (1-5).
     """
 

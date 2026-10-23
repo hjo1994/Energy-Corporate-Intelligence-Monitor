@@ -1,7 +1,9 @@
 # AI Initiatives Cockpit
 
-Dashboard mit Übersicht über alle KI-Initiativen im Unternehmen — Owner, Status,
-geschätzter Aufwand und Mehrwert je Initiative.
+Dashboard mit Übersicht über alle KI-Initiativen im Unternehmen — Owner, Stage,
+Aufwand, geschätztes Nutzenpotenzial (€/Jahr), Kosten und Risikostufe je
+Initiative. Nutzen, Kosten und Risikostufe sind Heuristik-Schätzungen der
+Input Orchestration, keine erfassten Werte.
 
 ## Architektur
 
@@ -10,7 +12,8 @@ Drei separate Kubernetes-Deployments (siehe
 
 1. **`input-orchestration/`** — Airflow-DAGs im Bronze/Silber-Aufbau:
    `raw_to_bronze` (File Sensor + 1:1-Load der vier Quellblätter in die
-   Extract-Tabellen), `seed_config` (einmaliges Befüllen der Config-Tabellen)
+   Extract-Tabellen), `seed_config` (manuell getriggertes Befüllen der Config-Tabellen; nur
+   fehlende Einträge, bei neuen Ownern erneut starten)
    und der Meta-DAG `bronze_to_silver`, der je Extract-Tabelle einen DAG
    erzeugt (Normalisierung, Value- und Risiko-Heuristik, Schreiben in
    Initiative). Details: `input-orchestration/README.md`.

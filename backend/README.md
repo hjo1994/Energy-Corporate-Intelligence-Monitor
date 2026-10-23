@@ -11,13 +11,33 @@ Schreibpfad.
 |---|---|
 | `GET /api/healthz` | Liveness, ohne Auth, prüft nicht die DB. Kein `/startup`/`/readz`: das Referenz-Deployment konfiguriert keine Probes |
 | `GET /api/auth/rights` | angemeldeter Nutzer und seine Rechte (für das Frontend) |
-| `GET /api/initiatives` | Liste; Filter `status`, `business_unit`, `department` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `status`, `value_score`, `solution_complexity_score`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type` |
+| `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department`, `risk_classification_id` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `potential_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type`/`risk_classification` (id, name) |
 | `GET /api/initiatives/{id}` | Einzelne Initiative |
-| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Status, Ø Scores, Anzahl mit/ohne `value_score`, Anzahl ohne Owner |
+| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage und je Risikostufe, Summe/Ø Potenzial, Summe hypothetischer Nutzen und Kosten/Jahr, Ø Komplexität, Anzahl ohne Owner |
 | `GET /api/owners` | Owner (optional `business_unit`) |
 | `GET /api/business-units` | Distinkte `Owner.category` mit Initiativen-Anzahl |
-| `GET /api/statuses` | Status-Werte mit Anzahl |
+| `GET /api/stages` | Stage-Werte mit Anzahl |
+| `GET /api/risk-classifications` | Die 5 Risikostufen der Rahmenbetriebsvereinbarung KI (auch ungenutzte) mit Beschreibung und abgeleiteten Maßnahmen |
 | `GET /api/solution-types`, `GET /api/value-types` | Lookup-Kataloge |
+
+### Felder einer Initiative
+
+Gespeichert (von der Input Orchestration geschätzt, siehe deren README):
+`stage`, die vier Nutzen-Buckets `efficiency_score_eur`, `quality_score_eur`,
+`risk_reduction_score_eur`, `strategic_value_score_eur` (€/Jahr), die
+Abschläge `confidence_score` und `delivery_score`,
+`solution_complexity_score`, `one_time_costs`, `operating_costs` (€/Jahr),
+`depreciation_years`, `risk_classification`.
+
+Abgeleitet (nicht gespeichert, `app/derived.py`, in SQL für Sortierung/Summary
+und in Python für die Antwort):
+
+- `hypothetical_value_eur` = Summe der vier Buckets
+- `potential_value_eur` = hypothetischer Nutzen × Confidence × Delivery — der
+  „Mehrwert“, den das Dashboard zeigt
+- `annual_cost_eur` = einmalige Kosten / Abschreibungsjahre + Betriebskosten
+
+Fehlt ein Eingangswert, ist der abgeleitete Wert `null` (nie 0).
 
 Interaktive Doku: `/docs` (Swagger UI; lädt aktuell noch von einem CDN und
 bleibt im Cluster leer — Offline-Variante steht noch aus).
@@ -45,8 +65,8 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
 - Getestet ist das gegen den **Stub**: Gating, 401 ohne Anmeldung, Rechte aus
   Gruppen. Das Verhalten des echten `eg-auth` ist nicht geprüft.
 
-`business_unit` = `Owner.category`. **Initiativen ohne Owner (aktuell 22 von
-160) gehören damit zu keiner Business Unit** und tauchen in BU-Filter und
+`business_unit` = `Owner.category`. **Initiativen ohne Owner (aktuell 23 von
+165) gehören damit zu keiner Business Unit** und tauchen in BU-Filter und
 `/api/business-units` nicht auf — bis die Owner-Verknüpfung nachgezogen wird.
 Die BU-Werte kommen unverändert aus der Quelle (z. B. `"50 Hertz"`,
 `"Corporate"`). Scores sind bei vielen Initiativen `null`; bei `sort` stehen
@@ -59,10 +79,11 @@ Siehe Interim-Entscheidung im Root-README. Konkret umgesetzt:
 
 - Die Datei wird auf SQLite-Ebene `mode=ro` geöffnet (zusätzlich zum
   read-only Volume-Mount).
-- **Kein Connection-Pool** (`NullPool`): Input Orchestration ersetzt die Datei
-  per atomarem Rename, ein gepoolter Handle würde die alte Datei weiterlesen.
-  Jede Anfrage öffnet die Datei neu (getestet).
-- Schlägt das Öffnen fehl (z. B. genau im Rename-Moment), 3 Versuche mit
+- **Kein Connection-Pool** (`NullPool`): Jede Anfrage öffnet die Datei neu
+  und sieht damit sofort, was die DAGs committet haben (sie schreiben in
+  kurzen Transaktionen direkt in die Datei). Auch ein Austausch der Datei
+  per Rename (z. B. Backup einspielen) wird erkannt. Beides getestet.
+- Schlägt das Öffnen fehl (z. B. während ein DAG schreibt), 3 Versuche mit
   kurzem Backoff, danach `503` + `Retry-After`.
 
 ## Struktur
@@ -76,7 +97,8 @@ backend/
     auth.py          # eg-auth: Rights, authorizer(), /api/auth/rights
     config.py        # AI_COCKPIT_DB_PATH (Default /data/db/ai_cockpit.db)
     db.py            # read-only Engine, Session mit Retry
-    models.py        # Kopie der Modelle aus input-orchestration (von Hand synchron halten)
+    models.py        # Kopie der Silber-/Config-Modelle aus input-orchestration (von Hand synchron halten)
+    derived.py       # abgeleitete Werte: hypothetischer Nutzen, Potenzial, Kosten/Jahr
     schemas.py
     api/initiatives.py, api/reference.py
   local_stubs/       # eg-auth-Stub nur für lokale Entwicklung
@@ -122,8 +144,11 @@ AI_COCKPIT_DB_PATH=../input-orchestration/.airflow_home/ai_cockpit.db \
 .venv/bin/python -m pytest
 ```
 
-Verifiziert: 17 Tests (Filter, Suche inkl. `%`/`_`-Escaping, Sortierung mit
-NULLs, Paginierung, Summary, Read-only, Datei-Austausch per Rename, 503 bei
-fehlender DB, Auth, portables SQL, Startkommando der Plattform) sowie ein Lauf gegen die echte Datenbank mit identischen Zahlen
-wie der DAG-Lauf. Nicht getestet: Zugriff über ein RWX-Volume aus einem
+Verifiziert (23.10.2026): 20 Tests (Filter inkl. Risikostufe, Suche inkl.
+`%`/`_`-Escaping, abgeleitete Werte, Sortierung mit NULLs, Paginierung,
+Summary, Read-only, neue Commits des Writers und Datei-Austausch per Rename
+sichtbar, 503 bei fehlender DB, Auth, portables SQL, Startkommando der
+Plattform) sowie ein Lauf gegen die echte Datenbank mit identischen Zahlen
+wie der DAG-Lauf (165 Initiativen, ≈ 9,8 Mio. € Potenzial, ≈ 39,8 Mio. €
+hypothetisch, ≈ 15,6 Mio. € Kosten/Jahr). Nicht getestet: Zugriff über ein RWX-Volume aus einem
 getrennten Pod.
