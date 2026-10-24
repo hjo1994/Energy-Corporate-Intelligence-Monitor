@@ -14,6 +14,14 @@ is then simply their sum (deterministic, nothing estimated top-down):
 Confidence comes from the status, Delivery from feasibility/complexity
 (else solution type), costs from the cost assessment (else feasibility, else
 solution type). All amounts are EUR per year except OneTimeCosts.
+
+Costs are EXPECTED costs (decided 24.10.2026): the estimated one-time and
+operating costs are both multiplied by the DeliveryScore, like the value side,
+and one-time costs are written off over DEPRECIATION_YEARS = 5 for every
+initiative. The stored OneTimeCosts/OperatingCosts are therefore expected
+values; the cost if delivered is value / DeliveryScore. The annual cost the
+backend derives (OneTimeCosts / DepreciationYears + OperatingCosts) is thus
+delivery-weighted without any change there.
 """
 from __future__ import annotations
 
@@ -73,7 +81,8 @@ COST_SIZE_BY_SOLUTION_TYPE = {
 COST_EUR = {"XS": 25_000, "S": 75_000, "M": 200_000, "L": 500_000, "XL": 1_000_000}
 # Some feasibility cells hold the Variables sheet's explanation text instead of the size.
 FEASIBILITY_FROM_TEXT = (("All required capabilities", "XS"), ("Most capabilities", "S"), ("Core capabilities", "M"))
-LICENSE_SOLUTION_TYPES = ("Copilot", "General chatbot", "Github co-pilot")  # written off in 1 year
+OPERATING_SHARE = 0.25  # operating costs per year as a share of the one-time costs
+DEPRECIATION_YEARS = 5  # for every initiative (until 24.10.2026: 1 for licenses, 5 for platforms, else 3)
 
 
 @dataclass
@@ -252,16 +261,13 @@ def estimate_value(
     else:
         cost_size = "S"
         notes.append("Cost default S")
-    one_time = COST_EUR[cost_size]
     if cost_raw.lower().startswith(("already funded", "cost are part", "initial costs are covered")):
         notes.append("Funded elsewhere")
-    if solution_type in LICENSE_SOLUTION_TYPES:
-        years = 1
-    elif re.search(r"platform|infrastructure|plattform", text):
-        years = 5
-    else:
-        years = 3
-    operating = round(one_time * 0.25, -3)
+    # Expected costs: cost if delivered x DeliveryScore (see module docstring).
+    delivery_score = DELIVERY_FACTOR[delivery]
+    one_time = COST_EUR[cost_size] * delivery_score
+    operating = round(COST_EUR[cost_size] * OPERATING_SHARE, -3) * delivery_score
+    notes.append(f"Costs weighted by delivery {delivery_score}, written off over {DEPRECIATION_YEARS} years")
 
     return ValueEstimate(
         efficiency_eur=efficiency,
@@ -271,9 +277,9 @@ def estimate_value(
         confidence_level=confidence,
         confidence_score=CONFIDENCE_FACTOR[confidence],
         delivery_level=delivery,
-        delivery_score=DELIVERY_FACTOR[delivery],
+        delivery_score=delivery_score,
         one_time_costs=float(one_time),
         operating_costs=float(operating),
-        depreciation_years=years,
+        depreciation_years=DEPRECIATION_YEARS,
         rationale=notes,
     )

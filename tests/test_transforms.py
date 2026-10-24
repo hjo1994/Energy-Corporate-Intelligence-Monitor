@@ -39,13 +39,29 @@ def test_value_buckets_follow_their_own_formulas():
     assert e.efficiency_eur == 8_000 * 0.5 * 60  # volume x hours saved (ml) x rate
     assert e.hypothesized_eur == e.efficiency_eur + e.quality_eur + e.risk_reduction_eur + e.strategic_eur
     assert (e.confidence_level, e.delivery_level) == ("Low", "Low")
-    assert e.one_time_costs == 500_000  # from feasibility size L
+    assert e.one_time_costs == 500_000 * 0.4  # feasibility size L, weighted by delivery Low
 
 
 def test_value_without_score_falls_back_to_ai_layer_reach():
     e = _estimate(ai_layer="AI for business process automation", solution_type="Custom agent")
     assert e.efficiency_eur == 3_000 * 1.0 * 60  # reach M, genai_process
     assert e.quality_eur > 0  # automation layer -> quality bucket applies
+
+
+def test_costs_are_expected_costs_weighted_by_delivery_and_written_off_over_5_years():
+    # feasibility S -> delivery High (0.9), cost size S (75k one-time, 19k operating if delivered)
+    e = _estimate(solution_type="Custom agent", solution_feasibility="S")
+    assert e.delivery_score == 0.9
+    assert e.one_time_costs == 75_000 * 0.9
+    assert e.operating_costs == 19_000 * 0.9
+    assert e.depreciation_years == 5
+    # cost if delivered = stored value / DeliveryScore
+    low = _estimate(solution_type="Custom AI/ML model")  # delivery Low (0.4), cost size M
+    assert low.one_time_costs / low.delivery_score == 200_000
+    assert low.operating_costs / low.delivery_score == 50_000
+    # licenses and platforms are no longer special
+    assert _estimate(solution_type="Copilot").depreciation_years == 5
+    assert _estimate(description="data platform").depreciation_years == 5
 
 
 def test_production_means_high_delivery():

@@ -94,7 +94,19 @@ oder in der UI „Trigger DAG w/ config“.
   Wirkung je Fall, Flagship → Kosten je Fehler/Ereignis/Verzug. Hypothetischer
   Nutzen = Summe der Buckets; Potenzial = Summe × ConfidenceScore ×
   DeliveryScore. Gegen `data/value_estimates_heuristic.csv` geprüft:
-  identisch für alle 160 Initiativen des alten EliaGroup-Blatts.
+  identisch für alle 160 Initiativen des alten EliaGroup-Blatts (Nutzen;
+  die Kosten weichen seit 24.10.2026 bewusst ab, siehe unten).
+- **Kosten sind Erwartungswerte** (Entscheidung 24.10.2026): Die geschätzten
+  Einmal- und Betriebskosten werden wie der Nutzen mit dem `DeliveryScore`
+  gewichtet, und abgeschrieben wird für alle Initiativen über **5 Jahre**
+  (vorher 1 Jahr für Lizenzen, 5 für Plattformen, sonst 3). In `OneTimeCosts`
+  und `OperatingCosts` steht damit *Kosten bei Lieferung × DeliveryScore*;
+  die Kosten bei Lieferung sind `Wert / DeliveryScore`. Die Kosten/Jahr, die
+  das Backend ableitet (`OneTimeCosts / DepreciationYears + OperatingCosts`),
+  sind dadurch ohne Änderung dort delivery-gewichtet. Stand nach dem Lauf mit
+  `force` (164 aktive Initiativen): Potenzial ≈ 9,77 Mio. €, Kosten ≈ 7,04
+  Mio. €/Jahr (bei Lieferung ≈ 11,8 Mio. €), netto ≈ +2,73 Mio. €, 73
+  Initiativen netto positiv.
 - **Risiko** (`risk_heuristic.py`): Regelkette aus Name/Beschreibung/
   Expected Outcome/Added Value und SolutionType. Automatisierte
   Entscheidungen/Profilbildung über Beschäftigte → 4; Beschäftigtendaten,
@@ -200,7 +212,7 @@ unveränderte Excel erneut zu laden, die Marker-Datei
 
 Lokal gegen `data/sources/2026_AI_Initiatives_Elia_Group.xlsx`, frische DB:
 
-- Alle 6 DAGs laden ohne Import-Fehler; `pytest tests/`: 12 Tests grün.
+- Alle 6 DAGs laden ohne Import-Fehler; `pytest tests/`: 12 Tests grün (seit 24.10.2026: 13).
 - Lauf 1: `raw_to_bronze` 165 Zeilen, `seed_config` 11/7/5/80,
   `bronze_to_silver_*` **164 inserted** (17 IT, 53 50Hertz, 29 Corporate,
   65 ETB): „AC_012 check reporting“ steht in ETB zweimal mit identischem
