@@ -1,5 +1,6 @@
 import type { Initiative } from "../api/types";
 import { flagshipLabel, formatEur, formatFactor, formatQuarter } from "../domain/format";
+import { costIfDelivered } from "../domain/value";
 import { Avatar, EffortMeter, RiskBadge, StageBadge, ValueMeter } from "./small";
 
 export function DetailBody({ initiative: i }: { initiative: Initiative }) {
@@ -62,16 +63,18 @@ export function DetailBody({ initiative: i }: { initiative: Initiative }) {
       </section>
 
       <section aria-label="Cost estimate">
-        <h4 className="facts-title">Cost estimate (heuristic)</h4>
+        <h4 className="facts-title">Cost estimate (heuristic, weighted by delivery)</h4>
         <dl className="facts">
-          <dt>One-time</dt>
+          <dt>One-time (expected)</dt>
           <dd className="mono">{formatEur(i.one_time_costs)}</dd>
-          <dt>Operating per year</dt>
+          <dt>Operating per year (expected)</dt>
           <dd className="mono">{formatEur(i.operating_costs)}</dd>
           <dt>Depreciation</dt>
           <dd className="mono">{i.depreciation_years === null ? "–" : `${i.depreciation_years} years`}</dd>
-          <dt>Cost per year</dt>
+          <dt>Cost per year (expected)</dt>
           <dd className="mono">{formatEur(i.annual_cost_eur)}</dd>
+          <dt>Cost per year if delivered</dt>
+          <dd className="mono">{formatEur(costIfDelivered(i))}</dd>
         </dl>
       </section>
 

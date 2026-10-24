@@ -97,6 +97,7 @@ class Initiative(Base):
     confidence_score = Column("ConfidenceScore", Float, nullable=True)
     delivery_score = Column("DeliveryScore", Float, nullable=True)
 
+    # Expected costs: estimated cost if delivered x DeliveryScore (value heuristic, since 24.10.2026).
     one_time_costs = Column("OneTimeCosts", Float, nullable=True)
     operating_costs = Column("OperatingCosts", Float, nullable=True)  # EUR per year
     depreciation_years = Column("DepreciationYears", Integer, nullable=True)

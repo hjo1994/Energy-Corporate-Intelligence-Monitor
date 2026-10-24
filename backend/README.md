@@ -35,7 +35,11 @@ und in Python für die Antwort):
 - `hypothetical_value_eur` = Summe der vier Buckets
 - `potential_value_eur` = hypothetischer Nutzen × Confidence × Delivery — der
   „Mehrwert“, den das Dashboard zeigt
-- `annual_cost_eur` = einmalige Kosten / Abschreibungsjahre + Betriebskosten
+- `annual_cost_eur` = einmalige Kosten / Abschreibungsjahre + Betriebskosten.
+  Seit 24.10.2026 speichert die Input Orchestration die Kosten als
+  **Erwartungswerte** (Kosten bei Lieferung × `delivery_score`, Abschreibung
+  einheitlich 5 Jahre); damit ist auch `annual_cost_eur` delivery-gewichtet.
+  Kosten bei Lieferung = Wert / `delivery_score`.
 
 Fehlt ein Eingangswert, ist der abgeleitete Wert `null` (nie 0).
 

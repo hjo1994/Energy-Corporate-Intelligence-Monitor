@@ -7,6 +7,8 @@ Python for the response. Both follow the input-orchestration value heuristic:
 - hypothetical value = sum of the four value buckets (EUR per year)
 - potential value    = hypothetical value x confidence x delivery (EUR per year)
 - annual cost        = one-time costs / depreciation years + operating costs
+                       (stored as expected costs, i.e. already weighted by delivery;
+                       cost if delivered = annual cost / delivery)
 
 A missing input makes the derived value NULL instead of silently counting as 0.
 """

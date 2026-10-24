@@ -13,6 +13,11 @@ export const isValued = (i: Initiative): boolean =>
   i.delivery_score !== null &&
   i.annual_cost_eur !== null;
 
+// The stored costs are expected costs (cost if delivered x DeliveryScore, input orchestration since
+// 24.10.2026), so the annual cost is delivery-weighted; dividing by the DeliveryScore gives it back as if delivered.
+export const costIfDelivered = (i: Initiative): number | null =>
+  i.annual_cost_eur === null || !i.delivery_score ? null : i.annual_cost_eur / i.delivery_score;
+
 export const netValue = (i: Initiative): number => (i.potential_value_eur as number) - (i.annual_cost_eur as number);
 
 const sum = (values: number[]): number => values.reduce((a, b) => a + b, 0);

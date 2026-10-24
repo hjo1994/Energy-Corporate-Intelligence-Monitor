@@ -29,8 +29,8 @@ export function ValueBridge({ items }: { items: Initiative[] }) {
       <div className="value-head">
         <h2>Value bridge</h2>
         <p className="muted">
-          From the hypothetical value to the estimated potential and, after the annual cost, the net value per
-          year.
+          From the hypothetical value to the estimated potential and, after the expected annual cost (weighted by
+          delivery, like the potential), the net value per year.
         </p>
       </div>
       <div className="value-split">

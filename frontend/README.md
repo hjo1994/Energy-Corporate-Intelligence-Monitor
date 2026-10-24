@@ -50,6 +50,9 @@ nicht an, sondern eigene Texte je HTTP-Status.
     stehen; daneben schraffiert „No delivery date“ mit Summe, Anteil, Anzahl
     und den Business Units ohne jeden Termin.
 
+  Kosten sind seit 24.10.2026 Erwartungswerte (in der Input Orchestration
+  mit dem DeliveryScore gewichtet, Abschreibung 5 Jahre); Tooltip und
+  Details zeigen zusätzlich die Kosten bei Lieferung (Kosten/Jahr ÷ Delivery).
   Die Aggregation steckt in `src/domain/value.ts` (wie die KPI-Kacheln im
   Browser, damit sie den Filtern folgt; kein eigener Backend-Endpunkt).
   Farben: Potenzial blau, Kosten orange (CSS-Variablen in `styles.css`).
@@ -167,7 +170,7 @@ Hosts bräuchte CORS-Freigaben im Backend, die es nicht hat.
 
 ## Verifiziert
 
-55 Tests (Filter, Flagship-Statistik und -Widget, Sortierung mit fehlenden Werten, KPI-Berechnung,
+56 Tests (Filter, Flagship-Statistik und -Widget, Sortierung mit fehlenden Werten, KPI-Berechnung,
 €-Formatierung und Log-Skala, Matrix-Layout, Value-Aggregation (Brücke, Break-even, Fahrplan) und -Ansicht, Anzeige-Bereinigung, Ansichten, Detaildialog, Fehlerzustände je
 HTTP-Status, Anmeldeschranke in allen Zuständen, Login-Seite, Dev-Bypass
 inkl. Produktions-Absicherung). Getestet gegen eine **Attrappe** von

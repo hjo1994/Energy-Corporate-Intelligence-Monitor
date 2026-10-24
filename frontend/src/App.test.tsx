@@ -158,6 +158,7 @@ describe("value view", () => {
     const dot = within(map).getByRole("button", { name: /^Alpha: potential ≈ 54k €, cost ≈ 44k €/ });
     await userEvent.hover(dot);
     expect(within(map).getByRole("tooltip")).toHaveTextContent("AlphaETB · Idea");
+    expect(within(map).getByRole("tooltip")).toHaveTextContent("Cost if delivered ≈ 49k € /yr");
 
     await userEvent.click(within(map).getByRole("button", { name: "PoC & MVP" }));
     expect(dot).toHaveClass("faded");

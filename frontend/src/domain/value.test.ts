@@ -3,6 +3,7 @@ import { make } from "../test/fixtures";
 import {
   breakEvenPoints,
   breakEvenStats,
+  costIfDelivered,
   formatMillions,
   formatSignedEur,
   niceMax,
@@ -150,6 +151,14 @@ describe("value roadmap", () => {
 
   it("has no quarters without dates", () => {
     expect(valueRoadmap([unestimated])).toMatchObject({ quarters: [], undatedShare: null });
+  });
+});
+
+describe("cost if delivered", () => {
+  it("undoes the delivery weighting of the stored expected cost", () => {
+    expect(costIfDelivered(b)).toBeCloseTo(17_500 / 0.65);
+    expect(costIfDelivered(unestimated)).toBeNull();
+    expect(costIfDelivered(make({ id: 5, name: "Zero", annual_cost_eur: 1_000, delivery_score: 0 }))).toBeNull();
   });
 });
 

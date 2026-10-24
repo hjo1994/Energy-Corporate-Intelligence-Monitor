@@ -4,6 +4,7 @@ import { businessUnitOf, NO_BUSINESS_UNIT, NO_BUSINESS_UNIT_LABEL } from "../dom
 import { formatEur } from "../domain/format";
 import {
   breakEvenPoints,
+  costIfDelivered,
   breakEvenStats,
   formatSignedEur,
   niceMax,
@@ -42,7 +43,8 @@ export function BreakEvenMap({ items }: { items: Initiative[] }) {
         <div>
           <h2>Break-even map</h2>
           <p className="muted">
-            Each dot is one initiative. Above the dashed line its estimated potential exceeds its cost per year.
+            Each dot is one initiative. Above the dashed line its estimated potential exceeds its expected cost per
+            year (cost weighted by delivery, like the potential).
             Click a dot for the details.
           </p>
         </div>
@@ -128,6 +130,9 @@ export function BreakEvenMap({ items }: { items: Initiative[] }) {
                     <span>
                       Potential <span className="mono">{formatEur(tip.potential)}</span> · cost{" "}
                       <span className="mono">{formatEur(tip.cost)}</span> /yr
+                    </span>
+                    <span className="muted">
+                      Cost if delivered <span className="mono">{formatEur(costIfDelivered(tip.initiative))}</span> /yr
                     </span>
                   </div>
                 )}
