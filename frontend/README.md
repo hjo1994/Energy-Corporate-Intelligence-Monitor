@@ -27,6 +27,32 @@ nicht an, sondern eigene Texte je HTTP-Status.
   Business Unit, Flagship), Klick auf den Namen öffnet die Details.
 - **Board** (`/board`) — Spalten je Stage, Karten mit Owner, Aufwand,
   Potenzial; Klick öffnet die Details.
+- **Value** (`/value`) — drei Wert-Ansichten nach den Entwürfen A, B und G
+  (Canvas „Value-Visualisierung Entwürfe“), alle auf den gefilterten
+  Initiativen (Business Unit und Stage oben), alle als Schätzung
+  (Heuristik v2) gekennzeichnet:
+  - **Value bridge** — Wasserfall in M €/Jahr: hypothetischer Nutzen →
+    Confidence-Abschlag → Delivery-Abschlag → Potenzial → Kosten/Jahr → Netto
+    (negativ: gestrichelter Balken unter null). Daneben Confidence-Abschlag in %
+    und „Net positive x / n“ mit den Netto-Summen; darunter das Potenzial je
+    Nutzen-Bucket (Bucket × Confidence × Delivery). Gezählt werden nur
+    Initiativen mit Potenzial und Kosten; fehlen welche, nennt die Legende sie.
+  - **Break-even map** — je Initiative Kosten/Jahr (x) gegen Potenzial (y),
+    k €; gestrichelte Diagonale Potenzial = Kosten, Fläche darüber getönt.
+    Die Kosten-Heuristik arbeitet in Stufen, darum werden die Punkte
+    deterministisch um bis zu 8 px seitlich versetzt. Chips nach Stage-Gruppe
+    (Idea & Exploration / PoC & MVP / Implementation & Production / Unclear,
+    paused = On hold, Cancelled, Unknown) blenden die übrigen Punkte ab; die
+    Kennzahlen (über Break-even, Netto-Summe) folgen der Auswahl. Tooltip bei
+    Hover/Fokus, Klick öffnet den Detaildialog.
+  - **Value roadmap** — Potenzial je Lieferquartal (`date_delivery`) als
+    Balken plus kumulierte Linie, leere Quartale dazwischen bleiben als Lücke
+    stehen; daneben schraffiert „No delivery date“ mit Summe, Anteil, Anzahl
+    und den Business Units ohne jeden Termin.
+
+  Die Aggregation steckt in `src/domain/value.ts` (wie die KPI-Kacheln im
+  Browser, damit sie den Filtern folgt; kein eigener Backend-Endpunkt).
+  Farben: Potenzial blau, Kosten orange (CSS-Variablen in `styles.css`).
 - **Details** (Panel bzw. Dialog) — zusätzlich die vier Nutzen-Buckets,
   hypothetischer Nutzen, Confidence, Delivery, Potenzial, Kosten
   (einmalig, Betrieb, Abschreibung, Kosten/Jahr) und die Risikostufe.
@@ -141,8 +167,8 @@ Hosts bräuchte CORS-Freigaben im Backend, die es nicht hat.
 
 ## Verifiziert
 
-40 Tests (Filter, Flagship-Statistik und -Widget, Sortierung mit fehlenden Werten, KPI-Berechnung,
-€-Formatierung und Log-Skala, Matrix-Layout, Anzeige-Bereinigung, Ansichten, Detaildialog, Fehlerzustände je
+55 Tests (Filter, Flagship-Statistik und -Widget, Sortierung mit fehlenden Werten, KPI-Berechnung,
+€-Formatierung und Log-Skala, Matrix-Layout, Value-Aggregation (Brücke, Break-even, Fahrplan) und -Ansicht, Anzeige-Bereinigung, Ansichten, Detaildialog, Fehlerzustände je
 HTTP-Status, Anmeldeschranke in allen Zuständen, Login-Seite, Dev-Bypass
 inkl. Produktions-Absicherung). Getestet gegen eine **Attrappe** von
 `ServiceApi`/`useAuth`, nicht gegen echtes OIDC.

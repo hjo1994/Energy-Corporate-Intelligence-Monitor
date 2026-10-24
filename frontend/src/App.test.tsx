@@ -129,3 +129,41 @@ describe("flagship widget", () => {
     expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("1 · ≈ 20k €/yr");
   });
 });
+
+describe("value view", () => {
+  it("shows bridge, break-even map and roadmap for the filtered initiatives", async () => {
+    mockApi(ok);
+    renderAt("/value");
+    const bridge = await screen.findByRole("region", { name: "Value bridge" });
+    // only Alpha has potential and cost estimated: 54k potential - 44k cost
+    expect(within(bridge).getByRole("img")).toHaveAccessibleName(/Potential 0\.1, Cost \/ year 0\.0, Net \/ year 0\.0/);
+    expect(bridge).toHaveTextContent("1 initiatives (3 without estimated potential or cost left out)");
+    expect(bridge).toHaveTextContent("Net positive1 / 1");
+
+    const map = screen.getByRole("region", { name: "Break-even map" });
+    expect(map).toHaveTextContent("Above break-even1 / 1");
+    expect(map).toHaveTextContent("≈ +10k €");
+
+    const roadmap = screen.getByRole("region", { name: "Value roadmap" });
+    expect(within(roadmap).getByRole("img")).toHaveAccessibleName(/Q3 2026 54/);
+    expect(within(roadmap).getByRole("group", { name: "Without delivery date" })).toHaveTextContent(
+      "≈ 25k €31 % of the potential · 2 initiatives · no dates yet from IT",
+    );
+  });
+
+  it("break-even dots show a tooltip, open the details and fade outside the stage group", async () => {
+    mockApi(ok);
+    renderAt("/value");
+    const map = await screen.findByRole("region", { name: "Break-even map" });
+    const dot = within(map).getByRole("button", { name: /^Alpha: potential ≈ 54k €, cost ≈ 44k €/ });
+    await userEvent.hover(dot);
+    expect(within(map).getByRole("tooltip")).toHaveTextContent("AlphaETB · Idea");
+
+    await userEvent.click(within(map).getByRole("button", { name: "PoC & MVP" }));
+    expect(dot).toHaveClass("faded");
+    expect(map).toHaveTextContent("Above break-even0 / 0");
+
+    await userEvent.click(dot);
+    expect(screen.getByRole("dialog", { name: "Alpha" })).toBeInTheDocument();
+  });
+});

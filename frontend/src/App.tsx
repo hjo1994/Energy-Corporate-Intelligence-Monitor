@@ -4,6 +4,7 @@ import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
 import { MatrixView } from "./views/MatrixView";
+import { ValueView } from "./views/ValueView";
 
 function Shell() {
   const { load, reload, filters, setFilters } = useApp();
@@ -20,6 +21,7 @@ function Shell() {
           </NavLink>
           <NavLink to="/list">List</NavLink>
           <NavLink to="/board">Board</NavLink>
+          <NavLink to="/value">Value</NavLink>
         </nav>
         {!AUTH_DEV_BYPASS && (
           <NavLink to="/logout" className="logout">
@@ -52,6 +54,7 @@ function Shell() {
             <Route path="/" element={<MatrixView />} />
             <Route path="/list" element={<ListView />} />
             <Route path="/board" element={<BoardView />} />
+            <Route path="/value" element={<ValueView />} />
             <Route path="*" element={<MatrixView />} />
           </Routes>
         )}
