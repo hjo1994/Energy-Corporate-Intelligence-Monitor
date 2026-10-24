@@ -250,7 +250,8 @@ td { padding: 12px; vertical-align: middle; border-top: 1px solid var(--border);
 .rm-grid { stroke: var(--border); stroke-width: 1; }
 .rm-tick { font-family: var(--mono); font-size: 12px; fill: var(--ink-soft); }
 .rm-bar { fill: var(--potential-light); }
-.rm-value { font-family: var(--mono); font-size: 14px; fill: var(--ink); }
+.rm-value { font-family: var(--mono); font-size: 14px; fill: var(--ink); paint-order: stroke; stroke: var(--potential-light); stroke-width: 4px; stroke-linejoin: round; }
+.rm-value-above { stroke: var(--surface); }
 .rm-label { font-size: 15px; fill: var(--ink); }
 .rm-count { font-size: 13px; fill: var(--ink-soft); }
 .rm-line { fill: none; stroke: var(--potential); stroke-width: 3; stroke-linejoin: round; }

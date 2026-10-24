@@ -69,17 +69,6 @@ export function ValueRoadmap({ items }: { items: Initiative[] }) {
                 {r.quarters.map((q, k) => (
                   <g key={q.label}>
                     <rect className="rm-bar" x={cx(k) - bar / 2} y={y(q.potential)} width={bar} height={BASE - y(q.potential)} rx="2" />
-                    {q.count > 0 && (
-                      // inside tall bars, so that the cumulative line does not run through the label
-                      <text
-                        className="rm-value"
-                        x={cx(k)}
-                        y={BASE - y(q.potential) > 30 ? y(q.potential) + 20 : y(q.potential) - 8}
-                        textAnchor="middle"
-                      >
-                        {formatThousands(q.potential)}
-                      </text>
-                    )}
                     <text className="rm-label" x={cx(k)} y={404} textAnchor="middle">
                       {q.label}
                     </text>
@@ -93,6 +82,21 @@ export function ValueRoadmap({ items }: { items: Initiative[] }) {
                 {r.quarters.map((q, k) => (
                   <circle key={q.label} className="rm-point" cx={cx(k)} cy={y(q.cumulative)} r="6" />
                 ))}
+                {/* After the line, with a halo: at the foot of tall bars (the cumulative line runs
+                    above them), above short ones. */}
+                {r.quarters.map((q, k) =>
+                  q.count > 0 ? (
+                    <text
+                      key={q.label}
+                      className={`rm-value${BASE - y(q.potential) > 30 ? "" : " rm-value-above"}`}
+                      x={cx(k)}
+                      y={BASE - y(q.potential) > 30 ? BASE - 10 : y(q.potential) - 8}
+                      textAnchor="middle"
+                    >
+                      {formatThousands(q.potential)}
+                    </text>
+                  ) : null,
+                )}
                 <text className="rm-total" x={cx(n - 1)} y={y(last) - 16} textAnchor="middle">
                   {formatEur(last)}
                 </text>
