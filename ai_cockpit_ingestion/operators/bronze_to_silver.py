@@ -1,5 +1,6 @@
 """Bronze-to-Silver operator: upserts one extract table's latest load into the
-silver Initiative rows of its business unit.
+silver Initiative rows of its business unit. The input form's table has its
+own mode, see operators.user_input_to_silver.
 
 Per row: normalizes status/timing/complexity (transforms.normalize), links
 the config tables, estimates the four value buckets, the confidence and
@@ -48,7 +49,8 @@ from ai_cockpit_ingestion.models import (
     SolutionType,
     ValueType,
 )
-from ai_cockpit_ingestion.sources import SOURCES_BY_KEY
+from ai_cockpit_ingestion.operators.user_input_to_silver import upsert_user_input
+from ai_cockpit_ingestion.sources import SOURCES_BY_KEY, USER_INPUT
 from ai_cockpit_ingestion.transforms.normalize import (
     build_match_key_index,
     clean_text,
@@ -72,9 +74,18 @@ class BronzeToSilverOperator(BaseOperator):
 
     def execute(self, context) -> dict:
         source = SOURCES_BY_KEY[self.source_key]
-        table = EXTRACT_TABLES[source.extract_table]
         force = bool((context.get("params") or {}).get("force", False))
         engine = get_engine(self.db_path)
+        if source.mode == USER_INPUT:
+            try:
+                with Session(engine) as session, session.begin():
+                    counts = upsert_user_input(session, force, self.log)
+            finally:
+                engine.dispose()
+            self.log.info("%s, force=%s: %s", source.extract_table, force, counts)
+            return counts
+
+        table = EXTRACT_TABLES[source.extract_table]
         try:
             with Session(engine) as session, session.begin():
                 bronze_rows = [

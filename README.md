@@ -8,6 +8,7 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 | `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
 | `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
 | `bronze_to_silver_<quelle>` (4×) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset der jeweiligen Extract-Tabelle | Initiative (Silber) |
+| `bronze_to_silver_user_input` | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset von `UserInput_Initiatives_Extract` bzw. REST-Trigger durch das Backend | Initiative (Silber) |
 
 1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
    `2026?AI?Initiatives*.xlsx` (passt auf `2026_AI_Initiatives_Elia_Group.xlsx` in
@@ -84,7 +85,13 @@ conflicts) stehen im Task-Log und als Rückgabewert (XCom).
 
 **User-Input (Bronze)** (`UserInput_Initiatives_Extract`): eine Zeile je
 Initiative, die über die Eingabemaske der UI angelegt wird (schreibt das
-Backend; DAG-Anbindung folgt). Wie die Extract-Tabellen nur anhängend, aber
+Backend). `bronze_to_silver_user_input` (eigener Modus, `sources.USER_INPUT_SOURCE`,
+`operators/user_input_to_silver.py`) liest nur Datensätze ohne
+BusinessTransaction, legt daraus Initiativen an (kein Soft-Delete), nimmt die
+Business Unit aus dem Owner (KeyHash = BU + Name; Kollision mit einer Initiative
+anderer Herkunft → Konflikt, nichts überschrieben) und rechnet Value, Kosten und
+Risikostufe direkt aus den Eingaben (`transforms/user_input_heuristic.py`,
+Testfälle in `tests/fixtures/user_input_cases.json`, die Backend und UI teilen). Wie die Extract-Tabellen nur anhängend, aber
 typisiert und per CHECK/FK abgesichert: Stammdaten als IDs der Config-Tabellen
 (`OwnerID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (9 Werte), `DateStart`/
 `DateDelivery` als Quartal („Q2 2027“), die Value-Treiber je Hebel

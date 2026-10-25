@@ -37,7 +37,7 @@ from __future__ import annotations
 from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Table
 from sqlalchemy.orm import declarative_base, relationship
 
-from ai_cockpit_ingestion.sources import SOURCES
+from ai_cockpit_ingestion.sources import SOURCES, USER_INPUT_SOURCE
 
 Base = declarative_base()
 
@@ -70,7 +70,7 @@ EXTRACT_TABLES: dict[str, Table] = {
 
 # --- Bronze: user input -------------------------------------------------------
 
-USER_INPUT_TABLE_NAME = "UserInput_Initiatives_Extract"
+USER_INPUT_TABLE_NAME = USER_INPUT_SOURCE.extract_table
 USER_INPUT_SOURCE_FILE_ID = "user-input"  # SourceFileID of every user-input record
 
 STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown")
