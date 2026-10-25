@@ -138,3 +138,34 @@ def test_invalid_input_is_422(submit, over):
 def test_post_requires_authentication(client, monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_MODE", "false")
     assert client.post("/api/initiatives", json={}).status_code == 401
+
+
+def test_missing_user_input_table_means_no_pending_and_post_503(client, db_path):
+    # e.g. Backend deployed before the input orchestration has created the table
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('DROP TABLE "UserInput_Initiatives_Extract"')
+    resp = client.get("/api/initiatives", params={"limit": 500})
+    assert resp.status_code == 200 and resp.json()["total"] == 4
+    post = client.post("/api/initiatives", json={**fixture_input(FIXTURE["cases"][0]), "name": "x",
+                       "description": "d", "owner_id": 1, "value_type_id": 1, "solution_type_id": 1,
+                       "stage": "Idea", "solution_complexity_score": 4})
+    assert post.status_code == 503 and "not available yet" in post.json()["detail"]
+
+
+def test_read_only_database_gives_a_clear_503(submit, db_path):
+    import os
+    import stat
+
+    os.chmod(db_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+    try:
+        resp = submit()
+    finally:
+        os.chmod(db_path, stat.S_IRUSR | stat.S_IWUSR)
+    assert resp.status_code == 503 and "read-only" in resp.json()["detail"]
+
+
+def test_feature_switch(client, submit, monkeypatch):
+    assert client.get("/api/features").json() == {"initiative_input": True}
+    monkeypatch.setenv("AI_COCKPIT_ENABLE_INITIATIVE_INPUT", "false")
+    assert client.get("/api/features").json() == {"initiative_input": False}
+    assert submit().status_code == 403

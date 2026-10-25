@@ -109,7 +109,9 @@ describe("app", () => {
 
   it("explains a 503 and can retry", async () => {
     let calls = 0;
-    mockApi(() => (++calls === 1 ? failWith(503)() : ok()));
+    get.mockReset();
+    get.mockImplementation(((path: string) =>
+      path === "/features" ? Promise.resolve({ initiative_input: false }) : ++calls === 1 ? failWith(503)() : ok()) as never);
     renderAt("/");
     expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -151,6 +153,7 @@ describe("new initiative form", () => {
       if (path === "/owners") return owners;
       if (path === "/value-types") return valueTypes;
       if (path === "/solution-types") return solutionTypes;
+      if (path === "/features") return { initiative_input: true };
       return { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 };
     }) as never);
   }
@@ -221,5 +224,24 @@ describe("new initiative form", () => {
     const user = await fillRequired();
     await user.click(screen.getByRole("button", { name: "Save initiative" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("already exists in ETB");
+  });
+});
+
+describe("feature switch", () => {
+  it("hides the input form when the backend switches it off", async () => {
+    get.mockReset();
+    get.mockImplementation((async (path: string) =>
+      path === "/features" ? { initiative_input: false } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
+    renderAt("/new");
+    expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "+ New initiative" })).not.toBeInTheDocument();
+  });
+
+  it("shows the button when it is on", async () => {
+    get.mockReset();
+    get.mockImplementation((async (path: string) =>
+      path === "/features" ? { initiative_input: true } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
+    renderAt("/");
+    expect(await screen.findByRole("link", { name: "+ New initiative" })).toBeInTheDocument();
   });
 });

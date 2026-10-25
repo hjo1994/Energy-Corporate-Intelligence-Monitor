@@ -100,3 +100,12 @@ export async function createInitiative(input: InitiativeInput): Promise<Initiati
     throw toApiError(err);
   }
 }
+
+/** Feature switches of this installation; the input form is hidden unless the backend allows it. */
+export async function fetchFeatures(): Promise<{ initiative_input: boolean }> {
+  try {
+    return await serviceApi.get<{ initiative_input: boolean }>("/features");
+  } catch {
+    return { initiative_input: false };
+  }
+}

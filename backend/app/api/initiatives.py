@@ -6,11 +6,13 @@ from typing import Annotated, Literal
 
 from eg_auth.fastapi import UserInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, inspect, or_, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app import derived
 from app.auth import authorizer
+from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
 from app.derived import annual_cost_sql, hypothetical_value_sql, potential_value_sql
 from app.models import (
@@ -177,8 +179,15 @@ def _unprocessed_records():
     return select(UserInputRecord).where(UserInputRecord.id.not_in(processed))
 
 
+def _user_input_table_exists(session: Session) -> bool:
+    # Created by the input orchestration (its first task run); until then there is no input.
+    return inspect(session.connection()).has_table(UserInputRecord.__tablename__)
+
+
 def pending_initiatives(session: Session) -> list[InitiativeOut]:
     """Input-form records the DAG has not turned into an initiative yet, with provisional values."""
+    if not _user_input_table_exists(session):
+        return []
     records = session.scalars(
         _unprocessed_records()
         .options(joinedload(UserInputRecord.owner), joinedload(UserInputRecord.value_type),
@@ -244,6 +253,14 @@ def create_initiative(
     """New initiative from the input form: stored in the bronze table UserInput_Initiatives_Extract
     and returned as "pending" with provisional values. The binding values follow within about a
     minute: the sensor of the DAG bronze_to_silver_user_input picks the record up."""
+    if not initiative_input_enabled():
+        raise HTTPException(status_code=403, detail="Adding initiatives is switched off on this installation.")
+    if not _user_input_table_exists(session):
+        raise HTTPException(
+            status_code=503,
+            detail="Adding initiatives is not available yet: the pipeline has not created its table. "
+            "Please try again in a few minutes.",
+        )
     owner = session.get(Owner, body.owner_id)
     if owner is None:
         raise HTTPException(status_code=422, detail="Unknown owner")
@@ -275,7 +292,16 @@ def create_initiative(
         submitted_by=user.name,
     )
     session.add(record)
-    session.commit()
+    try:
+        session.commit()
+    except OperationalError as err:
+        session.rollback()
+        if "readonly" in str(err).lower() or "read-only" in str(err).lower():
+            raise HTTPException(
+                status_code=503,
+                detail="The initiative could not be saved: the database is read-only for the API on this installation.",
+            ) from err
+        raise
     session.refresh(record)
     risks = {r.id: r for r in session.scalars(select(RiskClassification))}
     return _pending_out(record, risks)

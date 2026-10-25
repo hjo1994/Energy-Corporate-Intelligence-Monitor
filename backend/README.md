@@ -16,6 +16,7 @@ DB-Volume schreibbar gemountet.
 | `GET /api/auth/rights` | angemeldeter Nutzer und seine Rechte (für das Frontend) |
 | `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department`, `risk_classification_id` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `potential_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type`/`risk_classification` (id, name) |
 | `POST /api/initiatives` | Neue Initiative aus der Eingabemaske → Bronze `UserInput_Initiatives_Extract` (Felder snake_case, Anteile 0–1, mindestens ein vollständiger Value-Hebel). `201` mit der Initiative als `pending` (vorläufige Werte), `409` bei gleichem Namen in derselben Business Unit (auch inaktiv oder noch pending), `422` bei ungültigen Werten. Kein Airflow-Anstoß: Der Sensor des DAGs `bronze_to_silver_user_input` prüft die Tabelle jede Minute |
+| `GET /api/features` | Feature-Schalter für das Frontend: `{"initiative_input": true/false}` aus `AI_COCKPIT_ENABLE_INITIATIVE_INPUT` (Default `true`; `false` blendet „+ New initiative“ aus und `POST /api/initiatives` antwortet `403`) |
 | `GET /api/initiatives/{id}` | Einzelne Initiative |
 | `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage und je Risikostufe, Summe/Ø Potenzial, Summe hypothetischer Nutzen und Kosten/Jahr, Ø Komplexität, Anzahl ohne Owner |
 | `GET /api/owners` | Owner (optional `business_unit`) |
@@ -66,7 +67,10 @@ nicht verarbeitet hat, liefert `GET /api/initiatives` mit `status: "pending"`
 (`app/user_input.py`, gleiche Formeln wie der DAG, geprüft gegen
 `tests/fixtures/user_input_cases.json`, Kopie aus der Input Orchestration).
 Sie stehen nach allen übrigen auf der letzten Seite, folgen den Filtern und
-lassen sich mit `include_pending=false` ausblenden.
+lassen sich mit `include_pending=false` ausblenden. Fehlt die Tabelle
+`UserInput_Initiatives_Extract` noch (die Input Orchestration legt sie bei
+ihrem ersten Task an), gibt es keine Pending-Einträge und `POST` antwortet
+`503` mit Hinweis; ist die DB für das Backend read-only, ebenfalls `503`.
 
 Interaktive Doku: `/api/docs` (Swagger UI offline aus `swagger-ui-bundle`,
 `app/docs.py`), Schema unter `/api/openapi.json`.
@@ -152,7 +156,9 @@ Die Plattform baut per S2I (Python/Poetry 1.8), nicht per Dockerfile:
 - Startkommando (Umgebungsvariable `COMMAND`):
   `uvicorn app.main:get_app --factory --host 0.0.0.0 --port 8000`
 - ConfigMap: `AI_COCKPIT_DB_PATH` (Pfad der geteilten Datei, Volume
-  read-only), `EG_AUTH_DEV_MODE=False`. **`PYTHONPATH` darf nicht gesetzt
+  read-only), `EG_AUTH_DEV_MODE=False`, `AI_COCKPIT_ENABLE_INITIATIVE_INPUT`
+  (`false`, solange das Volume read-only ist: die Eingabemaske braucht
+  Schreibzugriff). **`PYTHONPATH` darf nicht gesetzt
   sein oder `local_stubs` enthalten.**
 - Keine Probes im Referenz-Deployment; `/api/healthz` steht trotzdem bereit.
 - Alles, was die App zur Laufzeit liest, muss unter `backend/` liegen (der

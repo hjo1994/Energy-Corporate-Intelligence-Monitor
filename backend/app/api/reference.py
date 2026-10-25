@@ -8,6 +8,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import authorizer
+from app.config import initiative_input_enabled
 from app.db import get_session
 from app.models import Initiative, Owner, RiskClassification, SolutionType, ValueType
 from app.schemas import BusinessUnitCount, OwnerOut, RiskClassificationOut, StageCount, TypeOut
@@ -69,3 +70,9 @@ def list_risk_classifications(
 ) -> list[RiskClassification]:
     """All five levels of the Rahmenbetriebsvereinbarung KI, including unused ones."""
     return list(session.scalars(select(RiskClassification).order_by(RiskClassification.id)))
+
+
+@router.get("/features")
+def features() -> dict[str, bool]:
+    """Feature switches for the frontend (AI_COCKPIT_ENABLE_INITIATIVE_INPUT)."""
+    return {"initiative_input": initiative_input_enabled()}
