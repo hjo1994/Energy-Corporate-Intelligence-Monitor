@@ -1,9 +1,14 @@
 # Backend — FastAPI + SQLAlchemy
 
 Eigenes Kubernetes-Deployment. Stellt die Daten aus der DB über eine
-**read-only** REST-API bereit — generischer Lesezugriff, nicht exklusiv ans
-Dashboard gebunden; potenziell mehrere Applikationen als Konsumenten. Kein
-Schreibpfad.
+REST-API bereit — generischer Lesezugriff, nicht exklusiv ans Dashboard
+gebunden; potenziell mehrere Applikationen als Konsumenten. Einziger
+Schreibpfad: `POST /api/initiatives` (Eingabemaske) schreibt in die
+Bronze-Tabelle `UserInput_Initiatives_Extract`; alle anderen Endpunkte lesen
+über eine read-only-Verbindung. Im Cluster braucht das Backend dafür
+Schreibzugriff auf die DB: das geteilte RWX-Volume ohne `readOnly` mounten
+(wie bei Airflow, das dieselbe Datei beschreibt). Das Backend schreibt
+ausschließlich in `UserInput_Initiatives_Extract`.
 
 ## Endpunkte
 
@@ -11,16 +16,66 @@ Schreibpfad.
 |---|---|
 | `GET /api/healthz` | Liveness, ohne Auth, prüft nicht die DB. Kein `/startup`/`/readz`: das Referenz-Deployment konfiguriert keine Probes |
 | `GET /api/auth/rights` | angemeldeter Nutzer und seine Rechte (für das Frontend) |
-| `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `value_score`, `solution_complexity_score`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type` |
+| `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department`, `risk_classification_id` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `potential_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type`/`risk_classification` (id, name) |
+| `POST /api/initiatives` | Neue Initiative aus der Eingabemaske → Bronze `UserInput_Initiatives_Extract` (Felder snake_case, Anteile 0–1, mindestens ein vollständiger Value-Hebel). `201` mit der Initiative als `pending` (vorläufige Werte), `409` bei gleichem Namen in derselben Business Unit (auch inaktiv oder noch pending), `422` bei ungültigen Werten. Kein Airflow-Anstoß: Der Sensor des DAGs `bronze_to_silver_user_input` prüft die Tabelle jede Minute |
+| `GET /api/features` | Feature-Schalter für das Frontend: `{"initiative_input": true/false}` aus `AI_COCKPIT_ENABLE_INITIATIVE_INPUT` (Default `true`; `false` blendet „+ New initiative“ aus und `POST /api/initiatives` antwortet `403`) |
 | `GET /api/initiatives/{id}` | Einzelne Initiative |
-| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage, Ø Scores, Anzahl mit/ohne `value_score`, Anzahl ohne Owner |
+| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage und je Risikostufe, Summe/Ø Potenzial, Summe hypothetischer Nutzen und Kosten/Jahr, Ø Komplexität, Anzahl ohne Owner |
 | `GET /api/owners` | Owner (optional `business_unit`) |
 | `GET /api/business-units` | Distinkte `Owner.category` mit Initiativen-Anzahl |
 | `GET /api/stages` | Stage-Werte mit Anzahl |
+| `GET /api/risk-classifications` | Die 5 Risikostufen der Rahmenbetriebsvereinbarung KI (auch ungenutzte) mit Beschreibung und abgeleiteten Maßnahmen |
 | `GET /api/solution-types`, `GET /api/value-types` | Lookup-Kataloge |
 
-Interaktive Doku: `/docs` (Swagger UI; lädt aktuell noch von einem CDN und
-bleibt im Cluster leer — Offline-Variante steht noch aus).
+### Felder einer Initiative
+
+Gespeichert (von der Input Orchestration geschätzt, siehe deren README):
+`stage`, die vier Nutzen-Buckets `efficiency_score_eur`, `quality_score_eur`,
+`risk_reduction_score_eur`, `strategic_value_score_eur` (€/Jahr), die
+Abschläge `confidence_score` und `delivery_score`,
+`solution_complexity_score`, `one_time_costs`, `operating_costs` (€/Jahr),
+`depreciation_years`, `risk_classification`.
+
+Abgeleitet (nicht gespeichert, `app/derived.py`, in SQL für Sortierung/Summary
+und in Python für die Antwort):
+
+- `hypothetical_value_eur` = Summe der vier Buckets
+- `potential_value_eur` = hypothetischer Nutzen × Confidence × Delivery — der
+  „Mehrwert“, den das Dashboard zeigt
+- `annual_cost_eur` = einmalige Kosten / Abschreibungsjahre + Betriebskosten.
+  Seit 24.10.2026 speichert die Input Orchestration die Kosten als
+  **Erwartungswerte** (Kosten bei Lieferung × `delivery_score`, Abschreibung
+  einheitlich 5 Jahre); damit ist auch `annual_cost_eur` delivery-gewichtet.
+  Kosten bei Lieferung = Wert / `delivery_score`.
+
+Fehlt ein Eingangswert, ist der abgeleitete Wert `null` (nie 0).
+
+**Soft-Delete und Herkunft:** Die Input Orchestration löscht keine
+Initiativen mehr, sondern setzt `is_active = false`, wenn eine Initiative
+nicht mehr im Quellblatt steht. Liste, Summary, `/api/business-units` und
+`/api/stages` zählen nur aktive; `GET /api/initiatives?include_inactive=true`
+zeigt auch inaktive, `GET /api/initiatives/{id}` liefert jede. Jede
+Initiative trägt `is_active` und `business_transaction_id` (der Lauf, der sie
+zuletzt angelegt/geändert hat: Tabelle `BusinessTransaction` mit
+`BronzeTableName` + `BronzeID` = die Bronze-Zeile, aus der sie gebaut wurde;
+dort stehen `Timestamp` und `SourceFileID`). Tabellen- und Spaltennamen der
+DB entsprechen dem Datenmodell (PascalCase, z. B. `Initiative.DateStart`,
+`OwnerID`); die API-Felder bleiben snake_case (`date_start`, `owner`).
+
+**Pending:** Über die Eingabemaske erfasste Initiativen, die der DAG noch
+nicht verarbeitet hat, liefert `GET /api/initiatives` mit `status: "pending"`
+(sonst `active`/`inactive`), negativer `id` (= −`user_input_id`), ohne
+`business_transaction_id` und mit vorläufig berechneten Werten
+(`app/user_input.py`, gleiche Formeln wie der DAG, geprüft gegen
+`tests/fixtures/user_input_cases.json`, Kopie aus der Input Orchestration).
+Sie stehen nach allen übrigen auf der letzten Seite, folgen den Filtern und
+lassen sich mit `include_pending=false` ausblenden. Fehlt die Tabelle
+`UserInput_Initiatives_Extract` noch (die Input Orchestration legt sie bei
+ihrem ersten Task an), gibt es keine Pending-Einträge und `POST` antwortet
+`503` mit Hinweis; ist die DB für das Backend read-only, ebenfalls `503`.
+
+Interaktive Doku: `/api/docs` (Swagger UI offline aus `swagger-ui-bundle`,
+`app/docs.py`), Schema unter `/api/openapi.json`.
 
 ## Authentifizierung
 
@@ -45,8 +100,8 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
 - Getestet ist das gegen den **Stub**: Gating, 401 ohne Anmeldung, Rechte aus
   Gruppen. Das Verhalten des echten `eg-auth` ist nicht geprüft.
 
-`business_unit` = `Owner.category`. **Initiativen ohne Owner (aktuell 22 von
-160) gehören damit zu keiner Business Unit** und tauchen in BU-Filter und
+`business_unit` = `Owner.category`. **Initiativen ohne Owner (aktuell 23 von
+165) gehören damit zu keiner Business Unit** und tauchen in BU-Filter und
 `/api/business-units` nicht auf — bis die Owner-Verknüpfung nachgezogen wird.
 Die BU-Werte kommen unverändert aus der Quelle (z. B. `"50 Hertz"`,
 `"Corporate"`). Scores sind bei vielen Initiativen `null`; bei `sort` stehen
@@ -57,12 +112,15 @@ Die BU-Werte kommen unverändert aus der Quelle (z. B. `"50 Hertz"`,
 
 Siehe Interim-Entscheidung im Root-README. Konkret umgesetzt:
 
-- Die Datei wird auf SQLite-Ebene `mode=ro` geöffnet (zusätzlich zum
-  read-only Volume-Mount).
-- **Kein Connection-Pool** (`NullPool`): Input Orchestration ersetzt die Datei
-  per atomarem Rename, ein gepoolter Handle würde die alte Datei weiterlesen.
-  Jede Anfrage öffnet die Datei neu (getestet).
-- Schlägt das Öffnen fehl (z. B. genau im Rename-Moment), 3 Versuche mit
+- Lesende Endpunkte öffnen die Datei auf SQLite-Ebene `mode=ro`. Nur
+  `POST /api/initiatives` nutzt eine schreibende Verbindung (für
+  `UserInput_Initiatives_Extract`); das Volume ist dafür ein RWX-Volume ohne
+  `readOnly`.
+- **Kein Connection-Pool** (`NullPool`): Jede Anfrage öffnet die Datei neu
+  und sieht damit sofort, was die DAGs committet haben (sie schreiben in
+  kurzen Transaktionen direkt in die Datei). Auch ein Austausch der Datei
+  per Rename (z. B. Backup einspielen) wird erkannt. Beides getestet.
+- Schlägt das Öffnen fehl (z. B. während ein DAG schreibt), 3 Versuche mit
   kurzem Backoff, danach `503` + `Retry-After`.
 
 ## Struktur
@@ -75,8 +133,9 @@ backend/
     main.py          # get_app() — mit uvicorn als Factory starten
     auth.py          # eg-auth: Rights, authorizer(), /api/auth/rights
     config.py        # AI_COCKPIT_DB_PATH (Default /data/db/ai_cockpit.db)
-    db.py            # read-only Engine, Session mit Retry
-    models.py        # Kopie der Modelle aus input-orchestration (von Hand synchron halten)
+    db.py            # read-only Engine (+ Schreib-Engine nur für POST), Session mit Retry
+    models.py        # Kopie der Silber-/Config-Modelle aus input-orchestration (von Hand synchron halten)
+    derived.py       # abgeleitete Werte: hypothetischer Nutzen, Potenzial, Kosten/Jahr
     schemas.py
     api/initiatives.py, api/reference.py
   local_stubs/       # eg-auth-Stub nur für lokale Entwicklung
@@ -94,13 +153,16 @@ Die Plattform baut per S2I (Python/Poetry 1.8), nicht per Dockerfile:
 
 - `pyproject.toml` im Poetry-Format wie das Template (`package-mode = false`,
   Spiegel `50hertzPublic` als primäre Quelle, Versionen wie im Template).
-  **Die `poetry.lock` fehlt noch** und muss im Firmennetz mit Poetry 1.8.5
-  erzeugt werden (`poetry lock --no-update`, danach `poetry check --lock`);
-  Poetry 2.x schreibt ein Format, das das Basisimage nicht liest.
+  `poetry.lock` ist im Firmennetz mit Poetry 1.8.5 erzeugt; bei Änderungen an
+  den Abhängigkeiten dort neu erzeugen (`poetry lock --no-update`, danach
+  `poetry check --lock`). Poetry 2.x schreibt ein Format, das das Basisimage
+  nicht liest.
 - Startkommando (Umgebungsvariable `COMMAND`):
   `uvicorn app.main:get_app --factory --host 0.0.0.0 --port 8000`
-- ConfigMap: `AI_COCKPIT_DB_PATH` (Pfad der geteilten Datei, Volume
-  read-only), `EG_AUTH_DEV_MODE=False`. **`PYTHONPATH` darf nicht gesetzt
+- ConfigMap: `AI_COCKPIT_DB_PATH` (Pfad der geteilten Datei, RWX-Volume ohne
+  `readOnly`), `EG_AUTH_DEV_MODE=False`, optional
+  `AI_COCKPIT_ENABLE_INITIATIVE_INPUT` (Default `true`; `false` nur als
+  Notbremse, schaltet die Eingabemaske ab). **`PYTHONPATH` darf nicht gesetzt
   sein oder `local_stubs` enthalten.**
 - Keine Probes im Referenz-Deployment; `/api/healthz` steht trotzdem bereit.
 - Alles, was die App zur Laufzeit liest, muss unter `backend/` liegen (der
@@ -122,8 +184,11 @@ AI_COCKPIT_DB_PATH=../input-orchestration/.airflow_home/ai_cockpit.db \
 .venv/bin/python -m pytest
 ```
 
-Verifiziert: 17 Tests (Filter, Suche inkl. `%`/`_`-Escaping, Sortierung mit
-NULLs, Paginierung, Summary, Read-only, Datei-Austausch per Rename, 503 bei
-fehlender DB, Auth, portables SQL, Startkommando der Plattform) sowie ein Lauf gegen die echte Datenbank mit identischen Zahlen
-wie der DAG-Lauf. Nicht getestet: Zugriff über ein RWX-Volume aus einem
+Verifiziert (23.10.2026): 21 Tests (Filter inkl. Risikostufe, Soft-Delete, Suche inkl.
+`%`/`_`-Escaping, abgeleitete Werte, Sortierung mit NULLs, Paginierung,
+Summary, Read-only, neue Commits des Writers und Datei-Austausch per Rename
+sichtbar, 503 bei fehlender DB, Auth, portables SQL, Startkommando der
+Plattform) sowie ein Lauf gegen die echte Datenbank mit identischen Zahlen
+wie der DAG-Lauf (165 Initiativen, ≈ 9,8 Mio. € Potenzial, ≈ 39,8 Mio. €
+hypothetisch, ≈ 15,6 Mio. € Kosten/Jahr). Nicht getestet: Zugriff über ein RWX-Volume aus einem
 getrennten Pod.

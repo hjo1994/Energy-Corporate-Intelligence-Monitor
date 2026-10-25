@@ -10,12 +10,60 @@ Requests zur Laufzeit.
 
 ## Ansichten (nach den abgenommenen Entwürfen)
 
-- **Matrix** (`/`) — Aufwand × Mehrwert als Quadranten-Plot, KPI-Kacheln,
-  Detailpanel zur angeklickten Initiative.
-- **Liste** (`/liste`) — sortierbare Tabelle, Filter links (Stage,
+**Sprache der Oberfläche: Englisch** (alle sichtbaren Texte, Fehlermeldungen, `lang="en"`,
+Route `/list`). Die Texte stehen direkt in den Komponenten, es gibt bewusst keine
+i18n-Bibliothek; eine zweite Sprache wäre ein eigener Schritt. Die Meldungen im
+JSON-Body des Backends (`detail`) sind noch deutsch, das Frontend zeigt sie aber
+nicht an, sondern eigene Texte je HTTP-Status.
+
+- **Matrix** (`/`) — Aufwand × Potenzial als Quadranten-Plot, KPI-Kacheln,
+  Detailpanel zur angeklickten Initiative. Darunter das **Flagships-Widget**:
+  je strategischer Säule Anzahl und Summe des geschätzten Potenzials (und wie
+  viele Initiativen darin überhaupt geschätzt sind). Es folgt den übrigen Filtern; ein Klick auf eine Zeile filtert über alle
+  Ansichten nach diesem Flagship. Initiativen ohne Flagship stehen als eigene
+  Zeile „Not assigned“, damit die Summe stimmt; „No flagship“ ist der
+  Katalogeintrag `-`.
+- **List** (`/list`) — sortierbare Tabelle (inkl. Potenzial und Risikostufe), Filter links (Stage,
   Business Unit, Flagship), Klick auf den Namen öffnet die Details.
 - **Board** (`/board`) — Spalten je Stage, Karten mit Owner, Aufwand,
-  Mehrwert; Klick öffnet die Details.
+  Potenzial; Klick öffnet die Details.
+- **Value** (`/value`) — drei Wert-Ansichten nach den Entwürfen A, B und G
+  (Canvas „Value-Visualisierung Entwürfe“), alle auf den gefilterten
+  Initiativen (Business Unit und Stage oben), alle als Schätzung
+  (Heuristik v2) gekennzeichnet:
+  - **Value bridge** — Wasserfall in M €/Jahr: hypothetischer Nutzen →
+    Confidence-Abschlag → Delivery-Abschlag → Potenzial → Kosten/Jahr → Netto
+    (negativ: gestrichelter Balken unter null). Daneben Confidence-Abschlag in %
+    und „Net positive x / n“ mit den Netto-Summen; darunter das Potenzial je
+    Nutzen-Bucket (Bucket × Confidence × Delivery). Gezählt werden nur
+    Initiativen mit Potenzial und Kosten; fehlen welche, nennt die Legende sie.
+  - **Break-even map** — je Initiative Kosten/Jahr (x) gegen Potenzial (y),
+    k €; gestrichelte Diagonale Potenzial = Kosten, Fläche darüber getönt.
+    Die Kosten-Heuristik arbeitet in Stufen, darum werden die Punkte
+    deterministisch um bis zu 8 px seitlich versetzt. Chips nach Stage-Gruppe
+    (Idea & Exploration / PoC & MVP / Implementation & Production / Unclear,
+    paused = On hold, Cancelled, Unknown) blenden die übrigen Punkte ab; die
+    Kennzahlen (über Break-even, Netto-Summe) folgen der Auswahl. Tooltip bei
+    Hover/Fokus, Klick öffnet den Detaildialog.
+  - **Value roadmap** — Potenzial je Lieferquartal (`date_delivery`) als
+    Balken plus kumulierte Linie, leere Quartale dazwischen bleiben als Lücke
+    stehen; daneben schraffiert „No delivery date“ mit Summe, Anteil, Anzahl
+    und den Business Units ohne jeden Termin.
+
+  Kosten sind seit 24.10.2026 Erwartungswerte (in der Input Orchestration
+  mit dem DeliveryScore gewichtet, Abschreibung 5 Jahre); Tooltip und
+  Details zeigen zusätzlich die Kosten bei Lieferung (Kosten/Jahr ÷ Delivery).
+  Die Aggregation steckt in `src/domain/value.ts` (wie die KPI-Kacheln im
+  Browser, damit sie den Filtern folgt; kein eigener Backend-Endpunkt).
+  Farben: Potenzial blau, Kosten orange (CSS-Variablen in `styles.css`).
+- **Details** (Panel bzw. Dialog) — zusätzlich die vier Nutzen-Buckets,
+  hypothetischer Nutzen, Confidence, Delivery, Potenzial, Kosten
+  (einmalig, Betrieb, Abschreibung, Kosten/Jahr) und die Risikostufe.
+
+**„Mehrwert“ = geschätztes Potenzial in €/Jahr** (`potential_value_eur` vom
+Backend: Summe der Buckets × Confidence × Delivery). Alle Geldbeträge sind
+Heuristik-Schätzungen und werden gerundet mit „≈“ angezeigt; die Risikostufe
+trägt den Zusatz „estimated“.
 
 Die Filter (Business Unit, Stage, Flagship, Suche) gelten über alle
 Ansichten hinweg. Alle Initiativen werden einmal vollständig geladen
@@ -29,24 +77,27 @@ Initiativen wäre das neu zu überdenken.
 - **9 statt 4 Stage-Werte** (Idea, Exploration, PoC, MVP, Implementation,
   Production, On hold, Cancelled, Unknown). Das Board zeigt die sechs
   Pipeline-Spalten immer, On hold/Cancelled/Unknown nur wenn gefüllt.
-- **Aufwand und Mehrwert sind 1–10-Scores**, keine T-Shirt-Größen: Aufwand
-  als 5 Balken plus Zahl, Mehrwert als Zahl plus Balken.
-- **Fehlende Werte werden benannt, nicht als 0 gezeigt** („nicht erfasst",
-  „kein Owner"). In der Matrix erscheinen nur Initiativen mit beiden Scores
-  (aktuell 65 von 160); ein Hinweis nennt, wie viele fehlen. Identische
-  Score-Paare werden auf einer kleinen Spirale gestreut, damit sie sichtbar
-  bleiben.
-- **KPI-Kachel „Flagship-Initiativen" ersetzt durch „Ohne Mehrwert"** — ein
-  „Flagship-Initiative"-Kennzeichen gibt es in den Daten nicht, die Lücke beim
-  Mehrwert (94 von 160) ist dagegen die wichtigste Datenaussage.
+- **Aufwand ist ein 1–10-Score** (5 Balken plus Zahl), **Mehrwert ein
+  €-Betrag** (Zahl plus Balken). Das Potenzial reicht von ≈ 2,5k bis ≈ 460k €
+  pro Jahr, darum nutzen Balken und Matrix-Y-Achse eine logarithmische Skala
+  (1k bis 1 M €, außerhalb abgeschnitten).
+- **Fehlende Werte werden benannt, nicht als 0 gezeigt** („not recorded",
+  „not estimated", „no owner"). In der Matrix erscheinen nur Initiativen mit
+  Aufwand und Potenzial (aktuell 68 von 165, der Aufwand fehlt in der Quelle
+  oft); ein Hinweis nennt, wie viele fehlen. Identische Wertepaare werden auf
+  einer kleinen Spirale gestreut, damit sie sichtbar bleiben.
+- **KPI-Kacheln:** Initiativen, In progress, Potenzial/Jahr (mit Kosten/Jahr
+  in der Notiz) und „Risk level 3+“ (ab Stufe 3 verlangt die
+  Rahmenbetriebsvereinbarung die Beteiligung des Betriebsrats). Ein
+  „Flagship-Initiative“-Kennzeichen gibt es in den Daten nicht.
 - **Initiativen ohne Owner** haben keine Business Unit und bekommen im Filter
-  den eigenen Eintrag „Ohne Business Unit" (aktuell 22).
+  den eigenen Eintrag „No business unit" (aktuell 23).
 - **„+ Neue Initiative" und Benutzer-Avatar entfallen** — die API ist
   read-only; Anmeldung läuft über den Authenticator, angezeigt wird nur ein
-  „Abmelden"-Link.
-- Der Katalog-Eintrag `-` bei Flagship heißt „Kein Flagship"; ein unsichtbares
+  „Sign out"-Link.
+- Der Katalog-Eintrag `-` bei Flagship heißt „No flagship"; ein unsichtbares
   Zeichen im Katalognamen „Connection lifecycle" wird beim Laden entfernt.
-- Start/Lieferung stehen als „Q3 2026" mit dem Zusatz „(grob)": die Quelle
+- Start/Lieferung stehen als „Q3 2026" mit dem Zusatz „(approx.)": die Quelle
   kennt nur Quartale, das Jahr ist eine Annahme (siehe Root-README).
 
 ## Authentifizierung
@@ -90,7 +141,10 @@ cd frontend
 # z. B. aus dem Digital-Lab-Portal) und dann EINMAL so installieren:
 npm install --no-save --registry=https://registry.npmjs.org/ ./local_packages/eg-auth-react
 npm run dev            # http://localhost:5173, proxied /api -> http://localhost:8000
-npm test               # Vitest
+# Tests: dieser Branch führt die Test-Abhängigkeiten (@testing-library/*, jsdom)
+# nicht in package.json; lokal einmal ohne Speichern nachinstallieren:
+#   npm install --no-save --registry=https://registry.npmjs.org/ @testing-library/react @testing-library/user-event jsdom
+npx vitest run         # Vitest
 npm run lint           # tsc (der Build prüft keine Typen, wie im Template)
 npm run build          # build/  (vite build --mode production, wie im Template)
 ```
@@ -116,14 +170,15 @@ Hosts bräuchte CORS-Freigaben im Backend, die es nicht hat.
 
 ## Verifiziert
 
-30 Tests (Filter, Sortierung mit fehlenden Werten, KPI-Berechnung, Matrix-
-Layout, Anzeige-Bereinigung, Ansichten, Detaildialog, Fehlerzustände je
+56 Tests (Filter, Flagship-Statistik und -Widget, Sortierung mit fehlenden Werten, KPI-Berechnung,
+€-Formatierung und Log-Skala, Matrix-Layout, Value-Aggregation (Brücke, Break-even, Fahrplan) und -Ansicht, Anzeige-Bereinigung, Ansichten, Detaildialog, Fehlerzustände je
 HTTP-Status, Anmeldeschranke in allen Zuständen, Login-Seite, Dev-Bypass
 inkl. Produktions-Absicherung). Getestet gegen eine **Attrappe** von
 `ServiceApi`/`useAuth`, nicht gegen echtes OIDC.
 
-Im Browser geprüft: (1) Dev-Bypass gegen das Backend im Dev-Modus — alle 160
-Initiativen, keine Konsolenfehler; (2) ohne Bypass führt jede geschützte URL zu
+Im Browser geprüft (23.10.2026): (1) Dev-Bypass gegen das Backend im Dev-Modus
+und die echte DB — Liste und Board zeigen alle 165 Initiativen, die Matrix 68
+mit Hinweis auf 97 ohne Aufwand, Detailpanel mit Buckets/Kosten/Risikostufe; (2) ohne Bypass führt jede geschützte URL zu
 `/login`, es gehen keine API-Aufrufe raus; (3) Produktions-Build mit gesetzter
 Bypass-Variable enthält die Anmeldeschranke und keinen Bypass. Auf einem
 frischen Klon (ohne `node_modules`/Lockfile) genügt der Install-Befehl oben für

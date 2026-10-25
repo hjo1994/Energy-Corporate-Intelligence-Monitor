@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Initiative } from "../api/types";
 import { DetailDialog } from "../components/DetailDialog";
-import { EffortMeter, OwnerCell, StageBadge, ValueMeter } from "../components/small";
+import { EffortMeter, OwnerCell, PendingTag, RiskBadge, StageBadge, ValueMeter } from "../components/small";
 import { Chip } from "../components/small";
 import { flagshipLabel, formatQuarter } from "../domain/format";
 import {
@@ -25,7 +25,8 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "owner", label: "Owner" },
   { key: "stage", label: "Stage" },
   { key: "effort", label: "Effort" },
-  { key: "value", label: "Value" },
+  { key: "potential", label: "Potential ≈ €/yr" },
+  { key: "risk", label: "Risk" },
   { key: "delivery", label: "Delivery" },
 ];
 
@@ -61,10 +62,7 @@ function FilterGroup({
 
 export function ListView() {
   const { all, visible, filters, setFilters } = useApp();
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
-    key: "value",
-    dir: "desc",
-  });
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "potential", dir: "desc" });
   const [open, setOpen] = useState<Initiative | null>(null);
 
   const rows = sortInitiatives(visible, sort.key, sort.dir);
@@ -80,7 +78,6 @@ export function ListView() {
           onToggle={(v) => setFilters((f) => ({ ...f, stages: toggle(f.stages, v) }))}
           dot={stageColor}
         />
-
         <FilterGroup
           title="Business Unit"
           options={businessUnitsIn(all).map((b) => ({
@@ -89,28 +86,14 @@ export function ListView() {
           }))}
           selected={filters.businessUnits}
           counts={countBy(all, businessUnitOf)}
-          onToggle={(v) =>
-            setFilters((f) => ({
-              ...f,
-              businessUnits: toggle(f.businessUnits, v),
-            }))
-          }
+          onToggle={(v) => setFilters((f) => ({ ...f, businessUnits: toggle(f.businessUnits, v) }))}
         />
-
         <FilterGroup
           title="Flagship"
-          options={flagshipsIn(all).map((v) => ({
-            value: v,
-            label: flagshipLabel(v),
-          }))}
+          options={flagshipsIn(all).map((v) => ({ value: v, label: flagshipLabel(v) }))}
           selected={filters.flagships}
           counts={countBy(all, flagshipOf)}
-          onToggle={(v) =>
-            setFilters((f) => ({
-              ...f,
-              flagships: toggle(f.flagships, v),
-            }))
-          }
+          onToggle={(v) => setFilters((f) => ({ ...f, flagships: toggle(f.flagships, v) }))}
         />
       </aside>
 
@@ -119,21 +102,13 @@ export function ListView() {
           <span className="muted">
             {rows.length} of {all.length} initiatives
           </span>
-
           <Chip
-            onClick={() =>
-              setSort((s) => ({
-                ...s,
-                dir: s.dir === "asc" ? "desc" : "asc",
-              }))
-            }
+            onClick={() => setSort((s) => ({ ...s, dir: s.dir === "asc" ? "desc" : "asc" }))}
             active
           >
-            Sorted by: {COLUMNS.find((c) => c.key === sort.key)?.label}{" "}
-            {sort.dir === "asc" ? "↑" : "↓"}
+            Sorted by: {COLUMNS.find((c) => c.key === sort.key)?.label} {sort.dir === "asc" ? "↑" : "↓"}
           </Chip>
         </div>
-
         <div className="table-scroll">
           <table>
             <thead>
@@ -141,13 +116,7 @@ export function ListView() {
                 {COLUMNS.map((c) => (
                   <th
                     key={c.key}
-                    aria-sort={
-                      sort.key === c.key
-                        ? sort.dir === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : "none"
-                    }
+                    aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     <button
                       type="button"
@@ -155,83 +124,53 @@ export function ListView() {
                       onClick={() =>
                         setSort((s) =>
                           s.key === c.key
-                            ? {
-                                key: c.key,
-                                dir: s.dir === "asc" ? "desc" : "asc",
-                              }
-                            : {
-                                key: c.key,
-                                dir:
-                                  c.key === "name" || c.key === "owner"
-                                    ? "asc"
-                                    : "desc",
-                              },
+                            ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" }
+                            : { key: c.key, dir: c.key === "name" || c.key === "owner" ? "asc" : "desc" },
                         )
                       }
                     >
                       {c.label}
-                      {sort.key === c.key && (
-                        <span aria-hidden="true">
-                          {" "}
-                          {sort.dir === "asc" ? "↑" : "↓"}
-                        </span>
-                      )}
+                      {sort.key === c.key && <span aria-hidden="true"> {sort.dir === "asc" ? "↑" : "↓"}</span>}
                     </button>
                   </th>
                 ))}
               </tr>
             </thead>
-
             <tbody>
               {rows.map((i) => (
                 <tr key={i.id}>
                   <td className="cell-name">
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => setOpen(i)}
-                    >
+                    <button type="button" className="link-btn" onClick={() => setOpen(i)}>
                       {i.name}
                     </button>
+                    <PendingTag initiative={i} />
                     <span className="truncate muted">{i.description}</span>
                   </td>
-
                   <td>
                     <OwnerCell initiative={i} />
                   </td>
-
                   <td>
                     <StageBadge stage={i.stage} />
                   </td>
-
                   <td>
                     <EffortMeter score={i.solution_complexity_score} />
                   </td>
-
                   <td>
-                    <ValueMeter score={i.value_score} />
+                    <ValueMeter eur={i.potential_value_eur} />
                   </td>
-
-                  <td className="muted">
-                    {formatQuarter(i.date_delivery)}
+                  <td>
+                    <RiskBadge risk={i.risk_classification} />
                   </td>
+                  <td className="muted">{formatQuarter(i.date_delivery)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          {rows.length === 0 && (
-            <p className="empty">No initiatives match these filters.</p>
-          )}
+          {rows.length === 0 && <p className="empty">No initiatives match these filters.</p>}
         </div>
       </section>
 
-      {open && (
-        <DetailDialog
-          initiative={open}
-          onClose={() => setOpen(null)}
-        />
-      )}
+      {open && <DetailDialog initiative={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }

@@ -1,0 +1,67 @@
+{
+  "_comment": "Shared test cases for the input form's value/risk formulas. The DAG (input orchestration, transforms/user_input_heuristic.py) is binding; the Backend's pending values and the UI's live preview mirror it and must pass the same cases. Keep the copies in backend_app identical. Shares are fractions 0-1, amounts in EUR (per year except oneTimeCosts input).",
+  "base": {
+    "CasesPerYear": null, "HoursSavedPerCase": null,
+    "ErrorRateBefore": null, "ErrorsAvoided": null, "CostPerError": null,
+    "RiskEventsPerYear": null, "EventsAvoided": null, "CostPerEvent": null,
+    "DelayEventsPerYear": null, "CostOfDelayPerEvent": null, "LeadTimeSaved": null,
+    "EstimateBasis": "benchmark", "DeliveryLikelihood": "medium",
+    "OneTimeCosts": 0, "OperatingCosts": 0,
+    "EmployeePersonalData": "no", "PerformanceOrBehaviourControl": false,
+    "DecisionsOnEmployees": "none", "ProfilingOfIndividuals": false,
+    "ChangesEmployeeWorkflows": false, "ProhibitedPractice": false
+  },
+  "cases": [
+    {
+      "name": "all four levers, benchmark, medium delivery",
+      "input": {
+        "CasesPerYear": 3000, "HoursSavedPerCase": 0.5,
+        "ErrorRateBefore": 0.08, "ErrorsAvoided": 0.4, "CostPerError": 2000,
+        "RiskEventsPerYear": 4, "EventsAvoided": 0.25, "CostPerEvent": 50000,
+        "DelayEventsPerYear": 10, "CostOfDelayPerEvent": 100000, "LeadTimeSaved": 0.15,
+        "OneTimeCosts": 200000, "OperatingCosts": 50000,
+        "ChangesEmployeeWorkflows": true
+      },
+      "expected": {
+        "efficiency": 90000, "quality": 192000, "riskReduction": 50000, "strategic": 150000,
+        "hypothetical": 482000, "confidenceScore": 0.6, "deliveryScore": 0.65, "potential": 187980,
+        "oneTimeCosts": 130000, "operatingCosts": 32500, "depreciationYears": 5, "annualCost": 58500,
+        "riskLevel": 2
+      }
+    },
+    {
+      "name": "efficiency only, incomplete quality lever counts as zero, rough and low",
+      "input": {
+        "CasesPerYear": 1000, "HoursSavedPerCase": 1, "ErrorRateBefore": 0.1, "ErrorsAvoided": 0.5,
+        "EstimateBasis": "rough", "DeliveryLikelihood": "low",
+        "OperatingCosts": 10000, "EmployeePersonalData": "yes"
+      },
+      "expected": {
+        "efficiency": 60000, "quality": 0, "riskReduction": 0, "strategic": 0,
+        "hypothetical": 60000, "confidenceScore": 0.35, "deliveryScore": 0.4, "potential": 8400,
+        "oneTimeCosts": 0, "operatingCosts": 4000, "depreciationYears": 5, "annualCost": 4000,
+        "riskLevel": 3
+      }
+    },
+    {
+      "name": "measured and high, speed only",
+      "input": {
+        "DelayEventsPerYear": 2, "CostOfDelayPerEvent": 50000, "LeadTimeSaved": 0.2,
+        "EstimateBasis": "measured", "DeliveryLikelihood": "high", "OneTimeCosts": 100000
+      },
+      "expected": {
+        "efficiency": 0, "quality": 0, "riskReduction": 0, "strategic": 20000,
+        "hypothetical": 20000, "confidenceScore": 0.8, "deliveryScore": 0.9, "potential": 14400,
+        "oneTimeCosts": 90000, "operatingCosts": 0, "depreciationYears": 5, "annualCost": 18000,
+        "riskLevel": 1
+      }
+    },
+    {"name": "prohibited practice wins over everything", "input": {"ProhibitedPractice": true, "DecisionsOnEmployees": "automated", "EmployeePersonalData": "yes"}, "expected": {"riskLevel": 5}},
+    {"name": "automated decisions", "input": {"DecisionsOnEmployees": "automated"}, "expected": {"riskLevel": 4}},
+    {"name": "profiling", "input": {"ProfilingOfIndividuals": true, "ChangesEmployeeWorkflows": true}, "expected": {"riskLevel": 4}},
+    {"name": "performance or behaviour control", "input": {"PerformanceOrBehaviourControl": true}, "expected": {"riskLevel": 3}},
+    {"name": "prepares decisions", "input": {"DecisionsOnEmployees": "prepares"}, "expected": {"riskLevel": 3}},
+    {"name": "pseudonymised data", "input": {"EmployeePersonalData": "pseudonymised"}, "expected": {"riskLevel": 2}},
+    {"name": "no impact on employees", "input": {}, "expected": {"riskLevel": 1}}
+  ]
+}

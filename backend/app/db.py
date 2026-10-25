@@ -1,10 +1,16 @@
-"""Read-only access to the shared SQLite file.
+"""Access to the shared SQLite file: read-only, except for the input form.
 
 The writer (Input Orchestration) replaces the file with an atomic rename. A
 pooled connection would keep reading the old, replaced inode, so every
-request opens the file fresh (NullPool). The file is opened read-only at the
-SQLite level on top of the read-only volume mount. The rename window can
+request opens the file fresh (NullPool). Reads open the file read-only at the
+SQLite level. The rename window can
 make an open fail briefly, hence the short retry.
+
+Exception: the input form's bronze table (UserInput_Initiatives_Extract) is
+written through a separate read-write engine, used only by
+POST /api/initiatives (get_write_session); every other endpoint keeps the
+read-only one. In the cluster the DB volume is the shared RWX volume, mounted
+without readOnly.
 """
 from __future__ import annotations
 
@@ -24,13 +30,28 @@ _RETRIES = 3
 _BACKOFF_SECONDS = 0.1
 
 
+# FastAPI opens the session (dependency) and runs a sync endpoint in different threadpool
+# threads, so a connection is used across threads — never concurrently (NullPool: one connection
+# per session). Without check_same_thread=False, parallel requests fail with ProgrammingError.
 def make_engine(db_path: Path) -> Engine:
     uri = f"file:{quote(str(db_path))}?mode=ro"
     return create_engine(
         "sqlite://",
-        creator=lambda: sqlite3.connect(uri, uri=True),
+        creator=lambda: sqlite3.connect(uri, uri=True, check_same_thread=False),
         poolclass=NullPool,
     )
+
+
+_BUSY_TIMEOUT_SECONDS = 30  # wait for a running DAG's write transaction instead of failing
+
+
+def make_write_engine(db_path: Path) -> Engine:
+    def connect() -> sqlite3.Connection:
+        connection = sqlite3.connect(str(db_path), timeout=_BUSY_TIMEOUT_SECONDS, check_same_thread=False)
+        connection.execute("PRAGMA foreign_keys=ON")
+        return connection
+
+    return create_engine("sqlite://", creator=connect, poolclass=NullPool)
 
 
 def open_session(engine: Engine) -> Session:
@@ -49,6 +70,14 @@ def open_session(engine: Engine) -> Session:
 
 def get_session(request: Request):
     session = open_session(request.app.state.engine)
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def get_write_session(request: Request):
+    session = Session(request.app.state.write_engine)
     try:
         yield session
     finally:

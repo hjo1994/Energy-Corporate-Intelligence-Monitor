@@ -19,7 +19,6 @@ export function OidcGate({ children }: { children: ReactNode }) {
       </Centered>
     );
   }
-
   if (auth.error) {
     return (
       <Centered>
@@ -27,7 +26,6 @@ export function OidcGate({ children }: { children: ReactNode }) {
           <p>
             Sign-in error: {auth.error.message}
           </p>
-
           <a className="primary-link" href="/login">
             Go to sign-in
           </a>
@@ -35,11 +33,7 @@ export function OidcGate({ children }: { children: ReactNode }) {
       </Centered>
     );
   }
-
-  if (!auth.isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
+  if (!auth.isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

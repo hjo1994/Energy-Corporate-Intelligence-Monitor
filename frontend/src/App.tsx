@@ -1,12 +1,24 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { fetchFeatures } from "./api/client";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
-import { MatrixView } from "./views/MatrixView";
+import { CockpitView } from "./views/CockpitView";
+import { NewInitiativeView } from "./views/NewInitiativeView";
 
 function Shell() {
   const { load, reload, filters, setFilters } = useApp();
+  // AI_COCKPIT_ENABLE_INITIATIVE_INPUT on the backend; hidden until it says yes
+  const [inputEnabled, setInputEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchFeatures().then((f) => !cancelled && setInputEnabled(f.initiative_input));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   return (
     <div className="page">
       <header className="topbar">
@@ -16,11 +28,16 @@ function Shell() {
         </div>
         <nav className="tabs" aria-label="Views">
           <NavLink to="/" end>
-            Matrix
+            Cockpit
           </NavLink>
           <NavLink to="/list">List</NavLink>
           <NavLink to="/board">Board</NavLink>
         </nav>
+        {inputEnabled && (
+          <NavLink to="/new" className="new-btn">
+            + New initiative
+          </NavLink>
+        )}
         {!AUTH_DEV_BYPASS && (
           <NavLink to="/logout" className="logout">
             Sign out
@@ -49,10 +66,13 @@ function Shell() {
         )}
         {load.state === "ready" && (
           <Routes>
-            <Route path="/" element={<MatrixView />} />
+            <Route path="/" element={<CockpitView />} />
             <Route path="/list" element={<ListView />} />
             <Route path="/board" element={<BoardView />} />
-            <Route path="*" element={<MatrixView />} />
+            <Route path="/new" element={inputEnabled ? <NewInitiativeView /> : <Navigate to="/" replace />} />
+            {/* the former Value tab now lives on the start page */}
+            <Route path="/value" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<CockpitView />} />
           </Routes>
         )}
       </main>

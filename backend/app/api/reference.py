@@ -4,13 +4,14 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import authorizer
+from app.config import initiative_input_enabled
 from app.db import get_session
-from app.models import Initiative, Owner, SolutionType, ValueType
-from app.schemas import BusinessUnitCount, OwnerOut, StageCount, TypeOut
+from app.models import Initiative, Owner, RiskClassification, SolutionType, ValueType
+from app.schemas import BusinessUnitCount, OwnerOut, RiskClassificationOut, StageCount, TypeOut
 
 router = APIRouter(prefix="/api", tags=["reference"], dependencies=[authorizer()])
 
@@ -45,7 +46,7 @@ def list_business_units(
     """
     rows = session.execute(
         select(Owner.category, func.count(Initiative.id))
-        .outerjoin(Initiative, Initiative.owner_id == Owner.id)
+        .outerjoin(Initiative, and_(Initiative.owner_id == Owner.id, Initiative.is_active.is_(True)))
         .group_by(Owner.category)
         .order_by(Owner.category)
     ).all()
@@ -56,7 +57,22 @@ def list_business_units(
 def list_stages(session: Annotated[Session, Depends(get_session)]) -> list[StageCount]:
     rows = session.execute(
         select(Initiative.stage, func.count(Initiative.id))
+        .where(Initiative.is_active.is_(True))
         .group_by(Initiative.stage)
         .order_by(func.count(Initiative.id).desc(), Initiative.stage)
     ).all()
     return [StageCount(stage=s, count=c) for s, c in rows]
+
+
+@router.get("/risk-classifications", response_model=list[RiskClassificationOut])
+def list_risk_classifications(
+    session: Annotated[Session, Depends(get_session)],
+) -> list[RiskClassification]:
+    """All five levels of the Rahmenbetriebsvereinbarung KI, including unused ones."""
+    return list(session.scalars(select(RiskClassification).order_by(RiskClassification.id)))
+
+
+@router.get("/features")
+def features() -> dict[str, bool]:
+    """Feature switches for the frontend (AI_COCKPIT_ENABLE_INITIATIVE_INPUT)."""
+    return {"initiative_input": initiative_input_enabled()}
