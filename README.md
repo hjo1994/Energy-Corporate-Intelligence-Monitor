@@ -222,6 +222,26 @@ Jede DAG-Datei importiert zuerst `dependency_loader` (wie bisher). Airflow
 DELETE im Silber-Operator läuft deshalb ohne Autoflush, siehe Kommentar dort).
 Pfade im Cluster: `SOURCE_DIR=/data/source`, `AI_COCKPIT_DB_PATH=/data/db/ai_cockpit.db`.
 
+## Deploy-Hinweise (Stand 25.10.2026)
+
+- **Neue Tabellen** `UserInput_Initiatives_Extract` und `TransformationRun`
+  legt der erste Task, der die DB öffnet, per `create_all` an (die Sensoren
+  tun das in der ersten Minute). Keine Migration, bestehende Tabellen
+  unverändert.
+- **Neuer DAG `bronze_to_silver_user_input`**: Airflow legt neue DAGs
+  pausiert an — nach dem Deploy einmal aktivieren
+  (`airflow dags unpause bronze_to_silver_user_input` oder Schalter in der UI).
+- **`@continuous` + Sensor**: Jeder `bronze_to_silver_<key>`-DAG hat immer
+  einen offenen Lauf; `wait_for_new_bronze` prüft im Modus reschedule alle
+  60 s (`AI_COCKPIT_BRONZE_POKE_SECONDS`). Mit dem KubernetesExecutor startet
+  jede Prüfung einen Pod (5 DAGs → 5 kurze Pods pro Minute); bei Bedarf das
+  Intervall erhöhen.
+- **Erster Lauf nach dem Deploy**: `TransformationRun` ist leer, jeder Sensor
+  meldet einmal „neu“ und transformiert den aktuellen Stand; der
+  Hash-Delta-Check ändert dabei nichts (lokal verifiziert: nur „unchanged“).
+- **Gemeinsame DB**: Das Backend schreibt neue Eingaben in
+  `UserInput_Initiatives_Extract` (RWX-Volume, wie Airflow).
+
 ## Lokal ausführen
 
 Eigene venv mit Python 3.11 und den Airflow-Constraints (der Firmen-Spiegel
