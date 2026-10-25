@@ -35,13 +35,19 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
    läuft `@continuous` (max. ein offener Lauf) mit eigenem Sensor
    `wait_for_new_bronze` (`operators/new_bronze_sensor.py`, Modus reschedule,
    alle 60 s, `AI_COCKPIT_BRONZE_POKE_SECONDS`): Er prüft nur die eigene
-   Tabelle und meldet „neu“, wenn deren jüngster Datensatz (max `Timestamp`,
-   UTC) nach dem **Start** des letzten erfolgreichen `bronze_to_silver`-Tasks
-   dieses DAGs liegt (aus der Airflow-Metadaten-DB; noch kein Lauf → neu). Ein
-   während der Transformation geschriebener Datensatz wird so beim nächsten
-   Lauf erfasst. Nach 24 h ohne neue Daten wird der Sensor übersprungen
-   (soft fail), der Lauf endet grün und der nächste beginnt. Keine eigene
-   Buchführung: Der Hash-Delta-Check hält wiederholte Läufe idempotent. Der
+   Tabelle und meldet „neu“, wenn deren jüngster Datensatz (max `Timestamp`)
+   neuer ist als der jüngste `BronzeTimestamp` eines erfolgreichen Laufs in
+   `TransformationRun` (noch kein Lauf → neu). Jeder Lauf protokolliert sich
+   dort (Technik-Tabelle, ohne FK): `BronzeTableName`, `DagRunID`,
+   `StartedAt`, `FinishedAt`, `BronzeTimestamp` (= max `Timestamp`, ermittelt
+   **vor** dem Lesen — während des Laufs geschriebene Datensätze sind damit
+   beim nächsten Lauf „neu“), `Status` (`running` → `success` im selben Commit
+   wie die Silber-Schreibvorgänge, sonst `failed`) und die Zähler `RowsRead`,
+   `RowsInserted`, `RowsUpdated`, `RowsUnchanged`, `RowsDeactivated`,
+   `RowsConflict`. Verglichen werden nur Bronze-Zeitstempel, keine Airflow-
+   Metadaten. Nach 24 h ohne neue Daten wird der Sensor übersprungen
+   (soft fail), der Lauf endet grün und der nächste beginnt. Der Hash-Delta-
+   Check hält wiederholte Läufe idempotent. Der
    `BronzeToSilverOperator` normalisiert Status → Stage
    und Timing, verknüpft **nur bestehende** Config-Einträge (Unbekanntes
    bleibt NULL und wird geloggt), schätzt die Value-Attribute

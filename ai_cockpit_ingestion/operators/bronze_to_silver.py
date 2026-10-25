@@ -1,6 +1,7 @@
 """Bronze-to-Silver operator: upserts one extract table's latest load into the
 silver Initiative rows of its business unit. The input form's table has its
-own mode, see operators.user_input_to_silver.
+own mode, see operators.user_input_to_silver. Every run is logged in
+TransformationRun (detection.start_run / finish_run).
 
 Per row: normalizes status/timing/complexity (transforms.normalize), links
 the config tables, estimates the four value buckets, the confidence and
@@ -40,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion import config
 from ai_cockpit_ingestion.db import get_engine
+from ai_cockpit_ingestion.detection import finish_run, start_run
 from ai_cockpit_ingestion.lineage import latest_load_filter, utcnow
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
@@ -75,35 +77,43 @@ class BronzeToSilverOperator(BaseOperator):
     def execute(self, context) -> dict:
         source = SOURCES_BY_KEY[self.source_key]
         force = bool((context.get("params") or {}).get("force", False))
+        dag_run = context.get("dag_run")
         engine = get_engine(self.db_path)
-        if source.mode == USER_INPUT:
+        try:
+            run_id = start_run(engine, source, dag_run.run_id if dag_run is not None else None)
             try:
                 with Session(engine) as session, session.begin():
-                    counts = upsert_user_input(session, force, self.log)
-            finally:
-                engine.dispose()
-            self.log.info("%s, force=%s: %s", source.extract_table, force, counts)
-            return counts
-
-        table = EXTRACT_TABLES[source.extract_table]
-        try:
-            with Session(engine) as session, session.begin():
-                bronze_rows = [
-                    dict(r._mapping)
-                    for r in session.execute(select(table).where(latest_load_filter(table)).order_by(table.c.ID))
-                ]
-                if not bronze_rows:
-                    raise RuntimeError(f"{source.extract_table} is empty — run RawToBronze first")
-                counts = self._upsert(session, source, bronze_rows, force)
+                    if source.mode == USER_INPUT:
+                        counts = upsert_user_input(session, force, self.log)
+                        rows_read = counts["read"]
+                    else:
+                        counts, rows_read = self._transform_sheet(session, source, force)
+                    # same commit as the silver writes: success only if they are stored
+                    finish_run(session, run_id, "success", counts, rows_read)
+            except Exception:
+                with Session(engine) as session, session.begin():
+                    finish_run(session, run_id, "failed")
+                raise
         finally:
             engine.dispose()
+        self.log.info("%s, force=%s: %s", source.extract_table, force, counts)
+        return counts
 
+    def _transform_sheet(self, session: Session, source, force: bool) -> tuple[dict, int]:
+        table = EXTRACT_TABLES[source.extract_table]
+        bronze_rows = [
+            dict(r._mapping)
+            for r in session.execute(select(table).where(latest_load_filter(table)).order_by(table.c.ID))
+        ]
+        if not bronze_rows:
+            raise RuntimeError(f"{source.extract_table} is empty — run RawToBronze first")
+        counts = self._upsert(session, source, bronze_rows, force)
         self.log.info(
             "%s: load %s (%s), force=%s, business unit %r, %d rows read: %s",
             source.extract_table, bronze_rows[0]["Timestamp"], bronze_rows[0]["SourceFileID"], force,
             source.business_unit, len(bronze_rows), counts,
         )
-        return counts
+        return counts, len(bronze_rows)
 
     def _upsert(self, session: Session, source, bronze_rows: list[dict], force: bool) -> dict:
         counts = {"inserted": 0, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0}

@@ -17,6 +17,9 @@ matching the layers in `Architecture.drawio`:
   RiskClassification.
 - Silver: Initiative, upserted by the DAGs the BronzeToSilver meta DAG
   generates (one per extract table).
+- TransformationRun: technical log of the bronze_to_silver runs, one row per
+  run and bronze table (when, up to which bronze Timestamp, outcome, counts).
+  The DAGs' sensors read it to tell whether a table has new data.
 - BusinessTransaction: one row per bronze record that BronzeToSilver turned
   into an inserted or changed initiative (BronzeTableName + BronzeID). The
   initiative points to it, so every silver row can be traced to its bronze
@@ -231,6 +234,37 @@ class BusinessTransaction(Base):
     id = Column("ID", Integer, primary_key=True)
     bronze_id = Column("BronzeID", Integer, nullable=False)
     bronze_table_name = Column("BronzeTableName", String, nullable=False)
+
+
+class TransformationRun(Base):
+    """One run of a bronze_to_silver DAG over its bronze table (technical/meta, no FKs).
+
+    BronzeTimestamp is max(Timestamp) of the bronze table, taken BEFORE the run
+    reads the data, so a record written during the run counts as new for the
+    next one. A table has new data when its newest record is later than the
+    newest BronzeTimestamp of a successful run (operators.new_bronze_sensor).
+    Status: running -> success (in the same commit as the silver writes) or failed.
+    """
+
+    __tablename__ = "TransformationRun"
+    __table_args__ = (
+        CheckConstraint("\"Status\" IN ('running', 'success', 'failed')", name="ck_transformationrun_status"),
+        Index("ix_transformationrun_table_status_bronzets", "BronzeTableName", "Status", "BronzeTimestamp"),
+    )
+
+    id = Column("ID", Integer, primary_key=True)
+    bronze_table_name = Column("BronzeTableName", String, nullable=False)
+    dag_run_id = Column("DagRunID", String, nullable=True)  # Airflow run_id, for tracing
+    started_at = Column("StartedAt", DateTime, nullable=False)
+    finished_at = Column("FinishedAt", DateTime, nullable=True)
+    bronze_timestamp = Column("BronzeTimestamp", DateTime, nullable=True)  # NULL: table was empty
+    status = Column("Status", String, nullable=False)
+    rows_read = Column("RowsRead", Integer, nullable=True)
+    rows_inserted = Column("RowsInserted", Integer, nullable=True)
+    rows_updated = Column("RowsUpdated", Integer, nullable=True)
+    rows_unchanged = Column("RowsUnchanged", Integer, nullable=True)
+    rows_deactivated = Column("RowsDeactivated", Integer, nullable=True)
+    rows_conflict = Column("RowsConflict", Integer, nullable=True)
 
 
 # --- Silver -----------------------------------------------------------------
