@@ -212,12 +212,12 @@ export function valueRoadmap(items: Initiative[]): Roadmap {
 }
 
 // Quarters as consecutive integers (year x 4 + quarter - 1), parsed from the string like formatQuarter.
-function quarterIndex(iso: string | null): number | null {
+export function quarterIndex(iso: string | null): number | null {
   const m = iso ? /^(\d{4})-(\d{2})/.exec(iso) : null;
   return m ? Number(m[1]) * 4 + Math.floor((Number(m[2]) - 1) / 3) : null;
 }
 
-const quarterLabel = (q: number): string =>
+export const quarterLabel = (q: number): string =>
   formatQuarter(`${Math.floor(q / 4)}-${String((q % 4) * 3 + 1).padStart(2, "0")}`);
 
 // ---------- labels ----------

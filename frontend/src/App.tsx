@@ -1,10 +1,9 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
-import { MatrixView } from "./views/MatrixView";
-import { ValueView } from "./views/ValueView";
+import { CockpitView } from "./views/CockpitView";
 
 function Shell() {
   const { load, reload, filters, setFilters } = useApp();
@@ -17,11 +16,10 @@ function Shell() {
         </div>
         <nav className="tabs" aria-label="Views">
           <NavLink to="/" end>
-            Matrix
+            Cockpit
           </NavLink>
           <NavLink to="/list">List</NavLink>
           <NavLink to="/board">Board</NavLink>
-          <NavLink to="/value">Value</NavLink>
         </nav>
         {!AUTH_DEV_BYPASS && (
           <NavLink to="/logout" className="logout">
@@ -51,11 +49,12 @@ function Shell() {
         )}
         {load.state === "ready" && (
           <Routes>
-            <Route path="/" element={<MatrixView />} />
+            <Route path="/" element={<CockpitView />} />
             <Route path="/list" element={<ListView />} />
             <Route path="/board" element={<BoardView />} />
-            <Route path="/value" element={<ValueView />} />
-            <Route path="*" element={<MatrixView />} />
+            {/* the former Value tab now lives on the start page */}
+            <Route path="/value" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<CockpitView />} />
           </Routes>
         )}
       </main>

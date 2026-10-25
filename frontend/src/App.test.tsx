@@ -29,24 +29,51 @@ function renderAt(path: string) {
 
 
 describe("app", () => {
-  it("shows KPIs and flags initiatives that cannot be plotted", async () => {
+  it("opens on the value cockpit with the estimated value and the top initiatives", async () => {
     mockApi(ok);
     renderAt("/");
-    expect(await screen.findByText("Effort vs. potential")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("2 of 4 initiatives are not plotted");
-    expect(screen.getAllByRole("button", { name: /, (Idea|PoC)$/ })).toHaveLength(2);
+    const hero = await screen.findByRole("region", { name: "Estimated value" });
+    expect(hero).toHaveTextContent("Our 4 AI initiatives are estimated to create");
+    // only Alpha has potential and cost estimated: 54k potential - 44k cost
+    expect(hero).toHaveTextContent("0.1 M€per year, net +0.0 M€ after costs");
+    expect(hero).toHaveTextContent("1 / 1cover their own costs");
+
+    const matrix = screen.getByRole("region", { name: "Where the value lies" });
+    expect(matrix).toHaveTextContent("2 of 3 initiatives have an effort estimate, covering 75 % of the potential.");
+    const top = within(matrix).getByRole("list", { name: "Top 10 by potential" });
+    expect(within(top).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "1AlphaETB · Idea54 k€",
+      "2BetaETB · PoC5 k€",
+    ]);
   });
 
-  it("selecting a dot shows its details; missing owner is stated, not hidden", async () => {
+  it("a click on a row or a dot highlights the initiative in both", async () => {
     mockApi(ok);
     renderAt("/");
-    await userEvent.click(await screen.findByRole("button", { name: "Alpha, Idea" }));
-    const panel = screen.getByRole("complementary", { name: "Details" });
-    expect(within(panel).getByText("Alpha")).toBeInTheDocument();
-    expect(within(panel).getByText("CAPEX delivery")).toBeInTheDocument();
-    expect(within(panel).getByText("Q3 2026")).toBeInTheDocument();
-    expect(within(panel).getByRole("region", { name: "Value estimate" })).toHaveTextContent("Potential≈ 54k €");
-    expect(within(panel).getByText("3 – Mittleres Risiko (estimated)")).toBeInTheDocument();
+    const matrix = await screen.findByRole("region", { name: "Where the value lies" });
+    const row = within(matrix).getByRole("button", { name: /^2Beta/ });
+    const dot = within(matrix).getByRole("button", { name: "#2 Beta" });
+    await userEvent.click(row);
+    expect(row).toHaveAttribute("aria-pressed", "true");
+    expect(dot).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(dot);
+    expect(row).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("shows value by business unit and by value driver", async () => {
+    mockApi(ok);
+    renderAt("/");
+    expect(await screen.findByRole("region", { name: "Value by business unit" })).toHaveTextContent("ETB0.1 M€");
+    expect(screen.getByRole("region", { name: "What drives the value" })).toHaveTextContent(
+      "Efficiency0.0 M€Quality0.0 M€Risk reduction0.0 M€Strategic0.0 M€",
+    );
+  });
+
+  it("redirects the former value tab to the start page", async () => {
+    mockApi(ok);
+    renderAt("/value");
+    expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Value" })).not.toBeInTheDocument();
   });
 
   it("filters by business unit across views and keeps them in sync", async () => {
@@ -73,7 +100,7 @@ describe("app", () => {
     renderAt("/");
     expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("Effort vs. potential")).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
   });
 });
 
@@ -92,79 +119,7 @@ describe("api errors", () => {
   it("asks the backend for the whole data set page by page", async () => {
     mockApi(ok);
     renderAt("/");
-    await screen.findByText("Effort vs. potential");
+    await screen.findByRole("region", { name: "Estimated value" });
     expect(get).toHaveBeenCalledWith("/initiatives", { limit: 500, offset: 0, sort: "name" });
-  });
-});
-
-describe("flagship widget", () => {
-  it("shows counts and estimated potential per flagship, including the unassigned group", async () => {
-    mockApi(ok);
-    renderAt("/");
-    const widget = await screen.findByRole("region", { name: "Flagships" });
-    expect(within(widget).getByRole("button", { name: /CAPEX delivery/ })).toHaveTextContent("1 · ≈ 54k €/yr");
-    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("3 · ≈ 25k €/yr (2 of 3 estimated)");
-  });
-
-  it("filters by the clicked flagship while keeping the other rows visible to switch back", async () => {
-    mockApi(ok);
-    renderAt("/");
-    const widget = await screen.findByRole("region", { name: "Flagships" });
-    await userEvent.click(within(widget).getByRole("button", { name: /CAPEX delivery/ }));
-
-    expect(screen.getByRole("region", { name: "Key figures" })).toHaveTextContent("1matching the filters");
-    expect(within(widget).getByRole("button", { name: /CAPEX delivery/ })).toHaveAttribute("aria-pressed", "true");
-    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toBeInTheDocument();
-
-    await userEvent.click(within(widget).getByRole("button", { name: /CAPEX delivery/ }));
-    expect(screen.getByRole("region", { name: "Key figures" })).toHaveTextContent("4matching the filters");
-  });
-
-  it("follows the other filters (business unit)", async () => {
-    mockApi(ok);
-    renderAt("/");
-    await userEvent.click(await screen.findByRole("button", { name: "IT" }));
-    const widget = screen.getByRole("region", { name: "Flagships" });
-    expect(within(widget).queryByRole("button", { name: /CAPEX delivery/ })).not.toBeInTheDocument();
-    expect(within(widget).getByRole("button", { name: /Not assigned/ })).toHaveTextContent("1 · ≈ 20k €/yr");
-  });
-});
-
-describe("value view", () => {
-  it("shows bridge, break-even map and roadmap for the filtered initiatives", async () => {
-    mockApi(ok);
-    renderAt("/value");
-    const bridge = await screen.findByRole("region", { name: "Value bridge" });
-    // only Alpha has potential and cost estimated: 54k potential - 44k cost
-    expect(within(bridge).getByRole("img")).toHaveAccessibleName(/Potential 0\.1, Cost \/ year 0\.0, Net \/ year 0\.0/);
-    expect(bridge).toHaveTextContent("1 initiatives (3 without estimated potential or cost left out)");
-    expect(bridge).toHaveTextContent("Net positive1 / 1");
-
-    const map = screen.getByRole("region", { name: "Break-even map" });
-    expect(map).toHaveTextContent("Above break-even1 / 1");
-    expect(map).toHaveTextContent("≈ +10k €");
-
-    const roadmap = screen.getByRole("region", { name: "Value roadmap" });
-    expect(within(roadmap).getByRole("img")).toHaveAccessibleName(/Q3 2026 54/);
-    expect(within(roadmap).getByRole("group", { name: "Without delivery date" })).toHaveTextContent(
-      "≈ 25k €31 % of the potential · 2 initiatives · no dates yet from IT",
-    );
-  });
-
-  it("break-even dots show a tooltip, open the details and fade outside the stage group", async () => {
-    mockApi(ok);
-    renderAt("/value");
-    const map = await screen.findByRole("region", { name: "Break-even map" });
-    const dot = within(map).getByRole("button", { name: /^Alpha: potential ≈ 54k €, cost ≈ 44k €/ });
-    await userEvent.hover(dot);
-    expect(within(map).getByRole("tooltip")).toHaveTextContent("AlphaETB · Idea");
-    expect(within(map).getByRole("tooltip")).toHaveTextContent("Cost if delivered ≈ 49k € /yr");
-
-    await userEvent.click(within(map).getByRole("button", { name: "PoC & MVP" }));
-    expect(dot).toHaveClass("faded");
-    expect(map).toHaveTextContent("Above break-even0 / 0");
-
-    await userEvent.click(dot);
-    expect(screen.getByRole("dialog", { name: "Alpha" })).toBeInTheDocument();
   });
 });
