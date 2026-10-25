@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Initiative } from "../api/types";
 import { DetailDialog } from "../components/DetailDialog";
-import { EffortMeter, OwnerCell, RiskBadge, StageBadge, ValueMeter } from "../components/small";
+import { EffortMeter, OwnerCell, PendingTag, RiskBadge, StageBadge, ValueMeter } from "../components/small";
 import { Chip } from "../components/small";
 import { flagshipLabel, formatQuarter } from "../domain/format";
 import {
@@ -143,6 +143,7 @@ export function ListView() {
                     <button type="button" className="link-btn" onClick={() => setOpen(i)}>
                       {i.name}
                     </button>
+                    <PendingTag initiative={i} />
                     <span className="truncate muted">{i.description}</span>
                   </td>
                   <td>

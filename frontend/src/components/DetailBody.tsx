@@ -2,7 +2,7 @@ import type { Initiative } from "../api/types";
 import { flagshipLabel, formatEur, formatFactor, formatQuarter } from "../domain/format";
 import { riskLabel } from "../domain/risk";
 import { costIfDelivered } from "../domain/value";
-import { Avatar, EffortMeter, RiskBadge, StageBadge, ValueMeter } from "./small";
+import { Avatar, EffortMeter, PendingTag, RiskBadge, StageBadge, ValueMeter } from "./small";
 
 export function DetailBody({ initiative: i }: { initiative: Initiative }) {
   return (
@@ -10,6 +10,7 @@ export function DetailBody({ initiative: i }: { initiative: Initiative }) {
       <div className="detail-head">
         <StageBadge stage={i.stage} />
         <RiskBadge risk={i.risk_classification} />
+        <PendingTag initiative={i} />
       </div>
       <h3>{i.name}</h3>
       <p className="muted">{i.description ?? "No description recorded."}</p>

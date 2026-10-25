@@ -1,5 +1,5 @@
 import { serviceApi } from "../shared/api/serviceApi";
-import type { Initiative, InitiativePage, TypeRef } from "./types";
+import type { Initiative, InitiativeInput, InitiativePage, Owner, TypeRef } from "./types";
 
 const PAGE_SIZE = 500; // backend maximum
 
@@ -55,5 +55,48 @@ export async function fetchAllInitiatives(): Promise<Initiative[]> {
     const page = await getPage(items.length);
     items.push(...page.items);
     if (page.items.length === 0 || items.length >= page.total) return items;
+  }
+}
+
+// ---------- input form ----------
+
+export interface ReferenceData {
+  owners: Owner[];
+  valueTypes: TypeRef[];
+  solutionTypes: TypeRef[];
+}
+
+export async function fetchReferenceData(): Promise<ReferenceData> {
+  try {
+    const [owners, valueTypes, solutionTypes] = await Promise.all([
+      serviceApi.get<Owner[]>("/owners"),
+      serviceApi.get<TypeRef[]>("/value-types"),
+      serviceApi.get<TypeRef[]>("/solution-types"),
+    ]);
+    return {
+      owners,
+      valueTypes: valueTypes.map((t) => clean(t) as TypeRef),
+      solutionTypes: solutionTypes.map((t) => clean(t) as TypeRef),
+    };
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+/** Stores a new initiative; it comes back as "pending" until the pipeline has processed it. */
+export async function createInitiative(input: InitiativeInput): Promise<Initiative> {
+  try {
+    const created = await serviceApi.post<Initiative>("/initiatives", input);
+    return { ...created, solution_type: clean(created.solution_type), value_type: clean(created.value_type) };
+  } catch (err) {
+    const response = (err as { response?: { status?: number; data?: { detail?: unknown } } } | null)?.response;
+    // 409 (name already taken in the business unit) and 422 carry a message for the user
+    if (response?.status === 409 && typeof response.data?.detail === "string") {
+      throw new ApiError(409, response.data.detail);
+    }
+    if (response?.status === 422) {
+      throw new ApiError(422, "Some values were rejected by the server. Please check the form.");
+    }
+    throw toApiError(err);
   }
 }

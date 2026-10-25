@@ -12,3 +12,15 @@ const RISK_LABELS: Record<number, string> = {
 };
 
 export const riskLabel = (risk: RiskRef): string => RISK_LABELS[risk.id] ?? risk.name;
+
+// What each level requires (RiskClassification.DerivedAction, stored in German), in English.
+const RISK_ACTIONS: Record<number, string> = {
+  1: "Inform the works council; document it in the AI register and the overview list.",
+  2: "As level 1, plus: inform the works council early; simplified hazard assessment; training; AI fact sheet; monitoring.",
+  3: "As level 2, plus: hazard, human-rights and impact assessments; trial run with evaluation; works council involvement; model tests; fundamental-rights impact assessment for the group works council.",
+  4: "As level 3, plus: full risk analysis incl. EU AI Act classification; supervised trial run; works council consent; a works agreement is required.",
+  5: "Not acceptable: introduction is prohibited; document the rejection with reasons; notify the authorities if required.",
+};
+
+export const riskLevelLabel = (level: number): string => RISK_LABELS[level] ?? `Risk level ${level}`;
+export const riskActions = (level: number): string => RISK_ACTIONS[level] ?? "";

@@ -17,7 +17,13 @@ interface AppState {
   all: Initiative[];
   /** initiatives matching the current filters */
   visible: Initiative[];
+  /** show an initiative just created through the input form right away (it is "pending") */
+  addInitiative: (initiative: Initiative) => void;
 }
+
+// While initiatives entered through the form are pending, the list is re-read this often until
+// the pipeline has turned them into regular initiatives.
+export const PENDING_POLL_MS = 3000;
 
 const Ctx = createContext<AppState | null>(null);
 
@@ -45,14 +51,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [attempt]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const addInitiative = useCallback(
+    (initiative: Initiative) =>
+      setLoad((l) => (l.state === "ready" ? { state: "ready", items: [...l.items, initiative] } : l)),
+    [],
+  );
+
+  const hasPending = load.state === "ready" && load.items.some((i) => i.status === "pending");
+  useEffect(() => {
+    if (!hasPending) return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      // silent refresh: keep showing the current data, ignore a failed attempt
+      fetchAllInitiatives().then(
+        (items) => !cancelled && setLoad({ state: "ready", items }),
+        () => undefined,
+      );
+    }, PENDING_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [hasPending]);
   const setFilters = useCallback((update: (f: Filters) => Filters) => setFiltersState(update), []);
 
   const all = useMemo(() => (load.state === "ready" ? load.items : []), [load]);
   const visible = useMemo(() => applyFilters(all, filters), [all, filters]);
 
   const value = useMemo(
-    () => ({ load, reload, filters, setFilters, all, visible }),
-    [load, reload, filters, setFilters, all, visible],
+    () => ({ load, reload, filters, setFilters, all, visible, addInitiative }),
+    [load, reload, filters, setFilters, all, visible, addInitiative],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

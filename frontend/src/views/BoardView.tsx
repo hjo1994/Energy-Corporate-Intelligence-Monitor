@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Initiative } from "../api/types";
 import { BusinessUnitChips } from "../components/FilterChips";
 import { DetailDialog } from "../components/DetailDialog";
-import { Avatar, EffortMeter, ValueMeter } from "../components/small";
+import { Avatar, EffortMeter, PendingTag, ValueMeter } from "../components/small";
 import { STAGE_ORDER, stageColor } from "../domain/stage";
 import { sortInitiatives } from "../domain/filters";
 import { useApp } from "../store";
@@ -44,6 +44,7 @@ export function BoardView() {
                   <span className="kcard-name">{i.name}</span>
                   {i.value_type && i.value_type.name !== "-" && <span className="tag">{i.value_type.name}</span>}
                 </span>
+                <PendingTag initiative={i} />
                 {i.description && <span className="kcard-desc">{i.description}</span>}
                 <span className="kcard-bottom">
                   <span className="kcard-owner">

@@ -7,9 +7,10 @@ import { SAMPLE } from "./test/fixtures";
 import { serviceApi } from "./shared/api/serviceApi";
 
 // ServiceApi (axios) is replaced: tests must not depend on the internal package's behaviour.
-vi.mock("./shared/api/serviceApi", () => ({ serviceApi: { get: vi.fn() } }));
+vi.mock("./shared/api/serviceApi", () => ({ serviceApi: { get: vi.fn(), post: vi.fn() } }));
 
 const get = vi.mocked(serviceApi.get);
+const post = vi.mocked(serviceApi.post);
 const ok = async () => ({ items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 });
 const failWith = (status?: number) => async () => {
   throw status === undefined ? new Error("Network Error") : { response: { status } };
@@ -133,5 +134,92 @@ describe("api errors", () => {
     renderAt("/");
     await screen.findByRole("region", { name: "Estimated value" });
     expect(get).toHaveBeenCalledWith("/initiatives", { limit: 500, offset: 0, sort: "name" });
+  });
+});
+
+describe("new initiative form", () => {
+  const owners = [
+    { id: 1, name: "Owner A", department: "Assets", category: "ETB" },
+    { id: 2, name: "Owner B", department: "Innovation", category: "IT" },
+  ];
+  const valueTypes = [{ id: 1, name: "CAPEX delivery", description: null }];
+  const solutionTypes = [{ id: 1, name: "Custom agent", description: null }];
+
+  function mockWithReference() {
+    get.mockReset();
+    get.mockImplementation((async (path: string) => {
+      if (path === "/owners") return owners;
+      if (path === "/value-types") return valueTypes;
+      if (path === "/solution-types") return solutionTypes;
+      return { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 };
+    }) as never);
+  }
+
+  async function fillRequired() {
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("textbox", { name: /^Name/ }), "Smart Invoice Check");
+    await user.type(screen.getByRole("textbox", { name: /^Description/ }), "Checks invoices against orders");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Business unit/ }), "ETB");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Owner/ }), "1");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Flagship/ }), "1");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Solution type/ }), "1");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "Idea");
+    await user.type(screen.getByRole("textbox", { name: /^Cases per year/ }), "3000");
+    await user.type(screen.getByRole("textbox", { name: /^Hours saved per case/ }), "0.5");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Complexity/ }), "4");
+    await user.type(screen.getByRole("textbox", { name: /^One-time cost/ }), "200000");
+    await user.type(screen.getByRole("textbox", { name: /^Operating cost/ }), "50000");
+    await user.click(screen.getByRole("radio", { name: "Benchmark" }));
+    return user;
+  }
+
+  it("previews value and risk live and refuses to save an incomplete form", async () => {
+    mockWithReference();
+    renderAt("/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save initiative" }));
+    expect(screen.getByText("Enter a name.")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+
+    await fillRequired();
+    const preview = screen.getByRole("complementary", { name: "Estimate preview" });
+    // 3,000 x 0.5 h x 60 € = 90k; x 0.60 x 0.65 = 35k; cost 200k x 0.65 / 5 + 50k x 0.65 = 59k
+    expect(preview).toHaveTextContent("Potential per year35k €");
+    expect(preview).toHaveTextContent("Expected cost per year59k €");
+    expect(preview).toHaveTextContent("1 · Very low risk");
+    await user.click(screen.getByRole("radio", { name: "Prepares" }));
+    expect(preview).toHaveTextContent("3 · Medium risk");
+  });
+
+  it("saves, returns to the cockpit and shows the new initiative as pending", async () => {
+    mockWithReference();
+    post.mockReset();
+    post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
+      ...SAMPLE[0], id: -1, user_input_id: 1, status: "pending", business_transaction_id: null,
+      name: body.name as string,
+    })) as never);
+    renderAt("/new");
+    const user = await fillRequired();
+    await user.click(screen.getByRole("button", { name: "Save initiative" }));
+
+    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
+      name: "Smart Invoice Check", owner_id: 1, cases_per_year: 3000, hours_saved_per_case: 0.5,
+      error_rate_before: null, estimate_basis: "benchmark", solution_complexity_score: 4,
+      one_time_costs: 200000, decisions_on_employees: "none",
+    }));
+    expect(await screen.findByRole("status")).toHaveTextContent("“Smart Invoice Check” was saved. Its estimate is pending");
+    expect(screen.getByRole("region", { name: "Key figures" })).toHaveTextContent("5matching the filters");
+  });
+
+  it("shows the server's message for a duplicate name", async () => {
+    mockWithReference();
+    post.mockReset();
+    post.mockImplementation((async () => {
+      throw { response: { status: 409, data: { detail: "An initiative named “Alpha” already exists in ETB." } } };
+    }) as never);
+    renderAt("/new");
+    const user = await fillRequired();
+    await user.click(screen.getByRole("button", { name: "Save initiative" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("already exists in ETB");
   });
 });

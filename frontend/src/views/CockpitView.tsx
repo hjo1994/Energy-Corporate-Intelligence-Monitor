@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { BusinessUnitChips, StageChips } from "../components/FilterChips";
 import { Kpis } from "../components/Kpis";
 import { RiskBadge } from "../components/small";
@@ -113,6 +114,29 @@ function Bars({ rows, tone }: { rows: { label: string; potential: number }[]; to
   );
 }
 
+/** After saving the input form: the new initiative is shown at once, its estimate follows. */
+function CreatedBanner() {
+  const { all } = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const created = (location.state as { created?: string } | null)?.created;
+  if (!created) return null;
+  const pending = all.some((i) => i.name === created && i.status === "pending");
+  return (
+    <div className="created-banner" role="status">
+      <span>
+        <strong>“{created}”</strong> was saved.{" "}
+        {pending
+          ? "Its estimate is pending — the pipeline calculates the final values in a few seconds."
+          : "Its values are now calculated by the pipeline."}
+      </span>
+      <button type="button" className="link-btn" onClick={() => navigate(".", { replace: true, state: null })}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 export function CockpitView() {
   const { all, visible } = useApp();
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -140,6 +164,7 @@ export function CockpitView() {
 
   return (
     <div className="cockpit">
+      <CreatedBanner />
       <div className="filter-row">
         <BusinessUnitChips all={all} />
         <StageChips all={all} />

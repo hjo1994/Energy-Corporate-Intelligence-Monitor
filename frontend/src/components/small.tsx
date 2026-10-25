@@ -107,3 +107,13 @@ export function Chip({
     </button>
   );
 }
+
+/** Shown on initiatives entered through the form until the pipeline has calculated them. */
+export function PendingTag({ initiative }: { initiative: Initiative }) {
+  if (initiative.status !== "pending") return null;
+  return (
+    <span className="pending-tag" title="Saved — the pipeline is calculating the final values">
+      Estimate pending
+    </span>
+  );
+}

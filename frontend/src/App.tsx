@@ -4,6 +4,7 @@ import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
 import { CockpitView } from "./views/CockpitView";
+import { NewInitiativeView } from "./views/NewInitiativeView";
 
 function Shell() {
   const { load, reload, filters, setFilters } = useApp();
@@ -21,6 +22,9 @@ function Shell() {
           <NavLink to="/list">List</NavLink>
           <NavLink to="/board">Board</NavLink>
         </nav>
+        <NavLink to="/new" className="new-btn">
+          + New initiative
+        </NavLink>
         {!AUTH_DEV_BYPASS && (
           <NavLink to="/logout" className="logout">
             Sign out
@@ -52,6 +56,7 @@ function Shell() {
             <Route path="/" element={<CockpitView />} />
             <Route path="/list" element={<ListView />} />
             <Route path="/board" element={<BoardView />} />
+            <Route path="/new" element={<NewInitiativeView />} />
             {/* the former Value tab now lives on the start page */}
             <Route path="/value" element={<Navigate to="/" replace />} />
             <Route path="*" element={<CockpitView />} />
