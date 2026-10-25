@@ -1,14 +1,11 @@
-"""Every new bronze load starts its bronze_to_silver DAG: the Dataset each
-RawToBronze load task emits is exactly the schedule of the matching DAG, and
-the input form's DAG also listens to its table's Dataset (plus a fallback
-schedule every minute). Parses the real DAG files (pytest tests/)."""
+"""The bronze_to_silver factory, parsed from the real DAG files: one DAG per
+bronze table, each with its own sensor on its own table (pytest tests/)."""
 from pathlib import Path
 
 import pytest
 from airflow.models import DagBag
-from airflow.timetables.datasets import DatasetOrTimeSchedule
 
-from ai_cockpit_ingestion.sources import SOURCES, USER_INPUT_SOURCE
+from ai_cockpit_ingestion.sources import BRONZE_TO_SILVER_SOURCES, SOURCES
 
 
 @pytest.fixture(scope="module")
@@ -18,21 +15,25 @@ def dagbag():
     return bag
 
 
-def _scheduled_on(dag):
-    return {uri for uri, _ in dag.timetable.dataset_condition.iter_datasets()}
+def test_one_dag_per_bronze_table(dagbag):
+    assert {d for d in dagbag.dag_ids if d.startswith("bronze_to_silver")} == {
+        f"bronze_to_silver_{s.key}" for s in BRONZE_TO_SILVER_SOURCES
+    }
 
 
-def test_every_extract_load_emits_the_dataset_its_silver_dag_is_scheduled_on(dagbag):
+@pytest.mark.parametrize("source", BRONZE_TO_SILVER_SOURCES, ids=lambda s: s.key)
+def test_each_dag_waits_with_its_own_sensor_on_its_own_table(dagbag, source):
+    dag = dagbag.get_dag(f"bronze_to_silver_{source.key}")
+    assert dag.timetable.summary == "@continuous"
+    assert (dag.max_active_runs, dag.catchup) == (1, False)
+    sensor = dag.get_task("wait_for_new_bronze")
+    assert sensor.source_key == source.key
+    assert (sensor.mode, sensor.poke_interval, sensor.soft_fail) == ("reschedule", 60, True)
+    assert sensor.timeout == 24 * 3600
+    assert dag.get_task("bronze_to_silver").upstream_task_ids == {"wait_for_new_bronze"}
+
+
+def test_raw_to_bronze_still_emits_one_dataset_per_extract(dagbag):
     raw = dagbag.get_dag("raw_to_bronze")
     for source in SOURCES:
-        outlets = {d.uri for d in raw.get_task(f"load_{source.key}").outlets}
-        assert outlets == {source.asset_uri}
-        assert _scheduled_on(dagbag.get_dag(f"bronze_to_silver_{source.key}")) == {source.asset_uri}
-
-
-def test_user_input_dag_runs_on_its_dataset_and_every_minute(dagbag):
-    dag = dagbag.get_dag("bronze_to_silver_user_input")
-    assert isinstance(dag.timetable, DatasetOrTimeSchedule)
-    assert _scheduled_on(dag) == {USER_INPUT_SOURCE.asset_uri}
-    assert dag.timetable.timetable._expression == "* * * * *"
-    assert (dag.max_active_runs, dag.catchup) == (1, False)
+        assert {d.uri for d in raw.get_task(f"load_{source.key}").outlets} == {source.asset_uri}

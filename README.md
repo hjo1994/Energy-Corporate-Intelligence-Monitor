@@ -7,8 +7,7 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 | --- | --- | --- | --- |
 | `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
 | `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
-| `bronze_to_silver_<quelle>` (4×) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset der jeweiligen Extract-Tabelle | Initiative (Silber) |
-| `bronze_to_silver_user_input` | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset von `UserInput_Initiatives_Extract` (Event meldet das Backend per REST nach jeder Eingabe) oder jede Minute als Sicherheitsnetz (`AI_COCKPIT_USER_INPUT_FALLBACK_CRON`) | Initiative (Silber) |
+| `bronze_to_silver_<quelle>` (5×: 4 Extracts + `user_input`) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | `@continuous`; eigener Sensor `wait_for_new_bronze` prüft jede Minute die eigene Bronze-Tabelle | Initiative (Silber) |
 
 1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
    `2026?AI?Initiatives*.xlsx` (passt auf `2026_AI_Initiatives_Elia_Group.xlsx` in
@@ -32,8 +31,18 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
    neue Owner oder Katalogeinträge dazukommen (Silber legt keine an).
 3. **BronzeToSilver (Meta-DAG)** — `build_bronze_to_silver_dag()` erzeugt aus
    einem Template je Eintrag in `ai_cockpit_ingestion/sources.py` einen DAG
-   `bronze_to_silver_<key>`, der auf das Dataset seiner Extract-Tabelle
-   scheduled ist. Der `BronzeToSilverOperator` normalisiert Status → Stage
+   `bronze_to_silver_<key>` (auch für `UserInput_Initiatives_Extract`). Jeder
+   läuft `@continuous` (max. ein offener Lauf) mit eigenem Sensor
+   `wait_for_new_bronze` (`operators/new_bronze_sensor.py`, Modus reschedule,
+   alle 60 s, `AI_COCKPIT_BRONZE_POKE_SECONDS`): Er prüft nur die eigene
+   Tabelle und meldet „neu“, wenn deren jüngster Datensatz (max `Timestamp`,
+   UTC) nach dem **Start** des letzten erfolgreichen `bronze_to_silver`-Tasks
+   dieses DAGs liegt (aus der Airflow-Metadaten-DB; noch kein Lauf → neu). Ein
+   während der Transformation geschriebener Datensatz wird so beim nächsten
+   Lauf erfasst. Nach 24 h ohne neue Daten wird der Sensor übersprungen
+   (soft fail), der Lauf endet grün und der nächste beginnt. Keine eigene
+   Buchführung: Der Hash-Delta-Check hält wiederholte Läufe idempotent. Der
+   `BronzeToSilverOperator` normalisiert Status → Stage
    und Timing, verknüpft **nur bestehende** Config-Einträge (Unbekanntes
    bleibt NULL und wird geloggt), schätzt die Value-Attribute
    (`transforms/value_heuristic.py`) und die Risikostufe
@@ -108,7 +117,10 @@ Risiko-Indikatoren nach Rahmenbetriebsvereinbarung KI
 Tabellen idempotent über `create_all` (`db.get_engine`).
 
 Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
-oder in der UI „Trigger DAG w/ config“.
+oder in der UI „Trigger DAG w/ config“. Der Sensor wartet dann nicht auf neue
+Daten. Weil `@continuous` immer einen Lauf offen hat, startet der getriggerte
+Lauf erst nach dem offenen; schneller geht es, den wartenden Sensor des
+offenen Laufs in der UI auf „success“ zu setzen.
 
 ## Heuristiken (Schätzungen, keine Messwerte)
 
@@ -223,7 +235,7 @@ for d in it 50hertz corporate_onesap etb; do airflow dags test bronze_to_silver_
 python -m pytest tests
 ```
 
-Für das Dataset-Scheduling `airflow scheduler` starten und die DAGs
+Für die laufende Verarbeitung `airflow scheduler` starten und die DAGs
 aktivieren (`airflow dags unpause ...`). Läuft parallel ein anderer
 Airflow, `AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT` umstellen (Standard 8793).
 
