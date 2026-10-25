@@ -1,5 +1,7 @@
-"""Input form support: duplicate key, provisional (pending) values and the
-DAG trigger.
+"""Input form support: duplicate key and provisional (pending) values.
+
+The Backend does not trigger Airflow: bronze_to_silver_user_input's own
+sensor checks the table every minute and picks a submission up.
 
 The binding values are computed by the input orchestration's
 bronze_to_silver_user_input DAG (transforms/user_input_heuristic.py). Until
@@ -20,24 +22,16 @@ tests/fixtures/user_input_cases.json (copy of the input-orchestration file):
 """
 from __future__ import annotations
 
-import base64
 import datetime
 import hashlib
-import json
-import logging
-import os
 import re
-import urllib.request
 
 from app.models import UserInputRecord
-
-logger = logging.getLogger(__name__)
 
 HOURLY_RATE_EUR = 60
 DEPRECIATION_YEARS = 5
 CONFIDENCE_SCORE = {"rough": 0.35, "benchmark": 0.60, "measured": 0.80}
 DELIVERY_SCORE = {"low": 0.40, "medium": 0.65, "high": 0.90}
-USER_INPUT_DAG_ID = "bronze_to_silver_user_input"
 
 # ---------- key (same as the input orchestration's transforms/upsert_keys.py) ----------
 
@@ -103,36 +97,3 @@ _QUARTER = re.compile(r"^Q([1-4]) (\d{4})$")
 def quarter_start(label: str | None) -> datetime.datetime | None:
     match = _QUARTER.match(label or "")
     return datetime.datetime(int(match.group(2)), (int(match.group(1)) - 1) * 3 + 1, 1) if match else None
-
-
-# ---------- DAG trigger ----------
-
-
-def trigger_user_input_dag() -> None:
-    """Start a bronze_to_silver_user_input run via the Airflow REST API.
-
-    Best effort: AIRFLOW_API_URL (e.g. http://airflow-webserver:8080),
-    AIRFLOW_API_USER and AIRFLOW_API_PASSWORD come from the environment. If they
-    are missing or the call fails, the input stays stored and is picked up by
-    the next run; it is only logged.
-    """
-    base_url = os.environ.get("AIRFLOW_API_URL", "").rstrip("/")
-    user = os.environ.get("AIRFLOW_API_USER", "")
-    password = os.environ.get("AIRFLOW_API_PASSWORD", "")
-    if not base_url:
-        logger.info("AIRFLOW_API_URL not set — %s not triggered, the input waits for the next run", USER_INPUT_DAG_ID)
-        return
-    request = urllib.request.Request(
-        f"{base_url}/api/v1/dags/{USER_INPUT_DAG_ID}/dagRuns",
-        data=json.dumps({"conf": {}}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    if user:
-        token = base64.b64encode(f"{user}:{password}".encode()).decode()
-        request.add_header("Authorization", f"Basic {token}")
-    try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            logger.info("Triggered %s: HTTP %s", USER_INPUT_DAG_ID, response.status)
-    except Exception as err:  # noqa: BLE001 — never fail the submission because of Airflow
-        logger.warning("Could not trigger %s (%s) — the input waits for the next run", USER_INPUT_DAG_ID, err)

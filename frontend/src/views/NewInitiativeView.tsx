@@ -394,7 +394,7 @@ export function NewInitiativeView() {
           <button type="button" className="nf-btn nf-secondary" onClick={() => navigate(-1)}>
             Cancel
           </button>
-          <span className="nf-side-small">Final values are calculated by the pipeline a few seconds after saving.</span>
+          <span className="nf-side-small">Final values are calculated by the pipeline within about a minute after saving.</span>
         </aside>
       </div>
     </div>

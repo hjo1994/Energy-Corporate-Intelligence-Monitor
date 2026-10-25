@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import user_input
 from app.user_input import key_hash, provisional_values, risk_level
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "user_input_cases.json").read_text())
@@ -63,10 +62,7 @@ def test_key_hash_matches_the_input_orchestration():
 
 
 @pytest.fixture()
-def submit(client, monkeypatch):
-    calls = []
-    monkeypatch.setattr("app.api.initiatives.trigger_user_input_dag", lambda: calls.append(1))
-
+def submit(client):
     def post(**over):
         body = {
             "name": "Smart Invoice Check", "description": "Checks invoices against orders",
@@ -78,7 +74,6 @@ def submit(client, monkeypatch):
         }
         return client.post("/api/initiatives", json=body)
 
-    post.calls = calls
     return post
 
 
@@ -91,7 +86,6 @@ def test_post_stores_the_record_and_returns_it_pending(submit, db_path):
     assert body["potential_value_eur"] == pytest.approx(187980)
     assert body["annual_cost_eur"] == pytest.approx(58500)
     assert body["risk_classification"]["id"] == 2
-    assert submit.calls == [1]  # DAG run triggered
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
             'SELECT "Name", "SubmittedBy", "SourceFileID", "OwnerID" FROM "UserInput_Initiatives_Extract"'
@@ -139,14 +133,6 @@ def test_duplicate_name_in_the_same_business_unit_is_409(submit, db_path):
 )
 def test_invalid_input_is_422(submit, over):
     assert submit(**over).status_code == 422
-
-
-def test_airflow_trigger_is_best_effort(monkeypatch, caplog):
-    monkeypatch.delenv("AIRFLOW_API_URL", raising=False)
-    user_input.trigger_user_input_dag()  # not configured: only logged
-    monkeypatch.setenv("AIRFLOW_API_URL", "http://127.0.0.1:9")  # nothing listens there
-    user_input.trigger_user_input_dag()
-    assert "Could not trigger" in caplog.text
 
 
 def test_post_requires_authentication(client, monkeypatch):

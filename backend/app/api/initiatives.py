@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from eg_auth.fastapi import UserInfo
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -30,7 +30,7 @@ from app.schemas import (
     StageCount,
     Summary,
 )
-from app.user_input import key_hash, provisional_values, quarter_start, risk_level, trigger_user_input_dag
+from app.user_input import key_hash, provisional_values, quarter_start, risk_level
 
 # Initiatives no longer in their source sheet are kept (soft delete) but hidden by default.
 ACTIVE = Initiative.is_active.is_(True)
@@ -238,13 +238,12 @@ def _pending_matches(p: InitiativeOut, stage, business_unit, department, owner_i
 @router.post("", response_model=InitiativeOut, status_code=201)
 def create_initiative(
     body: InitiativeIn,
-    background: BackgroundTasks,
     user: Annotated[UserInfo, authorizer()],
     session: Annotated[Session, Depends(get_write_session)],
 ) -> InitiativeOut:
     """New initiative from the input form: stored in the bronze table UserInput_Initiatives_Extract
-    and returned as "pending" with provisional values; the DAG run that computes the binding values
-    is triggered in the background (best effort, see app/user_input.py)."""
+    and returned as "pending" with provisional values. The binding values follow within about a
+    minute: the sensor of the DAG bronze_to_silver_user_input picks the record up."""
     owner = session.get(Owner, body.owner_id)
     if owner is None:
         raise HTTPException(status_code=422, detail="Unknown owner")
@@ -278,7 +277,6 @@ def create_initiative(
     session.add(record)
     session.commit()
     session.refresh(record)
-    background.add_task(trigger_user_input_dag)
     risks = {r.id: r for r in session.scalars(select(RiskClassification))}
     return _pending_out(record, risks)
 

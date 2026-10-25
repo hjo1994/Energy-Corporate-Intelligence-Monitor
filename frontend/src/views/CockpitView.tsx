@@ -127,7 +127,7 @@ function CreatedBanner() {
       <span>
         <strong>“{created}”</strong> was saved.{" "}
         {pending
-          ? "Its estimate is pending — the pipeline calculates the final values in a few seconds."
+          ? "Its estimate is pending — the pipeline calculates the final values within about a minute."
           : "Its values are now calculated by the pipeline."}
       </span>
       <button type="button" className="link-btn" onClick={() => navigate(".", { replace: true, state: null })}>
