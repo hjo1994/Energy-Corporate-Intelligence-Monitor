@@ -68,6 +68,8 @@ main { display: flex; flex-direction: column; gap: 22px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; background: var(--c); }
 .badge { --c: #888; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
   background: color-mix(in srgb, var(--c) 13%, white); color: color-mix(in srgb, var(--c) 70%, black); }
+.badge-compact { min-width: 22px; justify-content: center; padding: 2px 6px; font-size: 11px; }
+.ck-row .missing { font-size: 10px; white-space: nowrap; }
 .avatar { border-radius: 50%; background: var(--ink); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
 .tag { font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-soft); white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
 

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { BusinessUnitChips, StageChips } from "../components/FilterChips";
 import { Kpis } from "../components/Kpis";
+import { RiskBadge } from "../components/small";
 import {
   cockpit,
   EFFORT_MAX,
@@ -298,6 +299,7 @@ export function CockpitView() {
                         {buLabel(p)} · {p.initiative.stage}
                       </span>
                     </span>
+                    <RiskBadge risk={p.initiative.risk_classification} compact />
                     <span className="mono ck-row-value">{formatKEur(p.potential)}</span>
                   </button>
                 </li>

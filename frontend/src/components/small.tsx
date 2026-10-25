@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Initiative } from "../api/types";
 import { formatEur, formatScore, initials, scoreBars, valueFraction } from "../domain/format";
+import { riskLabel } from "../domain/risk";
 import { stageColor } from "../domain/stage";
 
 type WithColor = CSSProperties & { "--c"?: string };
@@ -17,11 +18,18 @@ export function StageBadge({ stage }: { stage: string }) {
 const RISK_COLOR = ["#2f6b3a", "#6b8f3a", "#b9792e", "#a8483e", "#6e1f1a"];
 
 /** Risk level 1-5 of the Rahmenbetriebsvereinbarung KI (an estimate, not a formal classification). */
-export function RiskBadge({ risk }: { risk: Initiative["risk_classification"] }) {
+/** `compact` shows only the level, with the label in the tooltip. */
+export function RiskBadge({ risk, compact = false }: { risk: Initiative["risk_classification"]; compact?: boolean }) {
   if (!risk) return <span className="missing">not classified</span>;
+  const label = `Risk level ${risk.id}: ${riskLabel(risk)} (estimated)`;
   return (
-    <span className="badge" title={`${risk.name} (estimated)`} style={{ "--c": RISK_COLOR[risk.id - 1] ?? "#888" } as WithColor}>
-      {risk.id} · {risk.name}
+    <span
+      className={`badge${compact ? " badge-compact" : ""}`}
+      title={label}
+      aria-label={compact ? label : undefined}
+      style={{ "--c": RISK_COLOR[risk.id - 1] ?? "#888" } as WithColor}
+    >
+      {compact ? risk.id : `${risk.id} · ${riskLabel(risk)}`}
     </span>
   );
 }

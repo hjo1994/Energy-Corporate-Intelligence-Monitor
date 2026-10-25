@@ -124,3 +124,12 @@ describe("flagship statistics", () => {
     expect(flagshipStats([])).toEqual([]);
   });
 });
+
+describe("riskLabel", () => {
+  it("shows the levels in English and keeps the stored name for an unknown level", async () => {
+    const { riskLabel } = await import("./risk");
+    expect(riskLabel({ id: 3, name: "Mittleres Risiko" })).toBe("Medium risk");
+    expect(riskLabel({ id: 5, name: "Sehr hohes (nicht vertretbares) Risiko" })).toBe("Very high (unacceptable) risk");
+    expect(riskLabel({ id: 9, name: "Sonstiges" })).toBe("Sonstiges");
+  });
+});

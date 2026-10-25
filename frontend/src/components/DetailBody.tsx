@@ -1,5 +1,6 @@
 import type { Initiative } from "../api/types";
 import { flagshipLabel, formatEur, formatFactor, formatQuarter } from "../domain/format";
+import { riskLabel } from "../domain/risk";
 import { costIfDelivered } from "../domain/value";
 import { Avatar, EffortMeter, RiskBadge, StageBadge, ValueMeter } from "./small";
 
@@ -90,7 +91,7 @@ export function DetailBody({ initiative: i }: { initiative: Initiative }) {
         <dt>Risk level</dt>
         <dd>
           {i.risk_classification ? (
-            `${i.risk_classification.id} – ${i.risk_classification.name} (estimated)`
+            `${i.risk_classification.id} – ${riskLabel(i.risk_classification)} (estimated)`
           ) : (
             <span className="missing">not classified</span>
           )}

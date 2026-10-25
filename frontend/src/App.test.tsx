@@ -41,9 +41,10 @@ describe("app", () => {
     const matrix = screen.getByRole("region", { name: "Where the value lies" });
     expect(matrix).toHaveTextContent("2 of 3 initiatives have an effort estimate, covering 75 % of the potential.");
     const top = within(matrix).getByRole("list", { name: "Top 10 by potential" });
+    expect(within(top).getByLabelText("Risk level 3: Medium risk (estimated)")).toHaveTextContent("3");
     expect(within(top).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "1AlphaETB · Idea54 k€",
-      "2BetaETB · PoC5 k€",
+      "1AlphaETB · Idea354 k€",
+      "2BetaETB · PoC15 k€",
     ]);
   });
 
