@@ -9,6 +9,10 @@ matching the layers in `Architecture.drawio`:
   updated or deleted. Every sheet column 1:1 and as text, plus ID (record
   key), Timestamp (one value per load) and SourceFileID. Written by the
   RawToBronze DAG, generated from `sources.SOURCES`.
+- Bronze, user input: UserInput_Initiatives_Extract, one record per
+  initiative submitted through the UI (written by the Backend). Append-only
+  as well, but typed: config references are IDs, value drivers and costs are
+  numbers, risk indicators are fixed answers, all checked by constraints.
 - Config: reference tables Owner, SolutionType, ValueType and
   RiskClassification.
 - Silver: Initiative, upserted by the DAGs the BronzeToSilver meta DAG
@@ -30,7 +34,7 @@ common package. Keep both in sync.
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Table
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Table
 from sqlalchemy.orm import declarative_base, relationship
 
 from ai_cockpit_ingestion.sources import SOURCES
@@ -63,6 +67,91 @@ EXTRACT_TABLES: dict[str, Table] = {
     source.extract_table: _extract_table(source.extract_table, source.columns)
     for source in SOURCES
 }
+
+# --- Bronze: user input -------------------------------------------------------
+
+USER_INPUT_TABLE_NAME = "UserInput_Initiatives_Extract"
+USER_INPUT_SOURCE_FILE_ID = "user-input"  # SourceFileID of every user-input record
+
+STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown")
+ESTIMATE_BASES = ("rough", "benchmark", "measured")  # how solid the value drivers are
+DELIVERY_LIKELIHOODS = ("low", "medium", "high")
+EMPLOYEE_PERSONAL_DATA = ("no", "pseudonymised", "yes")
+DECISIONS_ON_EMPLOYEES = ("none", "prepares", "automated")
+
+# Value drivers in lever order (efficiency, quality, risk reduction, speed). Shares are
+# fractions 0-1 (a percentage in the form is stored divided by 100), counts and EUR amounts
+# are >= 0. A lever left empty counts as zero.
+VALUE_DRIVERS = (
+    "CasesPerYear", "HoursSavedPerCase",
+    "ErrorRateBefore", "ErrorsAvoided", "CostPerError",
+    "RiskEventsPerYear", "EventsAvoided", "CostPerEvent",
+    "DelayEventsPerYear", "CostOfDelayPerEvent", "LeadTimeSaved",
+)
+_SHARES = ("ErrorRateBefore", "ErrorsAvoided", "EventsAvoided", "LeadTimeSaved")
+_COUNTS_AND_AMOUNTS = tuple(c for c in VALUE_DRIVERS if c not in _SHARES)
+_RISK_FLAGS = ("PerformanceOrBehaviourControl", "ProfilingOfIndividuals", "ChangesEmployeeWorkflows", "ProhibitedPractice")
+
+
+def _one_of(column: str, values: tuple[str, ...]) -> CheckConstraint:
+    listed = ", ".join(f"'{v}'" for v in values)
+    return CheckConstraint(f'"{column}" IN ({listed})', name=f"ck_userinput_{column.lower()}")
+
+
+def _quarter(column: str) -> CheckConstraint:
+    # "Q2 2027"; the form only offers quarters, like the source sheets
+    return CheckConstraint(
+        f'"{column}" IS NULL OR "{column}" GLOB \'Q[1-4] [0-9][0-9][0-9][0-9]\'',
+        name=f"ck_userinput_{column.lower()}",
+    )
+
+
+USER_INPUT_TABLE = Table(
+    USER_INPUT_TABLE_NAME,
+    Base.metadata,
+    Column(RECORD_ID_COLUMN, Integer, primary_key=True, autoincrement=True),
+    Column("Timestamp", DateTime, nullable=False),
+    Column("SourceFileID", String, nullable=False, default=USER_INPUT_SOURCE_FILE_ID),
+    Column("SubmittedBy", String, nullable=False),
+    # master data, config values by ID
+    Column("Name", String, nullable=False),
+    Column("Description", String, nullable=False),
+    Column("OwnerID", Integer, ForeignKey("Owner.ID"), nullable=False),
+    Column("ValueTypeID", Integer, ForeignKey("ValueType.ID"), nullable=False),
+    Column("SolutionTypeID", Integer, ForeignKey("SolutionType.ID"), nullable=False),
+    Column("Stage", String, nullable=False),
+    Column("DateStart", String, nullable=True),
+    Column("DateDelivery", String, nullable=True),
+    # value drivers
+    *(Column(c, Float, nullable=True) for c in VALUE_DRIVERS),
+    # delivery and cost
+    Column("EstimateBasis", String, nullable=False),
+    Column("DeliveryLikelihood", String, nullable=False),
+    Column("SolutionComplexityScore", Integer, nullable=False),
+    Column("OneTimeCosts", Float, nullable=False),
+    Column("OperatingCosts", Float, nullable=False),  # EUR per year
+    # risk indicators (Rahmenbetriebsvereinbarung KI, Abb. 2)
+    Column("EmployeePersonalData", String, nullable=False),
+    Column("PerformanceOrBehaviourControl", Boolean, nullable=False),
+    Column("DecisionsOnEmployees", String, nullable=False),
+    Column("ProfilingOfIndividuals", Boolean, nullable=False),
+    Column("ChangesEmployeeWorkflows", Boolean, nullable=False),
+    Column("ProhibitedPractice", Boolean, nullable=False),
+    _one_of("Stage", STAGES),
+    _quarter("DateStart"),
+    _quarter("DateDelivery"),
+    *(CheckConstraint(f'"{c}" IS NULL OR "{c}" >= 0', name=f"ck_userinput_{c.lower()}") for c in _COUNTS_AND_AMOUNTS),
+    *(CheckConstraint(f'"{c}" IS NULL OR "{c}" BETWEEN 0 AND 1', name=f"ck_userinput_{c.lower()}") for c in _SHARES),
+    _one_of("EstimateBasis", ESTIMATE_BASES),
+    _one_of("DeliveryLikelihood", DELIVERY_LIKELIHOODS),
+    CheckConstraint('"SolutionComplexityScore" BETWEEN 1 AND 9', name="ck_userinput_solutioncomplexityscore"),
+    CheckConstraint('"OneTimeCosts" >= 0', name="ck_userinput_onetimecosts"),
+    CheckConstraint('"OperatingCosts" >= 0', name="ck_userinput_operatingcosts"),
+    _one_of("EmployeePersonalData", EMPLOYEE_PERSONAL_DATA),
+    _one_of("DecisionsOnEmployees", DECISIONS_ON_EMPLOYEES),
+    *(CheckConstraint(f'"{c}" IN (0, 1)', name=f"ck_userinput_{c.lower()}") for c in _RISK_FLAGS),
+    Index("ix_userinput_timestamp", "Timestamp"),
+)
 
 # --- Config -----------------------------------------------------------------
 
@@ -133,7 +222,8 @@ class BusinessTransaction(Base):
 
     BronzeID is the ID of that record in the extract table named by
     BronzeTableName. It cannot be a database
-    foreign key because it points into one of four tables.
+    foreign key because it points into one of several tables (the four
+    extracts and UserInput_Initiatives_Extract).
     """
 
     __tablename__ = "BusinessTransaction"

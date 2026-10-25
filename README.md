@@ -82,6 +82,24 @@ Eintrag, deaktivierte behalten ihren. RawToBronze schreibt keine
 BusinessTransaction. Laufzähler (inserted, updated, unchanged, deactivated,
 conflicts) stehen im Task-Log und als Rückgabewert (XCom).
 
+**User-Input (Bronze)** (`UserInput_Initiatives_Extract`): eine Zeile je
+Initiative, die über die Eingabemaske der UI angelegt wird (schreibt das
+Backend; DAG-Anbindung folgt). Wie die Extract-Tabellen nur anhängend, aber
+typisiert und per CHECK/FK abgesichert: Stammdaten als IDs der Config-Tabellen
+(`OwnerID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (9 Werte), `DateStart`/
+`DateDelivery` als Quartal („Q2 2027“), die Value-Treiber je Hebel
+(`CasesPerYear`, `HoursSavedPerCase`, `ErrorRateBefore`, `ErrorsAvoided`,
+`CostPerError`, `RiskEventsPerYear`, `EventsAvoided`, `CostPerEvent`,
+`DelayEventsPerYear`, `CostOfDelayPerEvent`, `LeadTimeSaved`; Anteile 0–1,
+leerer Hebel = 0), `EstimateBasis`, `DeliveryLikelihood`,
+`SolutionComplexityScore` (1–9), `OneTimeCosts`, `OperatingCosts` und die
+Risiko-Indikatoren nach Rahmenbetriebsvereinbarung KI
+(`EmployeePersonalData`, `PerformanceOrBehaviourControl`,
+`DecisionsOnEmployees`, `ProfilingOfIndividuals`,
+`ChangesEmployeeWorkflows`, `ProhibitedPractice`). `SourceFileID` ist immer
+`user-input`, `SubmittedBy` der angemeldete Nutzer. Angelegt wird sie wie alle
+Tabellen idempotent über `create_all` (`db.get_engine`).
+
 Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
 oder in der UI „Trigger DAG w/ config“.
 
