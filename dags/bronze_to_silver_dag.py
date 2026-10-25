@@ -4,8 +4,9 @@ a single template.
 For every entry in sources.BRONZE_TO_SILVER_SOURCES (the four sheets plus the
 input form's UserInput_Initiatives_Extract), `build_bronze_to_silver_dag` renders a
 DAG `bronze_to_silver_<key>` that is scheduled on the Dataset of its extract
-table (emitted by the RawToBronze load task; for the user input by the Backend
-after a submission, which can also trigger the DAG run directly via REST) — so a fresh extract is turned into silver automatically,
+table (emitted by the RawToBronze load task; for the user input reported by
+the Backend via the Airflow REST API after every submission, plus a time-based
+safety net, see USER_INPUT_FALLBACK_CRON) — so a fresh extract is turned into silver automatically,
 and each source can also be re-run on its own (trigger with
 {"force": true} to recompute every initiative, see BronzeToSilverOperator).
 A new source sheet only needs
@@ -30,10 +31,26 @@ import datetime
 from airflow import DAG
 from airflow.datasets import Dataset
 from airflow.models.param import Param
+from airflow.timetables.datasets import DatasetOrTimeSchedule
+from airflow.timetables.trigger import CronTriggerTimetable
 
 from ai_cockpit_ingestion import config
 from ai_cockpit_ingestion.operators.bronze_to_silver import BronzeToSilverOperator
 from ai_cockpit_ingestion.sources import BRONZE_TO_SILVER_SOURCES, USER_INPUT, SourceConfig
+
+# Safety net for the input form (every minute): the Backend reports a Dataset event after every submission, but
+# should that fail, the DAG still runs on this schedule. It is incremental (only records without a
+# BusinessTransaction), so a run without new input reads nothing.
+USER_INPUT_FALLBACK_CRON = os.environ.get("AI_COCKPIT_USER_INPUT_FALLBACK_CRON", "* * * * *")
+
+
+def _schedule(source: SourceConfig):
+    dataset = Dataset(source.asset_uri)
+    if source.mode == USER_INPUT:
+        return DatasetOrTimeSchedule(
+            timetable=CronTriggerTimetable(USER_INPUT_FALLBACK_CRON, timezone="UTC"), datasets=[dataset]
+        )
+    return [dataset]
 
 
 def build_bronze_to_silver_dag(source: SourceConfig) -> DAG:
@@ -44,7 +61,7 @@ def build_bronze_to_silver_dag(source: SourceConfig) -> DAG:
             if source.mode == USER_INPUT
             else f"{source.extract_table} -> Initiative (business unit {source.business_unit})"
         ),
-        schedule=[Dataset(source.asset_uri)],
+        schedule=_schedule(source),
         start_date=datetime.datetime(2026, 1, 1),
         catchup=False,
         max_active_runs=1,

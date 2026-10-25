@@ -8,7 +8,7 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 | `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
 | `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
 | `bronze_to_silver_<quelle>` (4×) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset der jeweiligen Extract-Tabelle | Initiative (Silber) |
-| `bronze_to_silver_user_input` | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset von `UserInput_Initiatives_Extract` bzw. REST-Trigger durch das Backend | Initiative (Silber) |
+| `bronze_to_silver_user_input` | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset von `UserInput_Initiatives_Extract` (Event meldet das Backend per REST nach jeder Eingabe) oder jede Minute als Sicherheitsnetz (`AI_COCKPIT_USER_INPUT_FALLBACK_CRON`) | Initiative (Silber) |
 
 1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
    `2026?AI?Initiatives*.xlsx` (passt auf `2026_AI_Initiatives_Elia_Group.xlsx` in
