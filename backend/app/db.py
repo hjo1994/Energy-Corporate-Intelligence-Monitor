@@ -29,11 +29,14 @@ _RETRIES = 3
 _BACKOFF_SECONDS = 0.1
 
 
+# FastAPI opens the session (dependency) and runs a sync endpoint in different threadpool
+# threads, so a connection is used across threads — never concurrently (NullPool: one connection
+# per session). Without check_same_thread=False, parallel requests fail with ProgrammingError.
 def make_engine(db_path: Path) -> Engine:
     uri = f"file:{quote(str(db_path))}?mode=ro"
     return create_engine(
         "sqlite://",
-        creator=lambda: sqlite3.connect(uri, uri=True),
+        creator=lambda: sqlite3.connect(uri, uri=True, check_same_thread=False),
         poolclass=NullPool,
     )
 
@@ -43,7 +46,7 @@ _BUSY_TIMEOUT_SECONDS = 30  # wait for a running DAG's write transaction instead
 
 def make_write_engine(db_path: Path) -> Engine:
     def connect() -> sqlite3.Connection:
-        connection = sqlite3.connect(str(db_path), timeout=_BUSY_TIMEOUT_SECONDS)
+        connection = sqlite3.connect(str(db_path), timeout=_BUSY_TIMEOUT_SECONDS, check_same_thread=False)
         connection.execute("PRAGMA foreign_keys=ON")
         return connection
 
