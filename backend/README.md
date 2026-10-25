@@ -5,8 +5,10 @@ REST-API bereit — generischer Lesezugriff, nicht exklusiv ans Dashboard
 gebunden; potenziell mehrere Applikationen als Konsumenten. Einziger
 Schreibpfad: `POST /api/initiatives` (Eingabemaske) schreibt in die
 Bronze-Tabelle `UserInput_Initiatives_Extract`; alle anderen Endpunkte lesen
-über eine read-only-Verbindung. Im Cluster braucht das Backend dafür das
-DB-Volume schreibbar gemountet.
+über eine read-only-Verbindung. Im Cluster braucht das Backend dafür
+Schreibzugriff auf die DB: das geteilte RWX-Volume ohne `readOnly` mounten
+(wie bei Airflow, das dieselbe Datei beschreibt). Das Backend schreibt
+ausschließlich in `UserInput_Initiatives_Extract`.
 
 ## Endpunkte
 
@@ -110,8 +112,10 @@ Die BU-Werte kommen unverändert aus der Quelle (z. B. `"50 Hertz"`,
 
 Siehe Interim-Entscheidung im Root-README. Konkret umgesetzt:
 
-- Die Datei wird auf SQLite-Ebene `mode=ro` geöffnet (zusätzlich zum
-  read-only Volume-Mount).
+- Lesende Endpunkte öffnen die Datei auf SQLite-Ebene `mode=ro`. Nur
+  `POST /api/initiatives` nutzt eine schreibende Verbindung (für
+  `UserInput_Initiatives_Extract`); das Volume ist dafür ein RWX-Volume ohne
+  `readOnly`.
 - **Kein Connection-Pool** (`NullPool`): Jede Anfrage öffnet die Datei neu
   und sieht damit sofort, was die DAGs committet haben (sie schreiben in
   kurzen Transaktionen direkt in die Datei). Auch ein Austausch der Datei
@@ -129,7 +133,7 @@ backend/
     main.py          # get_app() — mit uvicorn als Factory starten
     auth.py          # eg-auth: Rights, authorizer(), /api/auth/rights
     config.py        # AI_COCKPIT_DB_PATH (Default /data/db/ai_cockpit.db)
-    db.py            # read-only Engine, Session mit Retry
+    db.py            # read-only Engine (+ Schreib-Engine nur für POST), Session mit Retry
     models.py        # Kopie der Silber-/Config-Modelle aus input-orchestration (von Hand synchron halten)
     derived.py       # abgeleitete Werte: hypothetischer Nutzen, Potenzial, Kosten/Jahr
     schemas.py
@@ -155,10 +159,10 @@ Die Plattform baut per S2I (Python/Poetry 1.8), nicht per Dockerfile:
   nicht liest.
 - Startkommando (Umgebungsvariable `COMMAND`):
   `uvicorn app.main:get_app --factory --host 0.0.0.0 --port 8000`
-- ConfigMap: `AI_COCKPIT_DB_PATH` (Pfad der geteilten Datei, Volume
-  read-only), `EG_AUTH_DEV_MODE=False`, `AI_COCKPIT_ENABLE_INITIATIVE_INPUT`
-  (`false`, solange das Volume read-only ist: die Eingabemaske braucht
-  Schreibzugriff). **`PYTHONPATH` darf nicht gesetzt
+- ConfigMap: `AI_COCKPIT_DB_PATH` (Pfad der geteilten Datei, RWX-Volume ohne
+  `readOnly`), `EG_AUTH_DEV_MODE=False`, optional
+  `AI_COCKPIT_ENABLE_INITIATIVE_INPUT` (Default `true`; `false` nur als
+  Notbremse, schaltet die Eingabemaske ab). **`PYTHONPATH` darf nicht gesetzt
   sein oder `local_stubs` enthalten.**
 - Keine Probes im Referenz-Deployment; `/api/healthz` steht trotzdem bereit.
 - Alles, was die App zur Laufzeit liest, muss unter `backend/` liegen (der

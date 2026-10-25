@@ -18,8 +18,10 @@ Drei separate Kubernetes-Deployments (siehe
    erzeugt (Normalisierung, Value- und Risiko-Heuristik, Schreiben in
    Initiative). Details: `input-orchestration/README.md`.
 2. **`backend/`** — FastAPI-Schnittstelle über SQLAlchemy auf die Datenbank.
-   Generischer, read-only Lesezugriff, potenziell für mehrere Applikationen,
-   nicht nur das Dashboard (Endpunkte: siehe `backend/README.md`).
+   Generischer Lesezugriff, potenziell für mehrere Applikationen, nicht nur
+   das Dashboard; einziger Schreibpfad ist die Eingabemaske (neue Initiativen
+   nach Bronze `UserInput_Initiatives_Extract`). Endpunkte: siehe
+   `backend/README.md`.
 3. **`frontend/`** — React-Dashboard, eigene Anwendung, konsumiert die
-   Backend-API (Ansichten Matrix, Liste, Board; Details und Abweichungen vom
+   Backend-API (Ansichten Cockpit, Liste, Board, Eingabemaske; Details und Abweichungen vom
    Entwurf: `frontend/README.md`).

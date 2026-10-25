@@ -1,15 +1,16 @@
-"""Read-only access to the shared SQLite file.
+"""Access to the shared SQLite file: read-only, except for the input form.
 
 The writer (Input Orchestration) replaces the file with an atomic rename. A
 pooled connection would keep reading the old, replaced inode, so every
-request opens the file fresh (NullPool). The file is opened read-only at the
-SQLite level on top of the read-only volume mount. The rename window can
+request opens the file fresh (NullPool). Reads open the file read-only at the
+SQLite level. The rename window can
 make an open fail briefly, hence the short retry.
 
 Exception: the input form's bronze table (UserInput_Initiatives_Extract) is
 written through a separate read-write engine, used only by
 POST /api/initiatives (get_write_session); every other endpoint keeps the
-read-only one. In the cluster this needs the DB volume mounted read-write.
+read-only one. In the cluster the DB volume is the shared RWX volume, mounted
+without readOnly.
 """
 from __future__ import annotations
 
