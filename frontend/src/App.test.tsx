@@ -69,6 +69,17 @@ describe("app", () => {
     );
   });
 
+  it("keeps the filter chips and key figures on the start page; the cockpit follows the filters", async () => {
+    mockApi(ok);
+    renderAt("/");
+    const kpis = await screen.findByRole("region", { name: "Key figures" });
+    expect(kpis).toHaveTextContent("4matching the filters");
+    await userEvent.click(screen.getByRole("button", { name: "IT" }));
+    expect(kpis).toHaveTextContent("1matching the filters");
+    expect(screen.getByRole("region", { name: "Estimated value" })).toHaveTextContent("Our 1 AI initiatives");
+    expect(screen.getByRole("region", { name: "Where the value lies" })).toHaveTextContent("0 of 1 initiatives have an effort estimate");
+  });
+
   it("redirects the former value tab to the start page", async () => {
     mockApi(ok);
     renderAt("/value");

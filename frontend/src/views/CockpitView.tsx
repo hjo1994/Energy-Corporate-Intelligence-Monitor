@@ -1,4 +1,6 @@
-import { useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { BusinessUnitChips, StageChips } from "../components/FilterChips";
+import { Kpis } from "../components/Kpis";
 import {
   cockpit,
   EFFORT_MAX,
@@ -12,26 +14,66 @@ import {
   valueMatrix,
   type MatrixPoint,
 } from "../domain/cockpit";
-import { businessUnitOf, EMPTY_FILTERS, NO_BUSINESS_UNIT, NO_BUSINESS_UNIT_LABEL } from "../domain/filters";
+import { businessUnitOf, NO_BUSINESS_UNIT, NO_BUSINESS_UNIT_LABEL } from "../domain/filters";
 import { useApp } from "../store";
 
-// Matrix geometry in SVG units: the plot spans LEFT..RIGHT and TOP..BOTTOM of a 700 × 450 view box.
-const LEFT = 60;
-const RIGHT = 680;
-const TOP = 20;
-const BOTTOM = 400;
-const effortX = (effort: number) => LEFT + ((effort - EFFORT_MIN) / (EFFORT_MAX - EFFORT_MIN)) * (RIGHT - LEFT);
-const clampX = (x: number, pad: number) => Math.min(RIGHT - pad, Math.max(LEFT + pad, x));
+// The matrix SVG is drawn at its real pixel size (view box = measured box), so text and lines are
+// never scaled and stay sharp. Margins in px around the plot area:
+const MARGIN = { left: 62, right: 14, top: 10, bottom: 44 };
+const FALLBACK_SIZE = { w: 700, h: 380 }; // until measured (and in tests, without ResizeObserver)
 const TOP_GAP = 26; // ranked dots closer than this are pushed apart so their numbers stay legible
+
+function useBoxSize(ref: RefObject<HTMLElement>) {
+  const [size, setSize] = useState(FALLBACK_SIZE);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setSize({ w: Math.round(width), h: Math.round(height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
+}
+
+/** Snap a coordinate to the pixel grid's centre so 1px lines are not smeared over two pixels. */
+const crisp = (v: number) => Math.round(v) + 0.5;
+
+interface Geometry {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  x: (effort: number) => number;
+  y: (eur: number) => number;
+}
+
+function geometry(w: number, h: number, min: number, max: number): Geometry {
+  const left = MARGIN.left;
+  const right = w - MARGIN.right;
+  const top = MARGIN.top;
+  const bottom = h - MARGIN.bottom;
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    x: (effort) => left + ((effort - EFFORT_MIN) / (EFFORT_MAX - EFFORT_MIN)) * (right - left),
+    y: (eur) => bottom - logPosition(eur, min, max) * (bottom - top),
+  };
+}
 
 // The heuristic works in steps, so many initiatives share an effort score: small dots get a
 // deterministic nudge, ranked dots (in rank order) step sideways until they no longer overlap.
-function placeDots(points: MatrixPoint[], y: (eur: number) => number): Map<number, { cx: number; cy: number }> {
+function placeDots(points: MatrixPoint[], g: Geometry): Map<number, { cx: number; cy: number }> {
+  const clampX = (x: number, pad: number) => Math.min(g.right - pad, Math.max(g.left + pad, x));
   const out = new Map<number, { cx: number; cy: number }>();
   const ranked: { cx: number; cy: number }[] = [];
   for (const p of points) {
-    const base = effortX(p.effort);
-    const cy = y(p.potential);
+    const base = g.x(p.effort);
+    const cy = g.y(p.potential);
     if (p.rank === null) {
       out.set(p.initiative.id, { cx: clampX(base + (((p.initiative.id * 7) % 9) - 4) * 4, 6), cy });
       continue;
@@ -71,15 +113,18 @@ function Bars({ rows, tone }: { rows: { label: string; potential: number }[]; to
 }
 
 export function CockpitView() {
-  const { all, visible, setFilters } = useApp();
+  const { all, visible } = useApp();
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const { w, h } = useBoxSize(box);
 
   const c = cockpit(visible);
   const m = valueMatrix(visible);
-  const y = (eur: number) => BOTTOM - logPosition(eur, m.min, m.max) * (BOTTOM - TOP);
-  const splitX = effortX(EFFORT_SPLIT);
-  const splitY = y(VALUE_SPLIT);
-  const at = placeDots(m.points, y);
+  const g = geometry(w, h, m.min, m.max);
+  const { left: LEFT, right: RIGHT, top: TOP, bottom: BOTTOM, y } = g;
+  const splitX = crisp(g.x(EFFORT_SPLIT));
+  const splitY = crisp(y(VALUE_SPLIT));
+  const at = placeDots(m.points, g);
   const ticks: number[] = [];
   for (let v = m.min; v <= m.max; v *= 10) ticks.push(v);
 
@@ -94,14 +139,10 @@ export function CockpitView() {
 
   return (
     <div className="cockpit">
-      {visible.length < all.length && (
-        <p className="ck-filtered" role="status">
-          Showing {visible.length} of {all.length} initiatives (filters active).{" "}
-          <button type="button" className="link-btn" onClick={() => setFilters(() => EMPTY_FILTERS)}>
-            Show all
-          </button>
-        </p>
-      )}
+      <div className="filter-row">
+        <BusinessUnitChips all={all} />
+        <StageChips all={all} />
+      </div>
 
       <section className="ck-hero" aria-label="Estimated value">
         <div className="ck-hero-main">
@@ -141,6 +182,8 @@ export function CockpitView() {
         </div>
       </section>
 
+      <Kpis items={visible} />
+
       <section className="card ck-section" aria-label="Where the value lies">
         <div className="ck-head">
           <h2>Where the value lies</h2>
@@ -148,27 +191,29 @@ export function CockpitView() {
         </div>
         <div className="ck-matrix">
           <div className="ck-plot">
+            <div className="ck-canvas" ref={box}>
             <svg
-              viewBox="0 0 700 450"
-              width="100%"
+              viewBox={`0 0 ${w} ${h}`}
+              width={w}
+              height={h}
               role="img"
               aria-label="Matrix of effort against potential, the ten most valuable initiatives numbered"
             >
-              <rect x={LEFT} y={TOP} width={splitX - LEFT} height={splitY - TOP} className="ck-quickwin" />
+              <rect x={LEFT} y={TOP} width={splitX - LEFT} height={splitY - TOP} className="ck-quickwin" shapeRendering="crispEdges" />
               <line x1={splitX} y1={TOP} x2={splitX} y2={BOTTOM} className="ck-split" />
               <line x1={LEFT} y1={splitY} x2={RIGHT} y2={splitY} className="ck-split" />
               {ticks.map((t) => (
                 <g key={t}>
-                  {t !== VALUE_SPLIT && <line x1={LEFT} y1={y(t)} x2={RIGHT} y2={y(t)} className="ck-grid" />}
-                  <text x={LEFT - 8} y={y(t) + 4} textAnchor="end" className="ck-tick">
+                  {t !== VALUE_SPLIT && <line x1={LEFT} y1={crisp(y(t))} x2={RIGHT} y2={crisp(y(t))} className="ck-grid" />}
+                  <text x={LEFT - 8} y={Math.round(y(t)) + 4} textAnchor="end" className="ck-tick">
                     {formatTick(t)}
                   </text>
                 </g>
               ))}
               <line x1={LEFT} y1={BOTTOM} x2={RIGHT} y2={BOTTOM} className="ck-axis" />
               <line x1={LEFT} y1={TOP} x2={LEFT} y2={BOTTOM} className="ck-axis" />
-              <text x={LEFT + 12} y={TOP + 22} className="ck-quad ck-quad-win">Quick wins</text>
-              <text x={RIGHT - 12} y={TOP + 22} textAnchor="end" className="ck-quad">Major projects</text>
+              <text x={LEFT + 12} y={TOP + 20} className="ck-quad ck-quad-win">Quick wins</text>
+              <text x={RIGHT - 12} y={TOP + 20} textAnchor="end" className="ck-quad">Major projects</text>
               <text x={LEFT + 12} y={BOTTOM - 12} className="ck-quad ck-quad-muted">Small helpers</text>
               <text x={RIGHT - 12} y={BOTTOM - 12} textAnchor="end" className="ck-quad ck-quad-review">Review</text>
 
@@ -209,16 +254,23 @@ export function CockpitView() {
                 );
               })}
 
-              <text x={effortX(EFFORT_MIN)} y={420} textAnchor="middle" className="ck-tick">{EFFORT_MIN}</text>
-              <text x={splitX} y={420} textAnchor="middle" className="ck-tick">{EFFORT_SPLIT}</text>
-              <text x={effortX(EFFORT_MAX)} y={420} textAnchor="middle" className="ck-tick">{EFFORT_MAX}</text>
-              <text x={(LEFT + RIGHT) / 2} y={444} textAnchor="middle" className="ck-axis-label">
+              <text x={g.x(EFFORT_MIN)} y={BOTTOM + 18} textAnchor="middle" className="ck-tick">{EFFORT_MIN}</text>
+              <text x={splitX} y={BOTTOM + 18} textAnchor="middle" className="ck-tick">{EFFORT_SPLIT}</text>
+              <text x={g.x(EFFORT_MAX)} y={BOTTOM + 18} textAnchor="end" className="ck-tick">{EFFORT_MAX}</text>
+              <text x={Math.round((LEFT + RIGHT) / 2)} y={h - 6} textAnchor="middle" className="ck-axis-label">
                 Effort (solution complexity, {EFFORT_MIN} to {EFFORT_MAX})
               </text>
-              <text x={14} y={(TOP + BOTTOM) / 2} textAnchor="middle" transform={`rotate(-90 14 ${(TOP + BOTTOM) / 2})`} className="ck-axis-label">
+              <text
+                x={12}
+                y={Math.round((TOP + BOTTOM) / 2)}
+                textAnchor="middle"
+                transform={`rotate(-90 12 ${Math.round((TOP + BOTTOM) / 2)})`}
+                className="ck-axis-label"
+              >
                 Potential (€ / year, log)
               </text>
             </svg>
+            </div>
             <p className="muted ck-note">
               {m.plotted} of {m.estimated} initiatives have an effort estimate
               {m.coverage !== null && `, covering ${Math.round(m.coverage * 100)} % of the potential`}.
@@ -239,7 +291,9 @@ export function CockpitView() {
                   >
                     <span className="mono ck-rank">{p.rank}</span>
                     <span className="ck-row-text">
-                      <span className="ck-row-name">{p.initiative.name}</span>
+                      <span className="ck-row-name" title={p.initiative.name}>
+                        {p.initiative.name}
+                      </span>
                       <span className="ck-row-meta">
                         {buLabel(p)} · {p.initiative.stage}
                       </span>
