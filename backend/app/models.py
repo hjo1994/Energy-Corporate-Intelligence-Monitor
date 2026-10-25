@@ -120,3 +120,56 @@ class Initiative(Base):
     solution_type = relationship("SolutionType", back_populates="initiatives")
     risk_classification = relationship("RiskClassification", back_populates="initiatives")
     business_transaction = relationship("BusinessTransaction")
+
+
+class UserInputRecord(Base):
+    """Bronze: one initiative submitted through the input form
+    (UserInput_Initiatives_Extract), append-only. The only table the Backend
+    writes (POST /api/initiatives); the input orchestration's
+    bronze_to_silver_user_input DAG turns it into an Initiative. The database
+    guards enums and ranges with CHECK constraints (see the input-orchestration
+    copy); the API validates the same rules beforehand (app/schemas.py).
+    """
+
+    __tablename__ = "UserInput_Initiatives_Extract"
+
+    id = Column("ID", Integer, primary_key=True, autoincrement=True)
+    timestamp = Column("Timestamp", DateTime, nullable=False)
+    source_file_id = Column("SourceFileID", String, nullable=False, default="user-input")
+    submitted_by = Column("SubmittedBy", String, nullable=False)
+    name = Column("Name", String, nullable=False)
+    description = Column("Description", String, nullable=False)
+    owner_id = Column("OwnerID", Integer, ForeignKey("Owner.ID"), nullable=False)
+    value_type_id = Column("ValueTypeID", Integer, ForeignKey("ValueType.ID"), nullable=False)
+    solution_type_id = Column("SolutionTypeID", Integer, ForeignKey("SolutionType.ID"), nullable=False)
+    stage = Column("Stage", String, nullable=False)
+    date_start = Column("DateStart", String, nullable=True)  # quarter, "Q2 2027"
+    date_delivery = Column("DateDelivery", String, nullable=True)
+    # value drivers per lever; shares are fractions 0-1, an incomplete lever counts as zero
+    cases_per_year = Column("CasesPerYear", Float, nullable=True)
+    hours_saved_per_case = Column("HoursSavedPerCase", Float, nullable=True)
+    error_rate_before = Column("ErrorRateBefore", Float, nullable=True)
+    errors_avoided = Column("ErrorsAvoided", Float, nullable=True)
+    cost_per_error = Column("CostPerError", Float, nullable=True)
+    risk_events_per_year = Column("RiskEventsPerYear", Float, nullable=True)
+    events_avoided = Column("EventsAvoided", Float, nullable=True)
+    cost_per_event = Column("CostPerEvent", Float, nullable=True)
+    delay_events_per_year = Column("DelayEventsPerYear", Float, nullable=True)
+    cost_of_delay_per_event = Column("CostOfDelayPerEvent", Float, nullable=True)
+    lead_time_saved = Column("LeadTimeSaved", Float, nullable=True)
+    estimate_basis = Column("EstimateBasis", String, nullable=False)
+    delivery_likelihood = Column("DeliveryLikelihood", String, nullable=False)
+    solution_complexity_score = Column("SolutionComplexityScore", Integer, nullable=False)
+    one_time_costs = Column("OneTimeCosts", Float, nullable=False)
+    operating_costs = Column("OperatingCosts", Float, nullable=False)  # EUR per year
+    # risk indicators (Rahmenbetriebsvereinbarung KI, Abb. 2)
+    employee_personal_data = Column("EmployeePersonalData", String, nullable=False)
+    performance_or_behaviour_control = Column("PerformanceOrBehaviourControl", Boolean, nullable=False)
+    decisions_on_employees = Column("DecisionsOnEmployees", String, nullable=False)
+    profiling_of_individuals = Column("ProfilingOfIndividuals", Boolean, nullable=False)
+    changes_employee_workflows = Column("ChangesEmployeeWorkflows", Boolean, nullable=False)
+    prohibited_practice = Column("ProhibitedPractice", Boolean, nullable=False)
+
+    owner = relationship("Owner")
+    value_type = relationship("ValueType")
+    solution_type = relationship("SolutionType")

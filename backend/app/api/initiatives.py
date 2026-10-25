@@ -1,16 +1,36 @@
 from __future__ import annotations
 
+import datetime
+from types import SimpleNamespace
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from eg_auth.fastapi import UserInfo
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from app import derived
 from app.auth import authorizer
-from app.db import get_session
+from app.db import get_session, get_write_session
 from app.derived import annual_cost_sql, hypothetical_value_sql, potential_value_sql
-from app.models import Initiative, Owner, RiskClassification
-from app.schemas import InitiativeOut, InitiativePage, RiskClassificationCount, StageCount, Summary
+from app.models import (
+    BusinessTransaction,
+    Initiative,
+    Owner,
+    RiskClassification,
+    SolutionType,
+    UserInputRecord,
+    ValueType,
+)
+from app.schemas import (
+    InitiativeIn,
+    InitiativeOut,
+    InitiativePage,
+    RiskClassificationCount,
+    StageCount,
+    Summary,
+)
+from app.user_input import key_hash, provisional_values, quarter_start, risk_level, trigger_user_input_dag
 
 # Initiatives no longer in their source sheet are kept (soft delete) but hidden by default.
 ACTIVE = Initiative.is_active.is_(True)
@@ -96,6 +116,11 @@ def list_initiatives(
     include_inactive: Annotated[
         bool, Query(description="Also initiatives no longer in their source sheet (soft-deleted)")
     ] = False,
+    include_pending: Annotated[
+        bool,
+        Query(description="Also initiatives submitted through the input form but not yet processed "
+              "(status 'pending', provisional values); they come after all others, on the last page"),
+    ] = True,
     sort: SortField = "name",
     order: Literal["asc", "desc"] = "asc",
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
@@ -129,7 +154,133 @@ def list_initiatives(
         .offset(offset)
     ).all()
 
-    return InitiativePage(items=items, total=total or 0, limit=limit, offset=offset)
+    total = total or 0
+    if not include_pending:
+        return InitiativePage(items=items, total=total, limit=limit, offset=offset)
+
+    # Pending ones come after the silver result, so paging over both stays consistent.
+    pending = [
+        p for p in pending_initiatives(session)
+        if _pending_matches(p, stage, business_unit, department, owner_id, solution_type_id,
+                            value_type_id, risk_classification_id, search)
+    ]
+    start = max(0, offset - total)
+    end = max(0, offset + limit - total)
+    page = [InitiativeOut.model_validate(i) for i in items] + pending[start:end]
+    return InitiativePage(items=page[:limit], total=total + len(pending), limit=limit, offset=offset)
+
+
+def _unprocessed_records():
+    processed = select(BusinessTransaction.bronze_id).where(
+        BusinessTransaction.bronze_table_name == UserInputRecord.__tablename__
+    )
+    return select(UserInputRecord).where(UserInputRecord.id.not_in(processed))
+
+
+def pending_initiatives(session: Session) -> list[InitiativeOut]:
+    """Input-form records the DAG has not turned into an initiative yet, with provisional values."""
+    records = session.scalars(
+        _unprocessed_records()
+        .options(joinedload(UserInputRecord.owner), joinedload(UserInputRecord.value_type),
+                 joinedload(UserInputRecord.solution_type))
+        .order_by(UserInputRecord.id)
+    ).all()
+    if not records:
+        return []
+    risks = {r.id: r for r in session.scalars(select(RiskClassification))}
+    return [_pending_out(r, risks) for r in records]
+
+
+def _pending_out(r: UserInputRecord, risks: dict[int, RiskClassification]) -> InitiativeOut:
+    values = provisional_values(r)
+    level = risk_level(r)
+    v = SimpleNamespace(**values)  # derived.* only read these attributes
+    return InitiativeOut.model_validate(
+        {
+            "id": -r.id,
+            "name": r.name,
+            "description": r.description,
+            "stage": r.stage,
+            "date_start": quarter_start(r.date_start),
+            "date_delivery": quarter_start(r.date_delivery),
+            **values,
+            "solution_complexity_score": float(r.solution_complexity_score),
+            "hypothetical_value_eur": derived.hypothetical_value(v),
+            "potential_value_eur": derived.potential_value(v),
+            "annual_cost_eur": derived.annual_cost(v),
+            "owner": r.owner,
+            "solution_type": r.solution_type,
+            "value_type": r.value_type,
+            "risk_classification": risks.get(level) or {"id": level, "name": str(level)},
+            "is_active": True,
+            "status": "pending",
+            "user_input_id": r.id,
+            "business_transaction_id": None,
+        }
+    )
+
+
+def _pending_matches(p: InitiativeOut, stage, business_unit, department, owner_id, solution_type_id,
+                     value_type_id, risk_classification_id, search) -> bool:
+    term = (search or "").strip().lower()
+    return (
+        (not stage or p.stage in stage)
+        and (not business_unit or (p.owner is not None and p.owner.category in business_unit))
+        and (not department or (p.owner is not None and p.owner.department in department))
+        and (owner_id is None or (p.owner is not None and p.owner.id == owner_id))
+        and (solution_type_id is None or (p.solution_type is not None and p.solution_type.id == solution_type_id))
+        and (value_type_id is None or (p.value_type is not None and p.value_type.id == value_type_id))
+        and (not risk_classification_id or p.risk_classification.id in risk_classification_id)
+        and (not term or term in p.name.lower() or term in (p.description or "").lower())
+    )
+
+
+@router.post("", response_model=InitiativeOut, status_code=201)
+def create_initiative(
+    body: InitiativeIn,
+    background: BackgroundTasks,
+    user: Annotated[UserInfo, authorizer()],
+    session: Annotated[Session, Depends(get_write_session)],
+) -> InitiativeOut:
+    """New initiative from the input form: stored in the bronze table UserInput_Initiatives_Extract
+    and returned as "pending" with provisional values; the DAG run that computes the binding values
+    is triggered in the background (best effort, see app/user_input.py)."""
+    owner = session.get(Owner, body.owner_id)
+    if owner is None:
+        raise HTTPException(status_code=422, detail="Unknown owner")
+    if session.get(ValueType, body.value_type_id) is None:
+        raise HTTPException(status_code=422, detail="Unknown flagship (value type)")
+    if session.get(SolutionType, body.solution_type_id) is None:
+        raise HTTPException(status_code=422, detail="Unknown solution type")
+
+    key = key_hash(owner.category or "", body.name)
+    business_unit = owner.category or "no business unit"
+    if session.scalar(select(Initiative.id).where(Initiative.key_hash == key)) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An initiative named “{body.name}” already exists in {business_unit}. "
+            "Choose another name or edit the existing one in its source.",
+        )
+    for pending in session.scalars(_unprocessed_records().options(joinedload(UserInputRecord.owner))):
+        if key_hash(pending.owner.category or "", pending.name) == key:
+            raise HTTPException(
+                status_code=409,
+                detail=f"An initiative named “{body.name}” was just submitted for {business_unit} "
+                "and is still being processed.",
+            )
+
+    record = UserInputRecord(
+        **body.model_dump(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+        source_file_id="user-input",
+        submitted_by=user.name,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    background.add_task(trigger_user_input_dag)
+    risks = {r.id: r for r in session.scalars(select(RiskClassification))}
+    return _pending_out(record, risks)
 
 
 @router.get("/summary", response_model=Summary)

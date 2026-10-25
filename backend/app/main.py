@@ -19,7 +19,7 @@ from sqlalchemy.exc import OperationalError
 from app import auth
 from app.api import initiatives, reference
 from app.config import get_db_path
-from app.db import make_engine
+from app.db import make_engine, make_write_engine
 from app import docs
 
 
@@ -34,6 +34,7 @@ app = FastAPI(
 
 def get_app(db_path: Path | None = None) -> FastAPI:
     app.state.engine = make_engine(db_path or get_db_path())
+    app.state.write_engine = make_write_engine(db_path or get_db_path())
 
     @app.exception_handler(OperationalError)
     async def _db_unavailable(_: Request, __: OperationalError) -> JSONResponse:

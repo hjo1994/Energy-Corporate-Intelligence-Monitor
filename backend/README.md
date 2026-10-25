@@ -1,9 +1,12 @@
 # Backend — FastAPI + SQLAlchemy
 
 Eigenes Kubernetes-Deployment. Stellt die Daten aus der DB über eine
-**read-only** REST-API bereit — generischer Lesezugriff, nicht exklusiv ans
-Dashboard gebunden; potenziell mehrere Applikationen als Konsumenten. Kein
-Schreibpfad.
+REST-API bereit — generischer Lesezugriff, nicht exklusiv ans Dashboard
+gebunden; potenziell mehrere Applikationen als Konsumenten. Einziger
+Schreibpfad: `POST /api/initiatives` (Eingabemaske) schreibt in die
+Bronze-Tabelle `UserInput_Initiatives_Extract`; alle anderen Endpunkte lesen
+über eine read-only-Verbindung. Im Cluster braucht das Backend dafür das
+DB-Volume schreibbar gemountet.
 
 ## Endpunkte
 
@@ -12,6 +15,7 @@ Schreibpfad.
 | `GET /api/healthz` | Liveness, ohne Auth, prüft nicht die DB. Kein `/startup`/`/readz`: das Referenz-Deployment konfiguriert keine Probes |
 | `GET /api/auth/rights` | angemeldeter Nutzer und seine Rechte (für das Frontend) |
 | `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department`, `risk_classification_id` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `potential_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type`/`risk_classification` (id, name) |
+| `POST /api/initiatives` | Neue Initiative aus der Eingabemaske → Bronze `UserInput_Initiatives_Extract` (Felder snake_case, Anteile 0–1, mindestens ein vollständiger Value-Hebel). `201` mit der Initiative als `pending` (vorläufige Werte), `409` bei gleichem Namen in derselben Business Unit (auch inaktiv oder noch pending), `422` bei ungültigen Werten. Stößt danach im Hintergrund den DAG `bronze_to_silver_user_input` per Airflow-REST an (`AIRFLOW_API_URL`, `AIRFLOW_API_USER`, `AIRFLOW_API_PASSWORD`; fehlen sie oder scheitert der Aufruf, wird nur geloggt) |
 | `GET /api/initiatives/{id}` | Einzelne Initiative |
 | `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage und je Risikostufe, Summe/Ø Potenzial, Summe hypothetischer Nutzen und Kosten/Jahr, Ø Komplexität, Anzahl ohne Owner |
 | `GET /api/owners` | Owner (optional `business_unit`) |
@@ -54,6 +58,15 @@ zuletzt angelegt/geändert hat: Tabelle `BusinessTransaction` mit
 dort stehen `Timestamp` und `SourceFileID`). Tabellen- und Spaltennamen der
 DB entsprechen dem Datenmodell (PascalCase, z. B. `Initiative.DateStart`,
 `OwnerID`); die API-Felder bleiben snake_case (`date_start`, `owner`).
+
+**Pending:** Über die Eingabemaske erfasste Initiativen, die der DAG noch
+nicht verarbeitet hat, liefert `GET /api/initiatives` mit `status: "pending"`
+(sonst `active`/`inactive`), negativer `id` (= −`user_input_id`), ohne
+`business_transaction_id` und mit vorläufig berechneten Werten
+(`app/user_input.py`, gleiche Formeln wie der DAG, geprüft gegen
+`tests/fixtures/user_input_cases.json`, Kopie aus der Input Orchestration).
+Sie stehen nach allen übrigen auf der letzten Seite, folgen den Filtern und
+lassen sich mit `include_pending=false` ausblenden.
 
 Interaktive Doku: `/api/docs` (Swagger UI offline aus `swagger-ui-bundle`,
 `app/docs.py`), Schema unter `/api/openapi.json`.
