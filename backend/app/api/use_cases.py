@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.initiatives import as_datetimes, check_stage_gates, commit
-from app.auth import authorizer
+from app.auth import CurrentUser, authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
 from app.lifecycle import below_floor, gate_dates
@@ -49,7 +49,7 @@ SUBMITTED_ONLY = ("description", "one_time_costs", "running_cost_range")
 
 router = APIRouter(prefix="/api", tags=["use cases"], dependencies=[authorizer()])
 
-User = Annotated[UserInfo, authorizer()]
+User = CurrentUser
 
 
 def _detail(session: Session, state: dict, user: UserInfo) -> UseCaseDetail:
