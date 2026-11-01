@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, inspect, or_, select
 from sqlalchemy.orm import Session
 
 from app import derived
@@ -61,6 +61,8 @@ _COPIED = (
 )
 # Form 2 fields counted for the "complete the details" to-do (lead and solution type included).
 FORM2_PROGRESS_FIELDS = ("lead_id", "solution_type_id", *FORM2_FIELDS)
+# Fields that show form 2 was saved (lead: set by the approval, AI layer: a form 1 answer).
+FORM2_SAVE_FIELDS = tuple(name for name in FORM2_PROGRESS_FIELDS if name not in ("lead_id", "ai_layer"))
 
 
 def table_exists(session: Session, table: str = ACTION_TABLE) -> bool:
@@ -105,6 +107,19 @@ def first_stages(session: Session, use_case_ids: list[int] | None = None) -> dic
     if use_case_ids is not None:
         first = first.where(Initiative.use_case_id.in_(use_case_ids))
     return dict(session.execute(select(Initiative.use_case_id, Initiative.stage).where(Initiative.id.in_(first))).all())
+
+
+def details_saved(session: Session, use_case_ids: list[int] | None = None) -> set[int]:
+    """Use cases whose form 2 has been saved at least once (an update with a form 2 field)."""
+    if not table_exists(session):
+        return set()
+    query = select(UserAction.use_case_id).distinct().where(
+        UserAction.action_type == "update",
+        or_(*(getattr(UserAction, name).is_not(None) for name in FORM2_SAVE_FIELDS)),
+    )
+    if use_case_ids is not None:
+        query = query.where(UserAction.use_case_id.in_(use_case_ids))
+    return set(session.scalars(query))
 
 
 def actions_of(session: Session, use_case_id: int, create: UserAction | None) -> list[UserAction]:
@@ -153,6 +168,7 @@ def load_states(
             pending_by_use_case[action.use_case_id].append(action)
     creates = create_records(session, use_case_ids)
     floors = first_stages(session, use_case_ids)
+    saved = details_saved(session, use_case_ids)
 
     states = []
     for version, gold in rows:
@@ -160,6 +176,7 @@ def load_states(
         create = creates.get(version.use_case_id)
         # the stage given in form 1 (sheet use cases: the stage of their first version)
         state["stage_floor"] = (create.stage if create is not None and create.stage else None) or floors.get(version.use_case_id)
+        state["details_saved"] = version.use_case_id in saved
         on_top = pending_by_use_case.get(version.use_case_id, [])
         if on_top or with_drivers:
             all_actions = actions_of(session, version.use_case_id, creates.get(version.use_case_id))
@@ -202,6 +219,7 @@ def pending_create_state(action: UserAction, with_drivers: bool = False) -> dict
     )
     _overlay(state, [action], [action], copy_all=True)
     state["stage_floor"] = action.stage
+    state["details_saved"] = False
     if with_drivers:
         state["drivers"] = merged([action])
     state["processing"] = "pending"
@@ -327,7 +345,10 @@ def todos(state: dict) -> list[str]:
     result = []
     if state["status"] == "rejected":
         result.append("revise_and_resubmit")
-    if state["status"] == "approved" and state["form2_progress"]["filled"] < state["form2_progress"]["total"]:
+    # once form 2 has been saved, fields left empty show only in the progress: some are only known
+    # later in the lifecycle (works council approval, expected users)
+    if (state["status"] == "approved" and not state.get("details_saved")
+            and state["form2_progress"]["filled"] < state["form2_progress"]["total"]):
         result.append("complete_details")
     return result
 
