@@ -260,17 +260,3 @@ def test_a_new_silver_version_shows_until_gold_has_assessed_it(client, db_path):
     assert beta["risk_classification"]["id"] == 3 and beta["realized_value_eur"] is None
     assert client.get("/api/initiatives").json()["total"] == 4  # still one row per use case
 
-
-
-def test_an_unexpected_error_names_its_cause(db_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from app import use_cases
-    from app.main import get_app
-
-    def broken(*_args, **_kwargs):
-        raise ValueError("boom")
-
-    monkeypatch.setattr("app.api.use_cases.load_states", broken)
-    resp = TestClient(get_app(db_path), raise_server_exceptions=False).get("/api/me/use-cases")
-    assert resp.status_code == 500 and resp.json()["detail"] == "Internal error: ValueError: boom"

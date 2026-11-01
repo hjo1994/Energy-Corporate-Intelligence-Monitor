@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import func, inspect, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models import AppUser, Owner
@@ -142,10 +142,6 @@ def sync_user(session: Session, user: Any) -> AppUser | None:
         if changed:
             session.commit()
         return record
-    except IntegrityError:
-        # parallel first requests of the same user: another one created the row first
-        session.rollback()
-        return find_user(session, user)
     except SQLAlchemyError as err:
         session.rollback()
         if not isinstance(err, OperationalError):

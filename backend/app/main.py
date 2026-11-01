@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 import os
@@ -46,13 +45,6 @@ def get_app(db_path: Path | None = None) -> FastAPI:
             content={"detail": "Datenbank vorübergehend nicht verfügbar"},
             headers={"Retry-After": "2"},
         )
-
-    @app.exception_handler(Exception)
-    async def _unexpected(request: Request, err: Exception) -> JSONResponse:
-        # logged with traceback; the type and message also go to the caller, so a 500 can be
-        # diagnosed from the browser's network tab (internal app behind SSO)
-        logging.getLogger("app").exception("Unhandled error on %s %s", request.method, request.url.path)
-        return JSONResponse(status_code=500, content={"detail": f"Internal error: {type(err).__name__}: {err}"})
 
     @app.get("/api/healthz", tags=["infra"])
     def healthz() -> str:
