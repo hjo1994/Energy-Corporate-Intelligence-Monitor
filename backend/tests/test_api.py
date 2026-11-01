@@ -32,15 +32,16 @@ def test_every_data_endpoint_requires_authentication(client, monkeypatch):
 
 def test_auth_rights_follow_the_groups(client, monkeypatch):
     body = client.get("/api/auth/rights").json()
-    assert body["rights"] == {"canViewInitiatives": True, "canApprove": False, "canAdmin": False}
+    assert body["rights"] == {"canViewInitiatives": True, "canApprove": False, "canAdmin": False,
+                              "canManageUsers": False}
     monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["some_other_group"]')
     assert client.get("/api/auth/rights").json()["rights"] == {
-        "canViewInitiatives": False, "canApprove": False, "canAdmin": False}
+        "canViewInitiatives": False, "canApprove": False, "canAdmin": False, "canManageUsers": False}
     monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["ai_cockpit_approvers"]')
     assert client.get("/api/auth/rights").json()["rights"]["canApprove"] is True
     monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["ai_cockpit_admins"]')
     assert client.get("/api/auth/rights").json()["rights"] == {
-        "canViewInitiatives": False, "canApprove": True, "canAdmin": True}
+        "canViewInitiatives": False, "canApprove": True, "canAdmin": True, "canManageUsers": True}
     # reading still works: the API only requires a signed-in user, not the right
     assert client.get("/api/initiatives").status_code == 200
 
@@ -49,8 +50,7 @@ def test_list_nests_owner_and_types(client):
     body = client.get("/api/initiatives").json()
     assert body["total"] == 4
     alpha = next(i for i in body["items"] if i["name"] == "Alpha")
-    assert alpha["owner"] == {"id": 1, "name": "Owner A", "department": "Assets", "category": "ETB",
-                              "email": "owner.a@example.com"}
+    assert alpha["owner"] == {"id": 1, "name": "Owner A", "department": "Assets", "category": "ETB"}
     assert (alpha["id"], alpha["use_case_id"], alpha["version_id"]) == (1, 1, 2)  # the current version
     assert (alpha["processing"], alpha["provisional"], alpha["stage"]) == ("assessed", False, "Idea")
     assert alpha["solution_type"]["name"] == "Copilot"
@@ -136,7 +136,6 @@ def test_summary(client):
 def test_reference_endpoints(client):
     assert [o["name"] for o in client.get("/api/owners").json()] == ["Lead C", "Owner A", "Owner B"]
     assert [o["name"] for o in client.get("/api/owners?search=innov").json()] == ["Owner B"]
-    assert [o["name"] for o in client.get("/api/owners?search=dev.user@").json()] == ["Lead C"]
     assert [o["name"] for o in client.get("/api/owners?search=owner&limit=1").json()] == ["Owner A"]
     assert [o["name"] for o in client.get("/api/owners?business_unit=IT").json()] == ["Owner B"]
     assert client.get("/api/solution-types").json()[0]["name"] == "Copilot"

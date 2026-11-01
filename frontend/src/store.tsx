@@ -21,6 +21,8 @@ interface AppState {
   addInitiative: (initiative: Initiative) => void;
   /** what the signed-in user may do (approver inbox, admin) */
   rights: Rights;
+  /** re-read the rights, e.g. after the first use case made the user an owner */
+  reloadRights: () => void;
 }
 
 // While initiatives entered through the form are pending, the list is re-read this often until
@@ -35,13 +37,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
   const [rights, setRights] = useState<Rights>({ canApprove: false, canAdmin: false });
 
+  const [rightsAttempt, setRightsAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
     fetchRights().then((r) => !cancelled && setRights(r));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [rightsAttempt]);
+  const reloadRights = useCallback(() => setRightsAttempt((n) => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,8 +96,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const visible = useMemo(() => applyFilters(all, filters), [all, filters]);
 
   const value = useMemo(
-    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights }),
-    [load, reload, filters, setFilters, all, visible, addInitiative, rights],
+    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights, reloadRights }),
+    [load, reload, filters, setFilters, all, visible, addInitiative, rights, reloadRights],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -91,7 +91,8 @@ export type RunningCostRange = "up_to_10k" | "10k_to_50k" | "50k_to_100k" | "ove
 export interface InitiativeInput {
   name: string;
   description: string;
-  owner_id: number;
+  /** only for a user who is no owner yet: the business unit of their new owner (the user is always the owner) */
+  business_unit: string | null;
   value_type_id: number;
   ai_layer: string;
   stage: string;
@@ -277,8 +278,23 @@ export interface FormOptions {
 export interface Rights {
   canApprove: boolean;
   canAdmin: boolean;
+  /** the Users page: grant and take the approver role */
+  canManageUsers?: boolean;
+  /** the owner the user's new use cases get; null: form 1 asks for the business unit */
+  owner?: { id: number; name: string; category: string | null } | null;
   /** may switch to approver rights for a demo (AI_COCKPIT_DEMO_PRESENTERS) */
   demoPresenter?: boolean;
   /** this session runs with the demo approver rights */
   demoApprover?: boolean;
+}
+
+/** A signed-in user on the Users page (GET /api/users). */
+export interface AppUser {
+  id: number;
+  name: string;
+  email: string | null;
+  role: "user" | "approver";
+  is_active: boolean;
+  owner_id: number | null;
+  business_unit: string | null;
 }

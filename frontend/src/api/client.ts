@@ -1,5 +1,6 @@
 import { serviceApi } from "../shared/api/serviceApi";
 import type {
+  AppUser,
   ApprovalItem,
   DecisionInput,
   FormOptions,
@@ -130,8 +131,12 @@ const NO_RIGHTS: Rights = { canApprove: false, canAdmin: false };
 /** What the signed-in user may do; no rights if the backend cannot tell. */
 export async function fetchRights(): Promise<Rights> {
   try {
-    const r = await serviceApi.get<{ rights?: Partial<Rights>; demo_presenter?: boolean; demo_approver?: boolean }>("/auth/rights");
+    const r = await serviceApi.get<{
+      rights?: Partial<Rights>; demo_presenter?: boolean; demo_approver?: boolean; owner?: Rights["owner"];
+    }>("/auth/rights");
     const rights: Rights = { canApprove: r?.rights?.canApprove === true, canAdmin: r?.rights?.canAdmin === true };
+    if (r?.rights?.canManageUsers === true) rights.canManageUsers = true;
+    if (r?.owner) rights.owner = r.owner;
     if (r?.demo_presenter) Object.assign(rights, { demoPresenter: true, demoApprover: r.demo_approver === true });
     return rights;
   } catch {
@@ -193,5 +198,23 @@ export async function fetchFeatures(): Promise<{ initiative_input: boolean }> {
     return await serviceApi.get<{ initiative_input: boolean }>("/features");
   } catch {
     return { initiative_input: false };
+  }
+}
+
+// ---------- users ----------
+
+export async function fetchUsers(): Promise<AppUser[]> {
+  try {
+    return await serviceApi.get<AppUser[]>("/users");
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+export async function setUserRole(id: number, role: AppUser["role"]): Promise<AppUser> {
+  try {
+    return await serviceApi.put<AppUser>(`/users/${id}/role`, { role });
+  } catch (err) {
+    throw toApiError(err);
   }
 }

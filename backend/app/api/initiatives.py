@@ -22,6 +22,7 @@ from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
 from app.derived import annual_cost_sql, hypothetical_value_sql
 from app.lifecycle import gate_dates, stage_problems
+from app.users import owner_for_create
 from app.models import (
     GATE_DATE_FIELDS,
     AssessedInitiative,
@@ -236,9 +237,11 @@ def create_initiative(
             detail="Adding initiatives is not available yet: the pipeline has not created its table. "
             "Please try again in a few minutes.",
         )
-    owner = session.get(Owner, body.owner_id)
+    if user.user_id is None:
+        raise HTTPException(status_code=503, detail="Your user could not be stored yet. Please try again in a minute.")
+    owner = owner_for_create(session, user.user_id, user.sso_name, body.business_unit)
     if owner is None:
-        raise HTTPException(status_code=422, detail="Unknown owner")
+        raise HTTPException(status_code=422, detail="Choose your business unit: you are not an owner yet.")
     if session.get(ValueType, body.value_type_id) is None:
         raise HTTPException(status_code=422, detail="Unknown flagship (value type)")
 
@@ -259,7 +262,7 @@ def create_initiative(
                 "and is still being processed.",
             )
 
-    values = body.model_dump(exclude={"running_cost_range"})
+    values = body.model_dump(exclude={"running_cost_range", "business_unit"})
     check_stage_gates(body.stage, gate_dates(values), today())
     as_datetimes(values, GATE_DATE_FIELDS.values())
     record = UserAction(
@@ -269,6 +272,8 @@ def create_initiative(
         timestamp=utcnow(),
         source_file_id="user-input",
         submitted_by=user.name,
+        submitted_by_user_id=user.user_id,
+        owner_id=owner.id,
     )
     commit(session, record)
     return InitiativeOut.model_validate(with_refs(pending_create_state(record), Lookups(session)))

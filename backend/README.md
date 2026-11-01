@@ -88,21 +88,35 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   `PYTHONPATH=local_stubs` und `EG_AUTH_DEV_MODE=True`. Der Stub kann nur den
   Dev-Modus und verweigert sonst mit 401. **`PYTHONPATH` darf im Deployment
   `local_stubs` nie enthalten**, siehe `local_stubs/README.md`.
+- **Nutzer und Owner (`app/users.py`):** Jeder angemeldete Nutzer bekommt bei
+  der ersten Anfrage einen Eintrag in `AppUser` (E-Mail klein, SSO-Name,
+  `Role` `user` | `approver`). Wer einen Use Case einreicht, ist dessen Owner:
+  sein eigener Owner-Eintrag (`Owner.UserID`), sonst der eine Excel-Owner
+  gleichen Namens (wird verknüpft), sonst ein neuer Owner mit `Source = 'app'`
+  in der Business Unit, die Formular 1 dann einmal abfragt (`business_unit`).
+  `/api/auth/rights` meldet `role`, `user_id` und `owner` (null: Formular 1
+  fragt die Business Unit). Tabelle und Spalten legt die Migration der
+  Pipeline an; das Backend macht dasselbe beim Start (`ensure_user_schema`).
 - **Rechte:** Lesen und Einreichen verlangt nur Anmeldung. `canApprove`
-  (Inbox, Entscheidung, Re-use-Check) und `canAdmin` (darf jeden Use Case
-  bearbeiten, darf auch genehmigen) kommen aus AD-Gruppen, die je
-  Installation gesetzt werden: `AI_COCKPIT_APPROVER_GROUPS` und
-  `AI_COCKPIT_ADMIN_GROUPS` (kommagetrennt; leer = niemand).
+  (Inbox, Entscheidung, Re-use-Check) hat, wer `Role = approver` hat, in
+  `AI_COCKPIT_APPROVERS` steht (kommagetrennt, E-Mails oder SSO-Namen; wird
+  beim Login als Rolle gespeichert, z. B. für den ersten Approver) oder in einer
+  der AD-Gruppen `AI_COCKPIT_APPROVER_GROUPS` / `AI_COCKPIT_ADMIN_GROUPS` ist.
+  `canAdmin` (darf jeden Use Case bearbeiten) kommt aus
+  `AI_COCKPIT_ADMIN_GROUPS`. Jeder echte Approver hat `canManageUsers`: die
+  Seite „Users“ (`GET /api/users`, `PUT /api/users/{id}/role`) vergibt und
+  entzieht die Rolle (nicht sich selbst). Alle anderen sehen und bearbeiten
+  nur ihre eigenen Use Cases.
   `canViewInitiatives` wird weiter von einer Platzhaltergruppe abgeleitet und
   ist nur informativ (TODO in `app/auth.py`).
 - **Demo-Presenter (auch in Produktion):** `AI_COCKPIT_DEMO_PRESENTERS`
   (kommagetrennt, SSO-Anzeigenamen, E-Mail-Adressen oder AD-Gruppen; leer =
   niemand, Default)
-  nennt die Konten, die ihre Sitzung für eine Demo in den Approver-Modus
-  schalten dürfen. Sie melden sich normal per SSO an und arbeiten als normaler
-  Nutzer; mit dem Header `X-Demo-Role: approver` (Schalter im Frontend)
-  bekommen sie `canApprove`. Die Identität bleibt die SSO-Identität, Aktionen
-  im Approver-Modus stehen unter „<Name> (demo approver)“ in den Daten. Für
+  nennt die Konten, die ihre Sitzung für eine Demo zwischen normalem Nutzer
+  und Approver umschalten. Ohne Header arbeiten sie als normaler Nutzer (auch
+  wenn sie Approver sind); mit dem Header `X-Demo-Role: approver` (Schalter im
+  Frontend) bekommen sie `canApprove`. Die Identität bleibt die SSO-Identität, Aktionen
+  im Approver-Modus stehen bei Nicht-Approvern unter „<Name> (demo approver)“ in den Daten. Für
   alle anderen wird der Header ignoriert (`app/auth.py`, `acting_user`).
   `/api/auth/rights` meldet zusätzlich `demo_presenter`, `demo_approver` sowie
   `email` und `groups`, wie SSO sie liefert (die Werte für die Liste).

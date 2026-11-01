@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["reference"], dependencies=[authorizer()
 def list_owners(
     session: Annotated[Session, Depends(get_session)],
     business_unit: Annotated[str | None, Query(description="Owner.category")] = None,
-    search: Annotated[str | None, Query(description="Substring in name, department or e-mail (person picker)")] = None,
+    search: Annotated[str | None, Query(description="Substring in name or department (person picker)")] = None,
     limit: Annotated[int | None, Query(ge=1, le=500)] = None,
 ) -> list[Owner]:
     stmt = select(Owner).order_by(Owner.name, Owner.id)
@@ -34,8 +34,7 @@ def list_owners(
         stmt = stmt.where(Owner.category == business_unit)
     if search and search.strip():
         pattern = "%" + search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        stmt = stmt.where(or_(Owner.name.ilike(pattern, escape="\\"), Owner.department.ilike(pattern, escape="\\"),
-                              Owner.email.ilike(pattern, escape="\\")))
+        stmt = stmt.where(or_(Owner.name.ilike(pattern, escape="\\"), Owner.department.ilike(pattern, escape="\\")))
     if limit:
         stmt = stmt.limit(limit)
     return list(session.scalars(stmt))

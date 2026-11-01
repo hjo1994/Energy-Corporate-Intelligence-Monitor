@@ -18,7 +18,6 @@ class OwnerOut(_Out):
     name: str
     department: str | None
     category: str | None  # business unit
-    email: str | None = None
 
 
 class TypeOut(_Out):
@@ -341,7 +340,9 @@ class InitiativeIn(_GateDates, _Form1Values):
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Text
-    owner_id: int
+    # The signed-in user becomes the owner (app/users.py); a user without an owner row
+    # yet names their business unit once (Owner.Category of the new owner).
+    business_unit: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
     value_type_id: int
     ai_layer: Literal[AI_LAYERS]  # type: ignore[valid-type]
     stage: Literal[STAGES]  # type: ignore[valid-type]
@@ -369,7 +370,7 @@ class InitiativeIn(_GateDates, _Form1Values):
 
 
 FORM1_FIELDS = (
-    "description", "owner_id", "value_type_id", "ai_layer", "stage", "date_start", "date_delivery",
+    "description", "business_unit", "value_type_id", "ai_layer", "stage", "date_start", "date_delivery",
     *(f for fields in LEVERS.values() for f in fields), "estimate_basis", "delivery_likelihood",
     "solution_complexity_score", "one_time_costs", "running_cost_range",
     "employee_personal_data", "performance_or_behaviour_control", "decisions_on_employees",
@@ -462,3 +463,19 @@ class DecisionIn(BaseModel):
         if self.decision == "reject" and not self.comment:
             raise ValueError("Rejecting needs a comment")
         return self
+
+
+class AppUserOut(_Out):
+    """A signed-in user on the Users page."""
+
+    id: int
+    name: str
+    email: str | None
+    role: Literal["user", "approver"]
+    is_active: bool
+    owner_id: int | None = None
+    business_unit: str | None = None
+
+
+class RoleIn(BaseModel):
+    role: Literal["user", "approver"]

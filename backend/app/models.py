@@ -25,6 +25,23 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+USER_ROLES = ("user", "approver")
+
+
+class AppUser(Base):
+    """Everyone who signed in (created by the Backend on the first request, app/users.py).
+    Role 'approver' may approve and reject use cases."""
+
+    __tablename__ = "AppUser"
+
+    id = Column("ID", Integer, primary_key=True)
+    email = Column("Email", String, nullable=True, unique=True)  # lowercase
+    external_id = Column("ExternalID", String, nullable=True, unique=True)  # SSO subject, when available
+    name = Column("Name", String, nullable=False)
+    role = Column("Role", String, nullable=False, default="user")
+    is_active = Column("IsActive", Boolean, nullable=False, default=True)
+
+
 class Owner(Base):
     __tablename__ = "Owner"
 
@@ -32,7 +49,9 @@ class Owner(Base):
     category = Column("Category", String, nullable=True)  # business unit (source column "Source")
     name = Column("Name", String, nullable=False)
     department = Column("Department", String, nullable=True)
-    email = Column("Email", String, nullable=True)  # to match the signed-in user
+    # the signed-in user behind this owner (their first use case); NULL for Excel owners who never signed in
+    user_id = Column("UserID", Integer, ForeignKey("AppUser.ID"), nullable=True, unique=True)
+    source = Column("Source", String, nullable=False, default="excel")  # excel | app
 
 
 class SolutionType(Base):
@@ -162,6 +181,8 @@ class Initiative(Base):
     is_active = Column("IsActive", Boolean, nullable=False, default=True)  # False = no longer in the source sheet
     business_transaction_id = Column("BusinessTransactionID", Integer, ForeignKey("BusinessTransaction.ID"), nullable=False)
     changed_by = Column("ChangedBy", String, nullable=True)
+    created_by_user_id = Column("CreatedByUserID", Integer, ForeignKey("AppUser.ID"), nullable=True)
+    changed_by_user_id = Column("ChangedByUserID", Integer, ForeignKey("AppUser.ID"), nullable=True)
     timestamp = Column("Timestamp", DateTime, nullable=False)
 
     owner = relationship("Owner", foreign_keys=[owner_id])
@@ -206,6 +227,7 @@ class UserAction(Base):
     timestamp = Column("Timestamp", DateTime, nullable=False)
     source_file_id = Column("SourceFileID", String, nullable=False, default="user-input")
     submitted_by = Column("SubmittedBy", String, nullable=False)
+    submitted_by_user_id = Column("SubmittedByUserID", Integer, ForeignKey("AppUser.ID"), nullable=True)
     action_type = Column("ActionType", String, nullable=False)  # create / update / approve / reject
     use_case_id = Column("UseCaseID", Integer, nullable=True)  # empty for create
     status = Column("Status", String, nullable=True)

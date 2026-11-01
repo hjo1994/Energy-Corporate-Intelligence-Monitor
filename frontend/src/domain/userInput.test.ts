@@ -46,7 +46,6 @@ const filled: FormState = {
   name: " Smart Invoice Check ",
   description: "Checks invoices",
   businessUnit: "ETB",
-  ownerId: "1",
   valueTypeId: "1",
   aiLayer: "AI for productivity and efficiency",
   stage: "Idea",
@@ -76,7 +75,7 @@ describe("form", () => {
     const body = toInput(filled);
     expect(body).toMatchObject({
       name: "Smart Invoice Check",
-      owner_id: 1,
+      business_unit: "ETB",
       cases_per_year: 5000,
       error_rate_before: 0.075,
       errors_avoided: 0.5,
@@ -97,7 +96,7 @@ describe("form", () => {
   it("requires the basics and one complete lever", () => {
     const errors = validate({ ...EMPTY_FORM });
     expect(Object.keys(errors)).toEqual(
-      expect.arrayContaining(["name", "ownerId", "aiLayer", "stage", "complexity", "oneTimeCosts", "runningCostRange", "levers"]),
+      expect.arrayContaining(["name", "aiLayer", "stage", "complexity", "oneTimeCosts", "runningCostRange", "levers"]),
     );
     expect(validate({ ...filled, hoursSavedPerCase: "", levers: { ...filled.levers, quality: false } }).levers).toBeDefined();
     // only values of the domain

@@ -93,7 +93,7 @@ def form1(**over):
     values.pop("operating_costs")
     return {
         "name": "Smart Invoice Check", "description": "Checks invoices against orders",
-        "owner_id": 1, "value_type_id": 1, "ai_layer": "AI for business process optimization", "stage": "Idea",
+        "value_type_id": 1, "ai_layer": "AI for business process optimization", "stage": "Idea",
         "date_delivery": "Q3 2027", **values, "running_cost_range": "10k_to_50k",
         "solution_complexity_score": 4, **over,
     }
@@ -110,7 +110,7 @@ def test_post_stores_a_create_action_and_returns_it_pending(submit, db_path):
     body = resp.json()
     assert body["status"] == "pending" and body["id"] == -body["user_input_id"]
     assert (body["processing"], body["approval_status"], body["provisional"]) == ("pending", "pending", True)
-    assert body["owner"]["name"] == "Owner A" and body["date_delivery"].startswith("2027-07-01")
+    assert body["owner"]["name"] == "Lead C" and body["date_delivery"].startswith("2027-07-01")
     assert body["ai_layer"] == "AI for business process optimization" and body["solution_type"] is None
     # 10k-50k range -> 30,000 entered, x 0.65 expected: annual cost = 175,000 x 0.65 / 5 + 19,500
     assert body["running_costs"] == pytest.approx(19_500)
@@ -122,7 +122,7 @@ def test_post_stores_a_create_action_and_returns_it_pending(submit, db_path):
             'SELECT "ActionType", "UseCaseID", "Name", "SubmittedBy", "SourceFileID", "OwnerID", "OperatingCosts",'
             ' "AILayer" FROM "UserActionExtracts"'
         ).fetchall()
-    assert row == [("create", None, "Smart Invoice Check", "Dev User", "user-input", 1, 30000.0,
+    assert row == [("create", None, "Smart Invoice Check", "Dev User", "user-input", 3, 30000.0,
                     "AI for business process optimization")]
 
 
@@ -148,11 +148,13 @@ def test_duplicate_name_in_the_same_business_unit_is_409(submit, db_path):
     with sqlite3.connect(db_path) as conn:
         for name in ("Alpha", "Omega"):
             conn.execute('UPDATE "Initiative" SET "KeyHash" = ? WHERE "Name" = ?', (key_hash("ETB", name), name))
-    assert submit(name="alpha").status_code == 409  # existing use case in ETB
-    assert submit(name="Alpha", owner_id=2).status_code == 201  # other business unit (IT)
+    assert submit(name="alpha").status_code == 409  # existing use case in ETB (the user is owner Lead C)
     assert submit(name="New one").status_code == 201
     assert submit(name=" NEW  one ").status_code == 409  # still pending
     assert submit(name="Omega").status_code == 409  # inactive use cases keep their key
+    with sqlite3.connect(db_path) as conn:  # a user who is no owner yet, in IT
+        conn.execute('UPDATE "Owner" SET "UserID" = NULL WHERE "ID" = 3')
+    assert submit(name="Alpha", business_unit="IT").status_code == 201  # other business unit
 
 
 @pytest.mark.parametrize(
@@ -209,3 +211,36 @@ def test_feature_switch(client, submit, monkeypatch):
     monkeypatch.setenv("AI_COCKPIT_ENABLE_INITIATIVE_INPUT", "false")
     assert client.get("/api/features").json() == {"initiative_input": False}
     assert submit().status_code == 403
+
+
+def test_the_signed_in_user_becomes_the_owner(submit, client, db_path):
+    def owners():
+        with sqlite3.connect(db_path) as conn:
+            return conn.execute('SELECT "ID", "Name", "Category", "UserID", "Source" FROM "Owner" ORDER BY "ID"').fetchall()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('UPDATE "Owner" SET "UserID" = NULL WHERE "ID" = 3')
+    assert client.get("/api/auth/rights").json()["owner"] is None
+    # no owner yet: form 1 asks for the business unit
+    resp = submit(name="First")
+    assert resp.status_code == 422 and "business unit" in resp.json()["detail"]
+    resp = submit(name="First", business_unit="IT")
+    assert resp.status_code == 201 and resp.json()["owner"]["name"] == "Dev User"
+    assert owners()[-1] == (4, "Dev User", "IT", 1, "app")
+    # from now on always that owner, whatever business unit is sent
+    assert submit(name="Second", business_unit="ETB").json()["owner"]["id"] == 4
+    assert client.get("/api/auth/rights").json()["owner"] == {"id": 4, "name": "Dev User", "category": "IT"}
+    mine = client.get("/api/me/use-cases").json()
+    assert {m["name"] for m in mine} >= {"First", "Second"}
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute('SELECT DISTINCT "SubmittedByUserID" FROM "UserActionExtracts"').fetchall() == [(1,)]
+
+
+def test_an_excel_owner_of_the_same_name_is_linked(submit, db_path):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('UPDATE "Owner" SET "UserID" = NULL WHERE "ID" = 3')
+        conn.execute('UPDATE "Owner" SET "Name" = \'dev user\' WHERE "ID" = 2')  # Excel owner in IT
+    resp = submit(name="Linked")
+    assert resp.status_code == 201 and resp.json()["owner"]["id"] == 2
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute('SELECT "UserID", "Source" FROM "Owner" WHERE "ID" = 2').fetchone() == (1, "excel")

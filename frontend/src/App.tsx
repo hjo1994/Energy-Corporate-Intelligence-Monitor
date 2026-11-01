@@ -9,6 +9,7 @@ import { ListView } from "./views/ListView";
 import { CockpitView } from "./views/CockpitView";
 import { NewInitiativeView } from "./views/NewInitiativeView";
 import { ApprovalsView } from "./views/ApprovalsView";
+import { UsersView } from "./views/UsersView";
 import { MyUseCasesView } from "./views/MyUseCasesView";
 import { UseCaseView } from "./views/UseCaseView";
 
@@ -71,6 +72,7 @@ function Shell() {
               Approvals <Count n={counts.approvals} label="waiting" />
             </NavLink>
           )}
+          {rights.canManageUsers && <NavLink to="/users">Users</NavLink>}
         </nav>
         {inputEnabled && (
           <NavLink to="/new" className="new-btn">
@@ -113,6 +115,7 @@ function Shell() {
             <Route path="/my" element={<MyUseCasesView />} />
             <Route path="/use-cases/:id" element={<UseCaseView />} />
             <Route path="/approvals" element={<ApprovalsView />} />
+            <Route path="/users" element={<UsersView />} />
             {/* the former Value tab now lives on the start page */}
             <Route path="/value" element={<Navigate to="/" replace />} />
             <Route path="*" element={<CockpitView />} />

@@ -17,9 +17,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
 from app import auth
-from app.api import initiatives, reference, use_cases
+from app.api import initiatives, reference, use_cases, users
 from app.config import get_db_path
 from app.db import make_engine, make_write_engine
+from app.users import ensure_user_schema
 from app import docs
 
 
@@ -35,6 +36,7 @@ app = FastAPI(
 def get_app(db_path: Path | None = None) -> FastAPI:
     app.state.engine = make_engine(db_path or get_db_path())
     app.state.write_engine = make_write_engine(db_path or get_db_path())
+    ensure_user_schema(app.state.write_engine)
 
     @app.exception_handler(OperationalError)
     async def _db_unavailable(_: Request, __: OperationalError) -> JSONResponse:
@@ -52,6 +54,7 @@ def get_app(db_path: Path | None = None) -> FastAPI:
     app.include_router(initiatives.router)
     app.include_router(reference.router)
     app.include_router(use_cases.router)
+    app.include_router(users.router)
 
     # Offline Swagger UI
     app.include_router(docs.router)

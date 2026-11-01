@@ -82,7 +82,9 @@ const yesNo = (v: boolean): "yes" | "no" => (v ? "yes" : "no");
 
 export function NewInitiativeView() {
   const navigate = useNavigate();
-  const { addInitiative } = useApp();
+  const { addInitiative, rights, reloadRights } = useApp();
+  // the signed-in user is the owner; without an owner row yet they choose their business unit once
+  const myOwner = rights.owner ?? null;
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [refError, setRefError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -108,7 +110,6 @@ export function NewInitiativeView() {
     () => [...new Set((ref?.owners ?? []).map((o) => o.category).filter((c): c is string => !!c))].sort(),
     [ref],
   );
-  const owners = (ref?.owners ?? []).filter((o) => o.category === form.businessUnit);
   const flagship = ref?.valueTypes.find((t) => String(t.id) === form.valueTypeId)?.name;
   const typical = typicalValues(form.aiLayer || undefined, flagship);
   const aiLayers = ref?.options?.ai_layers?.map((o) => o.value) ?? AI_LAYERS;
@@ -132,19 +133,22 @@ export function NewInitiativeView() {
     <DomainSelect value={String(form[key])} options={domains[field]} invalid={!!errors[key]} onChange={(v) => set(key, v as never)} />
   );
 
-  const input = toInput(form);
+  // with an owner the business unit is theirs: not asked, not sent
+  const checked: FormState = myOwner ? { ...form, businessUnit: myOwner.category || "owner" } : form;
+  const input = { ...toInput(form), business_unit: myOwner ? null : form.businessUnit || null };
   const preview = previewValue(previewInput(input));
   const level = previewRiskLevel(input);
-  const errors: Errors = showErrors ? validate(form, domains, undefined, rules) : {};
+  const errors: Errors = showErrors ? validate(checked, domains, undefined, rules) : {};
 
   async function save() {
     setShowErrors(true);
     setSaveError(null);
-    if (Object.keys(validate(form, domains, undefined, rules)).length > 0) return;
+    if (Object.keys(validate(checked, domains, undefined, rules)).length > 0) return;
     setSaving(true);
     try {
-      const created = await createInitiative(toInput(form));
+      const created = await createInitiative(input);
       addInitiative(created);
+      if (!myOwner) reloadRights();
       navigate("/my", { state: { created: created.name } });
     } catch (err) {
       setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The idea could not be saved.");
@@ -261,18 +265,18 @@ export function NewInitiativeView() {
               <textarea className={`nf-input nf-textarea${errors.description ? " invalid" : ""}`} value={form.description} rows={3} onChange={(e) => set("description", e.target.value)} />
             </Field>
             <div className="nf-grid3">
-              <Field label="Business unit" required error={errors.businessUnit}>
-                <select className="nf-input" value={form.businessUnit} onChange={(e) => setForm((f) => ({ ...f, businessUnit: e.target.value, ownerId: "" }))}>
-                  <option value="">Choose …</option>
-                  {businessUnits.map((bu) => <option key={bu} value={bu}>{bu}</option>)}
-                </select>
-              </Field>
-              <Field label="Owner" required error={errors.ownerId}>
-                <select className="nf-input" value={form.ownerId} disabled={!form.businessUnit} onChange={(e) => set("ownerId", e.target.value)}>
-                  <option value="">{form.businessUnit ? "Choose …" : "Choose a business unit first"}</option>
-                  {owners.map((o) => <option key={o.id} value={o.id}>{o.department ? `${o.name} · ${o.department}` : o.name}</option>)}
-                </select>
-              </Field>
+              {myOwner ? (
+                <Field label="Owner" hint="You are the owner of the use cases you submit.">
+                  <input className="nf-input" value={myOwner.category ? `${myOwner.name} · ${myOwner.category}` : myOwner.name} readOnly disabled />
+                </Field>
+              ) : (
+                <Field label="Your business unit" required error={errors.businessUnit} hint="Asked once: you become the owner of your use cases.">
+                  <select className="nf-input" value={form.businessUnit} onChange={(e) => set("businessUnit", e.target.value)}>
+                    <option value="">Choose …</option>
+                    {businessUnits.map((bu) => <option key={bu} value={bu}>{bu}</option>)}
+                  </select>
+                </Field>
+              )}
               <Field label="Flagship" required error={errors.valueTypeId}>
                 <select className="nf-input" value={form.valueTypeId} onChange={(e) => set("valueTypeId", e.target.value)}>
                   <option value="">Choose …</option>

@@ -174,8 +174,7 @@ describe("new initiative form", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByRole("textbox", { name: /^Name/ }), "Smart Invoice Check");
     await user.type(screen.getByRole("textbox", { name: /^Description/ }), "Checks invoices against orders");
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Business unit/ }), "ETB");
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Owner/ }), "1");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Your business unit/ }), "ETB");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Flagship/ }), "1");
     await user.selectOptions(screen.getByRole("combobox", { name: /^AI layer/ }), "AI for productivity and efficiency");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "Idea");
@@ -219,7 +218,7 @@ describe("new initiative form", () => {
     await user.click(screen.getByRole("button", { name: "Submit idea" }));
 
     expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
-      name: "Smart Invoice Check", owner_id: 1, cases_per_year: 5000, hours_saved_per_case: 0.4,
+      name: "Smart Invoice Check", business_unit: "ETB", cases_per_year: 5000, hours_saved_per_case: 0.4,
       error_rate_before: null, estimate_basis: "benchmark", solution_complexity_score: 4,
       one_time_costs: 175000, decisions_on_employees: "none", scope_gate_date: null,
       ai_layer: "AI for productivity and efficiency", running_cost_range: "50k_to_100k",
@@ -227,6 +226,18 @@ describe("new initiative form", () => {
     expect(post.mock.calls[0]![1]).not.toHaveProperty("solution_type_id");
     expect(await screen.findByRole("heading", { name: "My use cases" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("“Smart Invoice Check” was submitted.");
+  });
+
+  it("does not ask an owner for the business unit", async () => {
+    mockWithReference();
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((async (path: string) =>
+      path === "/auth/rights"
+        ? { user: "Jonas", rights: { canApprove: false, canAdmin: false }, owner: { id: 7, name: "Jonas", category: "IT" } }
+        : base(path as never)) as never);
+    renderAt("/new");
+    expect(await screen.findByDisplayValue("Jonas · IT")).toBeDisabled();
+    expect(screen.queryByRole("combobox", { name: /business unit/ })).not.toBeInTheDocument();
   });
 
   it("asks for the dates of the gates the chosen stage has passed", async () => {

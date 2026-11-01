@@ -214,7 +214,8 @@ def pending_create_state(action: UserAction, with_drivers: bool = False) -> dict
         id=-action.id, use_case_id=None, version_id=None, user_action_id=action.id, gold=None,
         business_transaction_id=None,
         name=(action.name or "").strip(), is_active=True, status="pending",
-        submitted_by=action.submitted_by, submitted_at=action.timestamp, changed_by=action.submitted_by,
+        submitted_by=action.submitted_by, submitted_by_user_id=action.submitted_by_user_id,
+        submitted_at=action.timestamp, changed_by=action.submitted_by,
         updated_at=action.timestamp, pending_action_ids=[action.id], last_action_id=action.id,
     )
     _overlay(state, [action], [action], copy_all=True)
@@ -233,6 +234,7 @@ def _from_version(version: Initiative, gold: AssessedInitiative | None, create: 
         id=version.use_case_id, use_case_id=version.use_case_id, version_id=version.id, user_action_id=None,
         business_transaction_id=version.business_transaction_id,
         gold=gold, submitted_by=create.submitted_by if create else None,
+        submitted_by_user_id=version.created_by_user_id or (create.submitted_by_user_id if create else None),
         submitted_at=create.timestamp if create else None, changed_by=version.changed_by,
         updated_at=version.timestamp, pending_action_ids=[], last_action_id=None,
         processing="assessed" if gold is not None and gold.initiative_id == version.id else "not_assessed",
@@ -315,18 +317,23 @@ def with_refs(state: dict, lookups: Lookups) -> dict:
 
 
 def user_owner_ids(lookups: Lookups, user) -> set[int]:
-    """Owner rows that are the signed-in user: same e-mail, else same name (case-insensitive)."""
-    email = (getattr(user, "email", None) or "").casefold()
-    name = (getattr(user, "name", None) or "").casefold()
+    """Owner rows that are the signed-in user: linked to their AppUser (Owner.UserID), or an
+    Excel owner of the same SSO name not linked to anyone yet (case-insensitive)."""
+    user_id = getattr(user, "user_id", None)
+    name = (getattr(user, "sso_name", None) or getattr(user, "name", None) or "").strip().casefold()
     return {
         o.id for o in lookups.owners.values()
-        if (email and (o.email or "").casefold() == email) or (name and o.name.casefold() == name)
+        if (user_id is not None and o.user_id == user_id)
+        or (name and o.user_id is None and o.name.strip().casefold() == name)
     }
 
 
 def is_mine(state: dict, user, owner_ids: set[int]) -> bool:
+    user_id = getattr(user, "user_id", None)
+    names = {n for n in (getattr(user, "name", None), getattr(user, "sso_name", None)) if n}
     return (
-        (state.get("submitted_by") is not None and state["submitted_by"] == user.name)
+        (user_id is not None and state.get("submitted_by_user_id") == user_id)
+        or (state.get("submitted_by") is not None and state["submitted_by"] in names)
         or state.get("owner_id") in owner_ids
         or state.get("lead_id") in owner_ids
     )

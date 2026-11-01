@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.main import get_app
 from app.models import (
+    AppUser,
     AssessedInitiative,
     Base,
     BusinessTransaction,
@@ -51,9 +52,12 @@ def db_path(tmp_path):
     engine = create_engine(f"sqlite:///{path}")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
-        etb = Owner(id=1, name="Owner A", department="Assets", category="ETB", email="owner.a@example.com")
+        # the stub's "Dev User" has signed in before and is the owner "Lead C"
+        s.add(AppUser(id=1, name="Dev User", email="dev.user@example.com", role="user"))
+        s.flush()
+        etb = Owner(id=1, name="Owner A", department="Assets", category="ETB")
         it = Owner(id=2, name="Owner B", department="Innovation", category="IT")
-        me = Owner(id=3, name="Lead C", department="Assets", category="ETB", email="dev.user@example.com")
+        me = Owner(id=3, name="Lead C", department="Assets", category="ETB", user_id=1, source="app")
         copilot = SolutionType(id=1, name="Copilot", description="MS Copilot")
         capex = ValueType(id=1, name="CAPEX delivery", description="On time")
         low = RiskClassification(id=1, name="Sehr geringes Risiko", description="d1", derived_action="a1")

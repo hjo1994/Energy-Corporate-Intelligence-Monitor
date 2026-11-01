@@ -113,12 +113,12 @@ def test_a_pending_idea_can_be_read_but_not_changed(client, submit, as_approver)
 
 def test_my_use_cases_with_roles_and_todos(client, idea, db_path):
     conn = sqlite3.connect(db_path)
-    conn.execute('UPDATE "Initiative" SET "LeadID" = 3 WHERE "UseCaseID" = 2')  # Dev User = Lead C (e-mail)
+    conn.execute('UPDATE "Initiative" SET "LeadID" = 3 WHERE "UseCaseID" = 2')  # Dev User = Lead C (Owner.UserID)
     conn.commit()
     conn.close()
     mine = {u["name"]: u for u in client.get("/api/me/use-cases").json()}
     assert set(mine) == {"Smart Invoice Check", "Beta"}
-    assert mine["Smart Invoice Check"]["roles"] == ["submitter"]
+    assert mine["Smart Invoice Check"]["roles"] == ["submitter", "owner"]  # the submitter is the owner
     assert mine["Smart Invoice Check"]["approval_status"] == "pending" and mine["Beta"]["roles"] == ["lead"]
 
 
@@ -318,7 +318,7 @@ APPROVER = {"Authorization": "Bearer dev:Approver@demo.local"}
 def test_demo_one_user_submits_another_approves(client, db_path, monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
     assert client.get("/api/auth/rights").json()["user"] == "Jonas"  # no token: the first persona
-    created = client.post("/api/initiatives", json=form1(), headers=JONAS)
+    created = client.post("/api/initiatives", json=form1(business_unit="ETB"), headers=JONAS)
     assert created.status_code == 201, created.text
     assert client.get("/api/approvals", headers=JONAS).status_code == 403
 
@@ -343,7 +343,7 @@ def test_demo_presenter_switches_to_approver(client, db_path, monkeypatch):
     assert (rights["email"], rights["groups"]) == ("jonas@demo.local", ["app_50hzt_aap_communities_all__x"])
 
     # as a normal user: submit, no inbox
-    created = client.post("/api/initiatives", json=form1(), headers=JONAS)
+    created = client.post("/api/initiatives", json=form1(business_unit="ETB"), headers=JONAS)
     assert created.status_code == 201, created.text
     assert client.get("/api/approvals", headers=JONAS).status_code == 403
     process(db_path, created.json()["user_input_id"], 6)
@@ -360,7 +360,7 @@ def test_demo_presenter_switches_to_approver(client, db_path, monkeypatch):
     # back as the normal user: approved, linked to Jonas, with the form 2 to-do
     mine = client.get("/api/me/use-cases", headers=JONAS).json()
     assert [(u["id"], u["approval_status"], u["roles"], u["todos"]) for u in mine] == [
-        (6, "approved", ["submitter"], ["complete_details"])]
+        (6, "approved", ["submitter", "owner"], ["complete_details"])]
 
 
 def test_demo_role_header_is_ignored_for_everyone_else(client, idea, monkeypatch):
@@ -384,3 +384,42 @@ def test_demo_presenter_by_sso_name(client, monkeypatch):
     assert (rights["demo_presenter"], rights["rights"]["canApprove"]) == (True, True)
     other = client.get("/api/auth/rights", headers={**APPROVER, "X-Demo-Role": "approver"}).json()
     assert other["demo_presenter"] is False
+
+
+def test_approver_role_from_the_user_table(client, monkeypatch):
+    rights = client.get("/api/auth/rights").json()
+    assert (rights["role"], rights["user_id"], rights["rights"]["canApprove"]) == ("user", 1, False)
+    assert client.get("/api/users").status_code == 403
+    # the first approver comes from AI_COCKPIT_APPROVERS (e-mail or SSO name) ...
+    monkeypatch.setenv("AI_COCKPIT_APPROVERS", "DEV.USER@example.com")
+    rights = client.get("/api/auth/rights").json()
+    assert (rights["role"], rights["rights"]["canApprove"], rights["rights"]["canManageUsers"]) == (
+        "approver", True, True)
+    monkeypatch.delenv("AI_COCKPIT_APPROVERS")
+    assert client.get("/api/auth/rights").json()["role"] == "approver"  # stored in AppUser
+    assert client.get("/api/approvals").status_code == 200
+
+    # ... who manages the others on the Users page
+    monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
+    client.get("/api/auth/rights", headers=JONAS)  # Jonas signs in: a user
+    me = {"Authorization": "Bearer dev:dev.user@example.com"}
+    monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS[:-1] + ', {"name": "Dev User", "email": "dev.user@example.com",'
+                       ' "groups": []}]')
+    users = {u["email"]: u for u in client.get("/api/users", headers=me).json()}
+    assert (users["jonas@demo.local"]["role"], users["dev.user@example.com"]["business_unit"]) == ("user", "ETB")
+    resp = client.put(f"/api/users/{users['jonas@demo.local']['id']}/role", json={"role": "approver"}, headers=me)
+    assert resp.status_code == 200 and resp.json()["role"] == "approver"
+    assert client.get("/api/approvals", headers=JONAS).status_code == 200
+    assert client.put(f"/api/users/{users['dev.user@example.com']['id']}/role", json={"role": "user"},
+                      headers=me).status_code == 422  # not from oneself
+    assert client.put("/api/users/99/role", json={"role": "user"}, headers=me).status_code == 404
+
+
+def test_a_presenter_who_is_an_approver_can_show_the_normal_view(client, idea, monkeypatch):
+    monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
+    monkeypatch.setenv("AI_COCKPIT_APPROVERS", "jonas@demo.local")
+    monkeypatch.setenv("AI_COCKPIT_DEMO_PRESENTERS", "jonas@demo.local")
+    assert client.get("/api/approvals", headers=JONAS).status_code == 403  # switch on "Normal user"
+    switched = {**JONAS, "X-Demo-Role": "approver"}
+    rights = client.get("/api/auth/rights", headers=switched).json()
+    assert (rights["user"], rights["rights"]["canApprove"]) == ("Jonas", True)  # no marker: a real approver

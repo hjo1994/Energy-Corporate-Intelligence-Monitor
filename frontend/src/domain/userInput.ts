@@ -220,8 +220,8 @@ export function previewRiskLevel(r: Indicators): number {
 export interface FormState {
   name: string;
   description: string;
+  /** asked only while the user is no owner yet; else their owner's (shown, not sent) */
   businessUnit: string;
-  ownerId: string;
   valueTypeId: string;
   aiLayer: string;
   stage: string;
@@ -258,7 +258,6 @@ export const EMPTY_FORM: FormState = {
   name: "",
   description: "",
   businessUnit: "",
-  ownerId: "",
   valueTypeId: "",
   aiLayer: "",
   stage: "",
@@ -307,7 +306,7 @@ export function toInput(f: FormState): InitiativeInput {
   return {
     name: f.name.trim(),
     description: f.description.trim(),
-    owner_id: Number(f.ownerId),
+    business_unit: f.businessUnit || null,
     value_type_id: Number(f.valueTypeId),
     ai_layer: f.aiLayer,
     stage: f.stage,
@@ -372,7 +371,6 @@ export function validate(
     ["name", "Enter a name."],
     ["description", "Describe the idea."],
     ["businessUnit", "Choose a business unit."],
-    ["ownerId", "Choose an owner."],
     ["valueTypeId", "Choose a flagship."],
     ["aiLayer", "Choose the AI layer."],
     ["runningCostRange", "Choose a range."],
