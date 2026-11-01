@@ -6,9 +6,9 @@ stub only supports EG_AUTH_DEV_MODE=True; it cannot and must not fake a real
 OIDC validation.
 """
 from dataclasses import dataclass
-from typing import Callable, List
+from typing import Callable, List, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from eg_auth import BaseRights
@@ -20,6 +20,26 @@ class _AuthDevSettings(BaseSettings):
 
     dev_mode: bool = False
     dev_groups: List[str] = []
+    # demo personas, e.g. [{"name": "Jonas", "email": "jonas@demo.local", "groups": []}]; the
+    # frontend's dev bypass picks one by sending "Authorization: Bearer dev:<email>"
+    dev_users: List[dict] = []
+
+
+DEV_TOKEN_PREFIX = "dev:"
+
+
+def dev_user(settings: _AuthDevSettings, authorization: Optional[str]) -> dict:
+    """The persona the request asks for, else the first persona, else the single dev user."""
+    email = ""
+    if authorization and authorization.startswith("Bearer " + DEV_TOKEN_PREFIX):
+        email = authorization[len("Bearer " + DEV_TOKEN_PREFIX):].strip().casefold()
+    users = settings.dev_users
+    for user in users:
+        if email and str(user.get("email", "")).casefold() == email:
+            return user
+    if users:
+        return users[0]
+    return {"name": "Dev User", "email": "dev.user@example.com", "groups": settings.dev_groups}
 
 
 @dataclass
@@ -35,9 +55,8 @@ class FastAPIResourceProtector:
         self._groups_to_rights = groups_to_rights
 
     def __call__(self, **required_claims: bool):
-        def dependency() -> UserInfo:
+        def dependency(request: Request) -> UserInfo:
             settings = _AuthDevSettings()
-            print(settings.model_dump())
             if not settings.dev_mode:
                 raise HTTPException(
                     status_code=401,
@@ -46,15 +65,12 @@ class FastAPIResourceProtector:
                         "Real OIDC validation requires the real eg-auth package."
                     ),
                 )
-            rights = self._groups_to_rights(settings.dev_groups)
+            user = dev_user(settings, request.headers.get("authorization"))
+            groups = list(user.get("groups", []))
+            rights = self._groups_to_rights(groups)
             for claim, expected in required_claims.items():
                 if getattr(rights, claim, None) != expected:
                     raise HTTPException(status_code=403, detail=f"Missing right: {claim}")
-            return UserInfo(
-                name="Dev User",
-                email="dev.user@example.com",
-                groups=settings.dev_groups,
-                rights=rights,
-            )
+            return UserInfo(name=user["name"], email=user["email"], groups=groups, rights=rights)
 
         return Depends(dependency)

@@ -12,7 +12,7 @@ from typing import Annotated, List
 
 from eg_auth import BaseRights, BooleanRightClaim
 from eg_auth.fastapi import FastAPIResourceProtector, UserInfo
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 AUTH_TAG = "auth"
 
@@ -46,6 +46,24 @@ def map_groups_to_rights(ldap_groups: List[str]) -> Rights:
 authorizer = FastAPIResourceProtector(groups_to_rights=map_groups_to_rights)
 
 auth_router = APIRouter(prefix="/api", tags=[AUTH_TAG])
+
+
+def _role(rights: Rights) -> str:
+    return "Admin" if rights.canAdmin else "Approver" if rights.canApprove else "Submitter"
+
+
+@auth_router.get("/auth/dev-users", include_in_schema=False)
+def get_dev_users():
+    """Local demo only: the personas of the eg-auth stub (EG_AUTH_DEV_USERS) for the frontend's
+    user switch. 404 unless EG_AUTH_DEV_MODE=True, so never in the cluster."""
+    if os.getenv("EG_AUTH_DEV_MODE", "").lower() != "true":
+        raise HTTPException(status_code=404)
+    from eg_auth.fastapi import _AuthDevSettings  # the stub; only loaded in dev mode
+
+    return [
+        {"name": u["name"], "email": u["email"], "role": _role(map_groups_to_rights(list(u.get("groups", []))))}
+        for u in _AuthDevSettings().dev_users
+    ]
 
 
 @auth_router.get("/auth/rights")

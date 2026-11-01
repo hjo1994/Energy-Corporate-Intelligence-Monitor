@@ -305,3 +305,34 @@ def test_similar_use_cases(client, submit, db_path, as_approver):
     process(db_path, created["user_input_id"], 6)
     similar = client.get("/api/use-cases/1/similar").json()  # Alpha: "100% automation"
     assert [s["name"] for s in similar] == ["Invoice automation"] and 0 < similar[0]["score"] < 1
+
+
+DEMO_USERS = (
+    '[{"name": "Jonas", "email": "jonas@demo.local", "groups": ["app_50hzt_aap_communities_all__x"]},'
+    ' {"name": "Demo Approver", "email": "approver@demo.local", "groups": ["ai_cockpit_admins"]}]'
+)
+JONAS = {"Authorization": "Bearer dev:jonas@demo.local"}
+APPROVER = {"Authorization": "Bearer dev:Approver@demo.local"}
+
+
+def test_demo_one_user_submits_another_approves(client, db_path, monkeypatch):
+    monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
+    assert client.get("/api/auth/dev-users").json() == [
+        {"name": "Jonas", "email": "jonas@demo.local", "role": "Submitter"},
+        {"name": "Demo Approver", "email": "approver@demo.local", "role": "Admin"},
+    ]
+    assert client.get("/api/auth/rights").json()["user"] == "Jonas"  # no token: the first persona
+    created = client.post("/api/initiatives", json=form1(), headers=JONAS)
+    assert created.status_code == 201, created.text
+    assert client.get("/api/approvals", headers=JONAS).status_code == 403
+
+    process(db_path, created.json()["user_input_id"], 6)
+    inbox = client.get("/api/approvals", headers=APPROVER).json()
+    assert [(i["id"], i["submitted_by"], i["can_decide"]) for i in inbox] == [(6, "Jonas", True)]
+    resp = client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3}, headers=APPROVER)
+    assert resp.status_code == 200, resp.text
+    assert client.get("/api/approvals", headers=APPROVER).json() == []
+
+    mine = client.get("/api/me/use-cases", headers=JONAS).json()
+    assert [(u["id"], u["approval_status"], u["todos"]) for u in mine] == [(6, "approved", ["complete_details"])]
+    assert client.get("/api/me/use-cases", headers=APPROVER).json() == []  # not the approver's own

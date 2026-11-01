@@ -260,3 +260,10 @@ def test_a_new_silver_version_shows_until_gold_has_assessed_it(client, db_path):
     assert beta["potential_value_eur"] == pytest.approx(7200.0)  # provisional, same formula as gold
     assert beta["risk_classification"]["id"] == 3 and beta["realized_value_eur"] is None
     assert client.get("/api/initiatives").json()["total"] == 4  # still one row per use case
+
+
+
+def test_dev_users_only_in_dev_mode(client, monkeypatch):
+    assert client.get("/api/auth/dev-users").json() == []  # no personas: the single dev user
+    monkeypatch.setenv("EG_AUTH_DEV_MODE", "false")
+    assert client.get("/api/auth/dev-users").status_code == 404
