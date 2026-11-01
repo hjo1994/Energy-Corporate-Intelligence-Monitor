@@ -340,6 +340,7 @@ def test_demo_presenter_switches_to_approver(client, db_path, monkeypatch):
     demo = {**JONAS, "X-Demo-Role": "approver"}
     rights = client.get("/api/auth/rights", headers=JONAS).json()
     assert (rights["rights"]["canApprove"], rights["demo_presenter"], rights["demo_approver"]) == (False, True, False)
+    assert (rights["email"], rights["groups"]) == ("jonas@demo.local", ["app_50hzt_aap_communities_all__x"])
 
     # as a normal user: submit, no inbox
     created = client.post("/api/initiatives", json=form1(), headers=JONAS)

@@ -95,6 +95,9 @@ def get_user_rights(request: Request, user_info: Annotated[UserInfo, authorizer(
     acting = acting_user(request, user_info)
     return {
         "user": acting.name,
+        # what SSO delivered: the values AI_COCKPIT_DEMO_PRESENTERS can name
+        "email": getattr(user_info, "email", None),
+        "groups": list(getattr(user_info, "groups", None) or []),
         "rights": acting.rights,
         # may switch to demo approver (AI_COCKPIT_DEMO_PRESENTERS), and whether this request did
         "demo_presenter": is_demo_presenter(user_info),

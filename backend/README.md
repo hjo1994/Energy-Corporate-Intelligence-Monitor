@@ -103,7 +103,8 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   bekommen sie `canApprove`. Die Identität bleibt die SSO-Identität, Aktionen
   im Approver-Modus stehen unter „<Name> (demo approver)“ in den Daten. Für
   alle anderen wird der Header ignoriert (`app/auth.py`, `acting_user`).
-  `/api/auth/rights` meldet zusätzlich `demo_presenter` und `demo_approver`.
+  `/api/auth/rights` meldet zusätzlich `demo_presenter`, `demo_approver` sowie
+  `email` und `groups`, wie SSO sie liefert (die Werte für die Liste).
 - **Lokaler Nutzer:** Der Stub meldet „Dev User“ mit `EG_AUTH_DEV_GROUPS` an.
   Mit `EG_AUTH_DEV_USERS` (JSON-Liste mit `name`, `email`, `groups`) bekommt er
   einen anderen Namen und eine E-Mail, z. B.
