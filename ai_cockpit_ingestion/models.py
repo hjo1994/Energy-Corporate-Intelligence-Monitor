@@ -173,7 +173,8 @@ USER_ACTION_TABLE = Table(
     Column(RECORD_ID_COLUMN, Integer, primary_key=True, autoincrement=True),
     Column("Timestamp", DateTime, nullable=False),
     Column("SourceFileID", String, nullable=False, default=USER_INPUT_SOURCE_FILE_ID),
-    Column("SubmittedBy", String, nullable=False),
+    Column("SubmittedBy", String, nullable=False),  # display name of the signed-in user
+    Column("SubmittedByUserID", Integer, ForeignKey("AppUser.ID"), nullable=True),  # NULL before the user table
     # the action
     Column("ActionType", String, nullable=False),
     Column("UseCaseID", Integer, nullable=True),  # empty for create
@@ -249,8 +250,39 @@ USER_ACTION_TABLE = Table(
 # --- Config -----------------------------------------------------------------
 
 
+USER_ROLES = ("user", "approver")
+OWNER_SOURCES = ("excel", "app")
+
+
+class AppUser(Base):
+    """Everyone who signed in to the cockpit (created by the Backend on the
+    first request). Role 'approver' may approve and reject use cases; a 'user'
+    only sees and edits their own. A user becomes an Owner (Owner.UserID) with
+    their first use case."""
+
+    __tablename__ = "AppUser"
+    __table_args__ = (
+        CheckConstraint("\"Role\" IN ('user', 'approver')", name="ck_appuser_role"),
+        Index("ux_appuser_email", "Email", unique=True),
+        Index("ux_appuser_externalid", "ExternalID", unique=True),
+    )
+
+    id = Column("ID", Integer, primary_key=True)
+    email = Column("Email", String, nullable=True)  # lowercase; NULL when the SSO token has none
+    external_id = Column("ExternalID", String, nullable=True)  # SSO subject (oid/sub), when available
+    name = Column("Name", String, nullable=False)  # display name from the SSO token
+    role = Column("Role", String, nullable=False, default="user", server_default="user")
+    is_active = Column("IsActive", Boolean, nullable=False, default=True, server_default="1")
+
+    owner = relationship("Owner", back_populates="user", uselist=False)
+
+
 class Owner(Base):
     __tablename__ = "Owner"
+    __table_args__ = (
+        CheckConstraint("\"Source\" IN ('excel', 'app')", name="ck_owner_source"),
+        Index("ux_owner_userid", "UserID", unique=True),
+    )
 
     id = Column("ID", Integer, primary_key=True)
     # The source has no field literally named "Category". Confirmed mapping:
@@ -259,10 +291,13 @@ class Owner(Base):
     category = Column("Category", String, nullable=True)
     name = Column("Name", String, nullable=False)
     department = Column("Department", String, nullable=True)
-    # Sign-in e-mail, to match the signed-in user to an owner or lead (UI);
-    # the sheets have none, so it is filled in the config by hand.
-    email = Column("Email", String, nullable=True)
+    # The signed-in user behind this owner: set when a user submits their
+    # first use case (a new owner with Source 'app', or an Excel owner of the
+    # same name). NULL for Excel owners who never signed in.
+    user_id = Column("UserID", Integer, ForeignKey("AppUser.ID"), nullable=True)
+    source = Column("Source", String, nullable=False, default="excel", server_default="excel")
 
+    user = relationship("AppUser", back_populates="owner")
     initiatives = relationship("Initiative", back_populates="owner", foreign_keys="Initiative.owner_id")
 
 
@@ -471,6 +506,9 @@ class Initiative(Base):
     # FK BusinessTransactionID: the bronze record this version was built from.
     business_transaction_id = Column("BusinessTransactionID", Integer, ForeignKey("BusinessTransaction.ID"), nullable=False)
     changed_by = Column("ChangedBy", String, nullable=True)  # SubmittedBy of the user action; NULL for sheets
+    # Who created the use case / made this version (SubmittedByUserID); NULL for sheets.
+    created_by_user_id = Column("CreatedByUserID", Integer, ForeignKey("AppUser.ID"), nullable=True)
+    changed_by_user_id = Column("ChangedByUserID", Integer, ForeignKey("AppUser.ID"), nullable=True)
 
     # When this version was written.
     timestamp = Column("Timestamp", DateTime, nullable=False)
@@ -547,7 +585,10 @@ class AssessedInitiative(Base):
 
 # Silver attributes that make up a version's content (everything except the
 # version bookkeeping); compared to tell whether a recomputation changed anything.
-VERSION_BOOKKEEPING = ("id", "use_case_id", "key_hash", "row_hash", "business_transaction_id", "changed_by", "timestamp")
+VERSION_BOOKKEEPING = (
+    "id", "use_case_id", "key_hash", "row_hash", "business_transaction_id",
+    "changed_by", "created_by_user_id", "changed_by_user_id", "timestamp",
+)
 VERSION_CONTENT = tuple(c.key for c in Initiative.__mapper__.column_attrs if c.key not in VERSION_BOOKKEEPING)
 
 

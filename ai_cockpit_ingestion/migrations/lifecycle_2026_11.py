@@ -15,9 +15,10 @@ would stay as it is. This migration:
    UserActionExtracts as ActionType 'create' (same IDs; the old table is
    kept untouched, so nothing in bronze is lost).
 
-Independently of that, Owner gets the new nullable column Email (ALTER TABLE),
-and a database from an earlier build of this data model (one Stagegate +
-PassedAt per use case) gets the four stage gate dates (_add_gate_dates).
+Independently of that, a database from an earlier build of this data model
+(one Stagegate + PassedAt per use case) gets the four stage gate dates
+(_add_gate_dates), and every database gets the user table AppUser with the
+columns pointing to it (_add_app_users).
 
 Idempotent: does nothing when Initiative already has a UseCaseID column, or
 when there is no Initiative table yet (fresh database). Runs automatically
@@ -42,13 +43,44 @@ def needs_migration(engine: Engine) -> bool:
     return "UseCaseID" not in {c["name"] for c in inspector.get_columns("Initiative")}
 
 
-def _add_owner_email(engine: Engine) -> None:
-    """Owner.Email (new nullable column): ALTER TABLE, since create_all leaves existing tables alone."""
+def _add_app_users(engine: Engine) -> None:
+    """The user table (AppUser) and the columns that point to it (11/2026).
+
+    AppUser itself comes from create_all; the new columns of existing tables
+    are added by ALTER TABLE: Owner.UserID + Owner.Source ('excel' for the
+    owners already there), UserActionExtracts.SubmittedByUserID,
+    Initiative.CreatedByUserID / ChangedByUserID. Owner.Email (an earlier
+    build) is dropped again; the signed-in user is matched through AppUser."""
+    from ai_cockpit_ingestion.models import AppUser, USER_ACTION_TABLE_NAME
+
+    AppUser.__table__.create(engine, checkfirst=True)
     inspector = inspect(engine)
-    if "Owner" in inspector.get_table_names() and "Email" not in {c["name"] for c in inspector.get_columns("Owner")}:
-        with engine.begin() as conn:
-            conn.execute(text('ALTER TABLE "Owner" ADD COLUMN "Email" VARCHAR'))
-        log.info("Added Owner.Email")
+    tables = set(inspector.get_table_names())
+    new_columns = {
+        "Owner": (
+            ('"UserID"', 'INTEGER REFERENCES "AppUser" ("ID")'),
+            ('"Source"', "VARCHAR NOT NULL DEFAULT 'excel' CHECK (\"Source\" IN ('excel', 'app'))"),
+        ),
+        USER_ACTION_TABLE_NAME: (('"SubmittedByUserID"', 'INTEGER REFERENCES "AppUser" ("ID")'),),
+        "Initiative": (
+            ('"CreatedByUserID"', 'INTEGER REFERENCES "AppUser" ("ID")'),
+            ('"ChangedByUserID"', 'INTEGER REFERENCES "AppUser" ("ID")'),
+        ),
+    }
+    with engine.begin() as conn:
+        for table, columns in new_columns.items():
+            if table not in tables:
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for name, definition in columns:
+                if name.strip('"') not in existing:
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {name} {definition}'))
+                    log.info("Added %s.%s", table, name)
+        if "Owner" in tables:
+            conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS "ux_owner_userid" ON "Owner" ("UserID")'))
+            if "Email" in {c["name"] for c in inspector.get_columns("Owner")}:
+                conn.execute(text('ALTER TABLE "Owner" DROP COLUMN "Email"'))  # SQLite >= 3.35
+                log.info("Dropped Owner.Email")
 
 
 _GATE_TABLES = ("Initiative", "AssessedInitiatives")
@@ -106,8 +138,8 @@ def upgrade(engine: Engine) -> bool:
     """Migrate if needed; True when silver was rebuilt."""
     from ai_cockpit_ingestion.models import USER_ACTION_TABLE, USER_ACTION_TABLE_NAME, Base
 
-    _add_owner_email(engine)
     _add_gate_dates(engine)
+    _add_app_users(engine)
     if not needs_migration(engine):
         return False
     with engine.begin() as conn:

@@ -155,7 +155,18 @@ Formular 2 (`AILayer`, `EnablingTeam`, `EUAIActClass`, `EUAIActRole`,
 Value Domain, Autonomy Level, Zielgruppen als Text; `SafetyComponent`,
 `WorksCouncilApprovedAt`, `ExpectedUsers`, `MeasuredBenefits`, `ActualCapex`,
 `ActualOpex`). `SourceFileID` ist immer `user-input`, `SubmittedBy` der
-angemeldete Nutzer (in Silber `ChangedBy`).
+angemeldete Nutzer (in Silber `ChangedBy`), `SubmittedByUserID` sein Eintrag in
+`AppUser` (in Silber `ChangedByUserID`; `CreatedByUserID` = der Einreicher des
+Use Cases, in jeder Version gleich).
+
+**Nutzer** (`AppUser`): jeder, der sich angemeldet hat. Das Backend legt den
+Eintrag bei der ersten Anfrage an (`Email` klein geschrieben, `ExternalID`,
+`Name` aus dem SSO, `Role` `user` | `approver`, `IsActive`). Mit dem ersten
+Use Case wird ein Nutzer Owner: das Backend verknüpft ihn mit einem
+Excel-Owner gleichen Namens (`Owner.UserID`) oder legt einen neuen Owner mit
+`Source = 'app'` an. Owner aus den Blättern haben `Source = 'excel'`. Die
+Migration (`_add_app_users`) legt Tabelle und Spalten in bestehenden
+Datenbanken an und entfernt `Owner.Email` wieder.
 
 **Gold** (`AssessedInitiatives`, `silver_to_gold`, `operators/silver_to_gold.py`,
 Formeln in `transforms/gold.py`): eine Zeile je Use Case aus seiner aktuellen

@@ -55,7 +55,8 @@ def test_old_database_is_migrated_and_silver_rebuilt(tmp_path):
         assert {"UseCaseID", "RunningCosts", "EmployeePersonalData"} <= {
             c["name"] for c in inspector.get_columns("Initiative")}
         assert "RiskClassificationID" not in {c["name"] for c in inspector.get_columns("Initiative")}
-        assert "Email" in {c["name"] for c in inspector.get_columns("Owner")}
+        assert {"UserID", "Source"} <= {c["name"] for c in inspector.get_columns("Owner")}
+        assert "AppUser" in inspector.get_table_names()
         assert {"AssessedInitiatives", USER_ACTION_TABLE_NAME, "UserInput_Initiatives_Extract"} <= set(
             inspector.get_table_names())
         with engine.connect() as conn:
@@ -134,3 +135,32 @@ def test_last_gate_becomes_one_date_per_gate(tmp_path):
     with engine.connect() as c:
         assert len(c.execute(select(USER_ACTION_TABLE)).all()) == 2
     engine.dispose()
+
+
+def test_user_table_and_its_columns_are_added(tmp_path):
+    """A database from before the user table (Owner.Email, no user columns) gets AppUser and the user columns."""
+    path = tmp_path / "before_users.db"
+    get_engine(path).dispose()
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        DROP TABLE "AppUser";
+        DROP INDEX "ux_owner_userid";
+        CREATE TABLE "Owner_old" ("ID" INTEGER PRIMARY KEY, "Category" VARCHAR, "Name" VARCHAR NOT NULL,
+            "Department" VARCHAR, "Email" VARCHAR);
+        DROP TABLE "Owner";
+        ALTER TABLE "Owner_old" RENAME TO "Owner";
+        INSERT INTO "Owner" ("ID", "Name", "Email") VALUES (1, 'Owner A', 'a@x.de');
+    """)
+    conn.commit()
+    conn.close()
+    for _ in range(2):  # idempotent
+        engine = get_engine(path)
+        inspector = inspect(engine)
+        assert "AppUser" in inspector.get_table_names()
+        owner_columns = {c["name"] for c in inspector.get_columns("Owner")}
+        assert {"UserID", "Source"} <= owner_columns and "Email" not in owner_columns
+        assert "SubmittedByUserID" in {c["name"] for c in inspector.get_columns(USER_ACTION_TABLE_NAME)}
+        assert {"CreatedByUserID", "ChangedByUserID"} <= {c["name"] for c in inspector.get_columns("Initiative")}
+        with Session(engine) as s:
+            assert (s.get(Owner, 1).name, s.get(Owner, 1).source) == ("Owner A", "excel")
+        engine.dispose()

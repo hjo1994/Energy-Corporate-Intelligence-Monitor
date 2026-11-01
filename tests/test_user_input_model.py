@@ -69,9 +69,9 @@ def test_table_is_created_with_the_data_model(engine):
     assert columns[:4] == ["ID", "Timestamp", "SourceFileID", "SubmittedBy"]
     assert {"ActionType", "UseCaseID", "NeedsGateDate", "RetireGateDate", "LeadID", "CasesPerYear", "LeadTimeSaved", "EstimateBasis",
             "ProhibitedPractice", "AILayer", "MeasuredBenefits", "ActualCapex", "ActualOpex"} <= set(columns)
-    assert len(columns) == 62
+    assert len(columns) == 63
     assert {fk["referred_table"] for fk in inspector.get_foreign_keys(USER_ACTION_TABLE_NAME)} == {
-        "Owner", "ValueType", "SolutionType",
+        "AppUser", "Owner", "ValueType", "SolutionType",
     }
     assert sorted(i["column_names"] for i in inspector.get_indexes(USER_ACTION_TABLE_NAME)) == [
         ["Timestamp"], ["UseCaseID"],

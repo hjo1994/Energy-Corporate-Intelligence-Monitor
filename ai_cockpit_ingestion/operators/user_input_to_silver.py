@@ -35,6 +35,9 @@ Differences to the sheet mode (operators.bronze_to_silver):
   estimated buckets until those are entered. ActualCosts = ActualCapex +
   ActualOpex, merged the same way.
 - RowHash of a UI version is the hash of its content (versions.content_hash).
+- ChangedBy / ChangedByUserID of a version: SubmittedBy / SubmittedByUserID of
+  its record; CreatedByUserID: SubmittedByUserID of the create record, kept in
+  every later version (NULL for sheet use cases).
 - The first user action on a sheet use case makes it UI-owned: the sheet
   import leaves it alone from then on.
 - force=True additionally recomputes the current version of every use case
@@ -161,7 +164,7 @@ class _Context:
             content["status"] = "rejected"
         if same_content(current, content):
             return "unchanged"
-        self._add_version(current.use_case_id, current.key_hash, content, transaction, record["SubmittedBy"])
+        self._add_version(current.use_case_id, current.key_hash, content, transaction, record, current.created_by_user_id)
         return "updated"
 
     def _create(self, record: dict, transaction: BusinessTransaction) -> str:
@@ -170,7 +173,7 @@ class _Context:
         if existing is not None:
             return self._conflict(record, f"the name is already used by use case {existing.use_case_id} in this business unit")
         content = self._merge(None, record, [record])
-        self._add_version(self.use_case_ids.next(), key, content, transaction, record["SubmittedBy"])
+        self._add_version(self.use_case_ids.next(), key, content, transaction, record, record.get("SubmittedByUserID"))
         return "inserted"
 
     def recompute(self, use_case_id: int) -> str:
@@ -183,6 +186,7 @@ class _Context:
             Initiative(
                 **content, use_case_id=use_case_id, key_hash=current.key_hash, row_hash=content_hash(content),
                 business_transaction_id=current.business_transaction_id, changed_by=current.changed_by,
+                created_by_user_id=current.created_by_user_id, changed_by_user_id=current.changed_by_user_id,
                 timestamp=self.now,
             )
         )
@@ -197,11 +201,13 @@ class _Context:
         )
         return "conflicts"
 
-    def _add_version(self, use_case_id, key, content, transaction, changed_by) -> None:
+    def _add_version(self, use_case_id, key, content, transaction, record, created_by_user_id) -> None:
         self.session.add(
             Initiative(
                 **content, use_case_id=use_case_id, key_hash=key, row_hash=content_hash(content),
-                business_transaction=transaction, changed_by=changed_by, timestamp=self.now,
+                business_transaction=transaction, changed_by=record["SubmittedBy"],
+                created_by_user_id=created_by_user_id, changed_by_user_id=record.get("SubmittedByUserID"),
+                timestamp=self.now,
             )
         )
 

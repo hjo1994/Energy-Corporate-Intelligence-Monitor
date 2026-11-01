@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ai_cockpit_ingestion.db import get_engine
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
+    AppUser,
     USER_ACTION_TABLE,
     USER_ACTION_TABLE_NAME,
     BusinessTransaction,
@@ -283,3 +284,19 @@ def test_sheet_runs_do_not_deactivate_user_input(engine):
                    "Timestamp": datetime.datetime(2026, 10, 23), "SourceFileID": "load.xlsx"}])
     _silver(engine, source="it")
     assert _initiatives(engine)["Gamma"].is_active is True
+
+
+def test_versions_carry_the_signed_in_users(engine):
+    with Session(engine) as s, s.begin():
+        s.add_all([AppUser(id=1, email="jonas@demo.local", name="Jonas"),
+                   AppUser(id=2, email="sara@demo.local", name="Sara", role="approver")])
+    _submit(engine, "Smart Invoice Check", SubmittedByUserID=1)
+    _silver(engine)
+    use_case_id = _initiatives(engine)["Smart Invoice Check"].use_case_id
+    _act(engine, "approve", use_case_id, LeadID=2, SubmittedByUserID=2)
+    _silver(engine)
+    created, approved = _versions(engine, use_case_id)
+    assert (created.created_by_user_id, created.changed_by_user_id) == (1, 1)
+    assert (approved.created_by_user_id, approved.changed_by_user_id, approved.status) == (1, 2, "approved")
+    with Session(engine) as s:
+        assert s.get(AppUser, 1).role == "user" and s.get(Owner, 1).source == "excel"
