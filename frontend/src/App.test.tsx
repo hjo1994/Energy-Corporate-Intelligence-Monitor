@@ -295,20 +295,20 @@ describe("demo role switch", () => {
 
   beforeEach(() => window.sessionStorage.clear());
 
-  it("lets a demo presenter switch from normal user to demo admin", async () => {
-    answer({ rights: { canApprove: false, canAdmin: false }, demo_presenter: true, demo_admin: false });
+  it("lets a demo presenter switch from normal user to demo approver", async () => {
+    answer({ rights: { canApprove: false, canAdmin: false }, demo_presenter: true, demo_approver: false });
     renderAt("/my");
     const normal = await screen.findByRole("radio", { name: "Normal user" });
     expect(normal).toHaveAttribute("aria-checked", "true");
     expect(within(screen.getByRole("navigation", { name: "Views" })).queryByRole("link", { name: /Approvals/ })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "Admin (demo)" }));
-    expect(window.sessionStorage.getItem("ai-cockpit.demo-admin")).toBe("true");
+    await userEvent.click(screen.getByRole("radio", { name: "Approver (demo)" }));
+    expect(window.sessionStorage.getItem("ai-cockpit.demo-approver")).toBe("true");
   });
 
-  it("shows the approvals while the presenter is demo admin", async () => {
-    answer({ rights: { canApprove: true, canAdmin: true }, demo_presenter: true, demo_admin: true, user: "Jonas (demo admin)" });
+  it("shows the approvals while the presenter is demo approver", async () => {
+    answer({ rights: { canApprove: true, canAdmin: false }, demo_presenter: true, demo_approver: true, user: "Jonas (demo approver)" });
     renderAt("/my");
-    expect(await screen.findByRole("radio", { name: "Admin (demo)" })).toHaveAttribute("aria-checked", "true");
+    expect(await screen.findByRole("radio", { name: "Approver (demo)" })).toHaveAttribute("aria-checked", "true");
     expect(within(screen.getByRole("navigation", { name: "Views" })).getByRole("link", { name: /Approvals/ })).toBeInTheDocument();
   });
 

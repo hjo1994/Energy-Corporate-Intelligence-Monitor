@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { fetchApprovals, fetchFeatures, fetchMyUseCases } from "./api/client";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
-import { DevUserSwitch } from "./shared/auth/DevUserSwitch";
 import { DemoRoleSwitch } from "./components/DemoRoleSwitch";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
@@ -79,9 +78,7 @@ function Shell() {
           </NavLink>
         )}
         <DemoRoleSwitch />
-        {AUTH_DEV_BYPASS ? (
-          <DevUserSwitch />
-        ) : (
+        {!AUTH_DEV_BYPASS && (
           <NavLink to="/logout" className="logout">
             Sign out
           </NavLink>

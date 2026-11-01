@@ -1,5 +1,5 @@
 import { serviceApi } from "./serviceApi";
-import { chooseDemoAdmin, storedDemoAdmin } from "./demoRole";
+import { chooseDemoApprover, storedDemoApprover } from "./demoRole";
 
 vi.mock("./serviceApi", () => ({ serviceApi: { connection: { defaults: { headers: { common: {} } } } } }));
 
@@ -10,12 +10,12 @@ describe("demo role", () => {
   beforeEach(() => window.sessionStorage.clear());
 
   it("sends the demo role header and keeps the choice per tab", () => {
-    expect(storedDemoAdmin()).toBe(false);
-    chooseDemoAdmin(true);
-    expect(headers["X-Demo-Role"]).toBe("admin");
-    expect(storedDemoAdmin()).toBe(true);
-    chooseDemoAdmin(false);
+    expect(storedDemoApprover()).toBe(false);
+    chooseDemoApprover(true);
+    expect(headers["X-Demo-Role"]).toBe("approver");
+    expect(storedDemoApprover()).toBe(true);
+    chooseDemoApprover(false);
     expect(headers["X-Demo-Role"]).toBeUndefined();
-    expect(storedDemoAdmin()).toBe(false);
+    expect(storedDemoApprover()).toBe(false);
   });
 });

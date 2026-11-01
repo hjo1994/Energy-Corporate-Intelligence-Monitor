@@ -7,16 +7,13 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
-import { applyDevUser, storedDevUser } from "./shared/auth/devUsers";
-import { applyDemoAdmin, storedDemoAdmin } from "./shared/api/demoRole";
+import { applyDemoApprover, storedDemoApprover } from "./shared/api/demoRole";
 
 const root = createRoot(document.getElementById("root")!);
 // demo presenters: the role this tab was switched to (the backend ignores it for everyone else)
-applyDemoAdmin(storedDemoAdmin());
+applyDemoApprover(storedDemoApprover());
 
 if (AUTH_DEV_BYPASS) {
-  // the demo persona this tab was switched to (see DevUserSwitch)
-  applyDevUser(storedDevUser());
   root.render(
     <StrictMode>
       <BrowserRouter>

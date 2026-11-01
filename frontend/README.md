@@ -189,19 +189,11 @@ Dev-Server (`import.meta.env.DEV`) — ein Produktions-Build ignoriert ihn, auch
 wenn die Variable in der Build-Umgebung steht (getestet).
 
 **Demo-Rolle (auch in Produktion):** Konten aus `AI_COCKPIT_DEMO_PRESENTERS`
-(Backend) sehen oben den Schalter **Normal user / Admin (demo)**. Sie arbeiten
-als normaler Nutzer und wechseln für eine Demo zu Admin-Rechten: das Frontend
-sendet dann `X-Demo-Role: admin` (je Browser-Tab gemerkt), das Backend wertet
-den Header nur für diese Konten aus. Allen anderen wird der Schalter nicht
-angezeigt.
-
-**Demo mit zwei Personen (Dev-Bypass):** Kennt das Backend Personas
-(`EG_AUTH_DEV_USERS`, siehe `backend/README.md`), erscheint oben statt
-„Sign out“ ein Auswahlfeld **Demo user**. Die Wahl gilt je Browser-Tab
-(sessionStorage) und wird als Token `dev:<email>` gesendet. So zeigt ein
-Fenster den Einreicher, ein zweites den Approver mit seiner Inbox. Im
-Produktions-Build gibt es das Feld nicht; dort meldet sich jede Person per SSO
-an.
+(Backend) sehen oben den Schalter **Normal user / Approver (demo)**. Sie
+arbeiten als normaler Nutzer und wechseln für eine Demo in den Approver-Modus:
+das Frontend sendet dann `X-Demo-Role: approver` (je Browser-Tab gemerkt), das
+Backend wertet den Header nur für diese Konten aus. Allen anderen wird der
+Schalter nicht angezeigt.
 
 ## Lokal starten
 

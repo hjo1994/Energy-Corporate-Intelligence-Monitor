@@ -5,10 +5,10 @@ import { serviceApi } from "./serviceApi";
  * rights for a demo: the frontend sends "X-Demo-Role: admin" and the backend honours it only for
  * them. The choice is kept per browser tab.
  */
-const KEY = "ai-cockpit.demo-admin";
+const KEY = "ai-cockpit.demo-approver";
 const HEADER = "X-Demo-Role";
 
-export function storedDemoAdmin(): boolean {
+export function storedDemoApprover(): boolean {
   try {
     return window.sessionStorage.getItem(KEY) === "true";
   } catch {
@@ -23,18 +23,18 @@ function commonHeaders(): Record<string, string> | null {
   return connection?.defaults?.headers?.common ?? null;
 }
 
-export function applyDemoAdmin(on: boolean): void {
+export function applyDemoApprover(on: boolean): void {
   const headers = commonHeaders();
   if (!headers) return;
-  if (on) headers[HEADER] = "admin";
+  if (on) headers[HEADER] = "approver";
   else delete headers[HEADER];
 }
 
-export function chooseDemoAdmin(on: boolean): void {
+export function chooseDemoApprover(on: boolean): void {
   try {
     window.sessionStorage.setItem(KEY, String(on));
   } catch {
     // no storage: the choice lasts until the page is reloaded
   }
-  applyDemoAdmin(on);
+  applyDemoApprover(on);
 }

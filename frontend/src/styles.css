@@ -57,9 +57,6 @@ main { display: flex; flex-direction: column; gap: 22px; }
 .view-as-opt { font: inherit; border: 0; background: transparent; color: var(--ink); padding: 4px 10px; border-radius: 999px; cursor: pointer; }
 .view-as-opt:hover { background: var(--accent-soft); }
 .view-as-current, .view-as-current:hover { background: var(--accent); color: #fff; }
-.dev-user { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-soft); }
-.dev-user-label { white-space: nowrap; }
-.dev-user select { font: inherit; color: var(--ink); max-width: 220px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
 .primary-link { color: var(--accent); font-weight: 600; }
 .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .login-card { width: min(420px, 100%); padding: 32px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }

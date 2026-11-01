@@ -130,9 +130,9 @@ const NO_RIGHTS: Rights = { canApprove: false, canAdmin: false };
 /** What the signed-in user may do; no rights if the backend cannot tell. */
 export async function fetchRights(): Promise<Rights> {
   try {
-    const r = await serviceApi.get<{ rights?: Partial<Rights>; demo_presenter?: boolean; demo_admin?: boolean }>("/auth/rights");
+    const r = await serviceApi.get<{ rights?: Partial<Rights>; demo_presenter?: boolean; demo_approver?: boolean }>("/auth/rights");
     const rights: Rights = { canApprove: r?.rights?.canApprove === true, canAdmin: r?.rights?.canAdmin === true };
-    if (r?.demo_presenter) Object.assign(rights, { demoPresenter: true, demoAdmin: r.demo_admin === true });
+    if (r?.demo_presenter) Object.assign(rights, { demoPresenter: true, demoApprover: r.demo_approver === true });
     return rights;
   } catch {
     return NO_RIGHTS;
