@@ -1,7 +1,9 @@
 # Frontend — React Dashboard
 
 Eigenes Kubernetes-Deployment, eigene Anwendung. Konsumiert ausschließlich die
-read-only Backend-API (`/api/initiatives`); kein eigener Datenzugriff.
+Backend-API (`/api/...`); kein eigener Datenzugriff. Geschrieben wird nur über die
+Lifecycle-Endpunkte (Formular 1, Formular 2, Entscheidung), die im Backend als
+User-Actions in Bronze landen.
 React 18 + Vite + TypeScript (Versionen wie das Plattform-Template, damit sie
 der Firmen-Spiegel führt; mit diesen Versionen getestet), Schrift (IBM Plex)
 als Dateien im Repo (`src/fonts/`, OFL-Lizenzen liegen bei; bewusst keine
@@ -72,6 +74,60 @@ im Browser — damit reagieren auch die Kennzahlen auf die Filter, was
 `/api/initiatives/summary` nicht kann. Bei deutlich mehr als einigen tausend
 Initiativen wäre das neu zu überdenken.
 
+## Lifecycle: Ideen, Freigabe, Formular 2
+
+Nach den abgenommenen Entwürfen (F1 = bisheriges Formular mit Anpassungen,
+User-Ansicht A, Approver-Ansicht A). Formular 2 ist **nicht mehr nach Gates
+gegliedert**: Diese Zuordnung von Feldern zu Gates war nirgends dokumentiert und
+ist entfernt. Modelliert ist stattdessen die Zuordnung **Stage ↔ Stage Gate** aus
+der Form-2-Excel (Sheet1, Zeilen der Gate-Daten: „scope gate must be passed before
+PoC, deploy gate must be passed before production“), `src/domain/lifecycle.ts`,
+gleich wie im Backend (`app/lifecycle.py`, als `stage_gate_rules` in
+`/api/form-options`):
+
+| Stage | Scope-Gate | Deploy-Gate |
+|---|---|---|
+| Idea, Exploration | noch nicht passiert (geplant oder leer) | noch nicht passiert |
+| PoC, MVP, Implementation | passiert (Datum bis heute) | noch nicht passiert |
+| Production, Retired | passiert | passiert |
+| On hold, Cancelled, Unknown | keine Regel | keine Regel |
+
+Jedes Gate hat ein Datum (bis heute = passiert, später = geplant); gesetzte Daten
+in Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel.
+
+- **+ New AI idea** (`/new`) — Formular 1. **Alle Zahlen aus Wertebereichen**
+  (Auswahllisten, `value_domains` aus `/api/form-options`, Fallback
+  `VALUE_DOMAINS` in `src/domain/userInput.ts`; gespeichert wird der Wert der Spanne),
+  laufende Kosten als Spanne, AI layer statt Solution Type. Je nach Stage fragt das
+  Formular per Kalender nach den Daten der schon passierten Gates (PoC → Scope-Gate,
+  Production → Scope und Deploy; Needs optional). Nach dem Absenden geht es zu „My use cases“.
+- **My use cases** (`/my`) — alles, was ich eingereicht habe, besitze oder leite
+  (Filter nach Rolle), Kennzahlen, „Needs your attention“ aus den To-dos des
+  Backends (`revise_and_resubmit`, `complete_details`), Tabelle mit Freigabe,
+  Stage, letztem passierten Gate (`last_gate`, Hinweis „check dates“, wenn Stage und
+  Daten nicht passen), Potenzial (Vorschau mit `*`), Risiko und dem nächsten Schritt.
+- **Use case** (`/use-cases/:id`) — **Stage und Stage Gates**: die Stages als
+  Abfolge (Idea › Exploration › Needs/Scope/Deploy/Retire-Gate dazwischen … Retired),
+  daneben „On hold“ und „Cancelled“; Stages unter der aus Formular 1
+  (`stage_floor`) sind gesperrt. Darunter die vier Gate-Daten mit Status passed /
+  planned / no date; ein passiertes Gate bleibt fest, außer die Stage verlangt es
+  wieder in der Zukunft. Passen Stage und Daten nicht, zeigt das Gate die Meldung
+  und Speichern ist gesperrt. **Die Idee** (Name, Beschreibung, Kostenschätzungen)
+  ist nach dem Einreichen nur lesbar, außer beim Überarbeiten einer abgelehnten Idee.
+  **Details (Formular 2)** jederzeit, auch vor der Freigabe. Gespeichert werden nur
+  geänderte Felder, mit `base_revision` (409 → Meldung, neu laden).
+- **Approvals** (`/approvals`, nur mit `canApprove` aus `/api/auth/rights`) —
+  Inbox der wartenden Ideen; rechts Value-, Risk- und Effort-Check, Re-use-Check
+  (`/similar`) und die Entscheidung: Lead zuweisen → freigeben (passiert das
+  Needs-Gate heute, außer der Einreicher hat ein vergangenes Datum angegeben), oder
+  mit Kommentar ablehnen.
+
+**Noch nicht verarbeitet:** Alles, was in der UI gespeichert, aber noch nicht in
+Silber/Gold verarbeitet ist, bleibt sichtbar und ist markiert (`processing` vom
+Backend): „Estimate pending“ (neue Idee), „Changes pending“ (gespeicherte
+Änderungen), „Not assessed“ (für Gold fehlen Eingaben). Solange etwas wartet,
+lesen die Ansichten die Daten alle paar Sekunden neu.
+
 ## Abweichungen vom Entwurf — wegen der echten Daten
 
 - **9 statt 4 Stage-Werte** (Idea, Exploration, PoC, MVP, Implementation,
@@ -131,6 +187,13 @@ ein Platzhalter.
 Backend muss mit `EG_AUTH_DEV_MODE=True` laufen. Der Bypass gilt nur im
 Dev-Server (`import.meta.env.DEV`) — ein Produktions-Build ignoriert ihn, auch
 wenn die Variable in der Build-Umgebung steht (getestet).
+
+**Demo-Rolle (auch in Produktion):** Konten aus `AI_COCKPIT_DEMO_PRESENTERS`
+(Backend) sehen oben den Schalter **Normal user / Approver (demo)**. Sie
+arbeiten als normaler Nutzer und wechseln für eine Demo in den Approver-Modus:
+das Frontend sendet dann `X-Demo-Role: approver` (je Browser-Tab gemerkt), das
+Backend wertet den Header nur für diese Konten aus. Allen anderen wird der
+Schalter nicht angezeigt.
 
 ## Lokal starten
 

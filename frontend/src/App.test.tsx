@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
@@ -111,7 +111,7 @@ describe("app", () => {
     let calls = 0;
     get.mockReset();
     get.mockImplementation(((path: string) =>
-      path === "/features" ? Promise.resolve({ initiative_input: false }) : ++calls === 1 ? failWith(503)() : ok()) as never);
+      path === "/features" ? Promise.resolve({ initiative_input: false }) : path === "/initiatives" && ++calls === 1 ? failWith(503)() : ok()) as never);
     renderAt("/");
     expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -146,6 +146,16 @@ describe("new initiative form", () => {
   ];
   const valueTypes = [{ id: 1, name: "CAPEX delivery", description: null }];
   const solutionTypes = [{ id: 1, name: "Custom agent", description: null }];
+  const opt = (...values: string[]) => values.map((value) => ({ value, label: value }));
+  const formOptions = {
+    ai_layers: opt("AI for productivity and efficiency", "AI for business process optimization", "Operational and advanced AI"),
+    running_cost_ranges: [
+      { value: "up_to_10k", label: "up to 10k € / year", amount: 5000 },
+      { value: "10k_to_50k", label: "10k–50k € / year", amount: 30000 },
+      { value: "50k_to_100k", label: "50k–100k € / year", amount: 75000 },
+      { value: "over_100k", label: "more than 100k € / year", amount: 150000 },
+    ],
+  };
 
   function mockWithReference() {
     get.mockReset();
@@ -154,6 +164,8 @@ describe("new initiative form", () => {
       if (path === "/value-types") return valueTypes;
       if (path === "/solution-types") return solutionTypes;
       if (path === "/features") return { initiative_input: true };
+      if (path === "/form-options") return formOptions;
+      if (path === "/me/use-cases") return [];
       return { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 };
     }) as never);
   }
@@ -165,13 +177,14 @@ describe("new initiative form", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: /^Business unit/ }), "ETB");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Owner/ }), "1");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Flagship/ }), "1");
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Solution type/ }), "1");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^AI layer/ }), "AI for productivity and efficiency");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "Idea");
-    await user.type(screen.getByRole("textbox", { name: /^Cases per year/ }), "3000");
-    await user.type(screen.getByRole("textbox", { name: /^Hours saved per case/ }), "0.5");
+    // every number is chosen from its range
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Cases per year/ }), "1,000–10,000");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Time saved per case/ }), "15–30 min");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Complexity/ }), "4");
-    await user.type(screen.getByRole("textbox", { name: /^One-time cost/ }), "200000");
-    await user.type(screen.getByRole("textbox", { name: /^Operating cost/ }), "50000");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^One-time cost/ }), "100k–250k €");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Running costs/ }), "50k_to_100k");
     await user.click(screen.getByRole("radio", { name: "Benchmark" }));
     return user;
   }
@@ -180,21 +193,21 @@ describe("new initiative form", () => {
     mockWithReference();
     renderAt("/new");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Save initiative" }));
+    await user.click(await screen.findByRole("button", { name: "Submit idea" }));
     expect(screen.getByText("Enter a name.")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
 
     await fillRequired();
     const preview = screen.getByRole("complementary", { name: "Estimate preview" });
-    // 3,000 x 0.5 h x 60 € = 90k; x 0.60 x 0.65 = 35k; cost 200k x 0.65 / 5 + 50k x 0.65 = 59k
-    expect(preview).toHaveTextContent("Potential per year35k €");
-    expect(preview).toHaveTextContent("Expected cost per year59k €");
+    // 5,000 x 0.4 h x 60 € = 120k; x 0.60 x 0.65 = 47k; cost 175k x 0.65 / 5 + 75k (50k–100k range) x 0.65 = 72k
+    expect(preview).toHaveTextContent("Potential per year47k €");
+    expect(preview).toHaveTextContent("Expected cost per year72k €");
     expect(preview).toHaveTextContent("1 · Very low risk");
     await user.click(screen.getByRole("radio", { name: "Prepares" }));
     expect(preview).toHaveTextContent("3 · Medium risk");
   });
 
-  it("saves, returns to the cockpit and shows the new initiative as pending", async () => {
+  it("submits the idea and shows it under my use cases", async () => {
     mockWithReference();
     post.mockReset();
     post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
@@ -203,15 +216,40 @@ describe("new initiative form", () => {
     })) as never);
     renderAt("/new");
     const user = await fillRequired();
-    await user.click(screen.getByRole("button", { name: "Save initiative" }));
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
 
     expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
-      name: "Smart Invoice Check", owner_id: 1, cases_per_year: 3000, hours_saved_per_case: 0.5,
+      name: "Smart Invoice Check", owner_id: 1, cases_per_year: 5000, hours_saved_per_case: 0.4,
       error_rate_before: null, estimate_basis: "benchmark", solution_complexity_score: 4,
-      one_time_costs: 200000, decisions_on_employees: "none",
+      one_time_costs: 175000, decisions_on_employees: "none", scope_gate_date: null,
+      ai_layer: "AI for productivity and efficiency", running_cost_range: "50k_to_100k",
     }));
-    expect(await screen.findByRole("status")).toHaveTextContent("“Smart Invoice Check” was saved. Its estimate is pending");
-    expect(screen.getByRole("region", { name: "Key figures" })).toHaveTextContent("5matching the filters");
+    expect(post.mock.calls[0]![1]).not.toHaveProperty("solution_type_id");
+    expect(await screen.findByRole("heading", { name: "My use cases" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("“Smart Invoice Check” was submitted.");
+  });
+
+  it("asks for the dates of the gates the chosen stage has passed", async () => {
+    mockWithReference();
+    post.mockReset();
+    post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
+      ...SAMPLE[0], id: -1, user_input_id: 1, status: "pending", business_transaction_id: null, name: body.name as string,
+    })) as never);
+    renderAt("/new");
+    const user = await fillRequired();
+    expect(screen.queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // Idea: no gate passed yet
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "PoC");
+    expect(screen.getByText(/In PoC the scope gate is already passed/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Deploy gate date")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
+    expect(screen.getByText("PoC needs the date the scope gate was passed.")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Scope gate date"), { target: { value: "2026-02-10" } });
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
+    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
+      stage: "PoC", scope_gate_date: "2026-02-10", needs_gate_date: null, deploy_gate_date: null,
+    }));
   });
 
   it("shows the server's message for a duplicate name", async () => {
@@ -222,7 +260,7 @@ describe("new initiative form", () => {
     }) as never);
     renderAt("/new");
     const user = await fillRequired();
-    await user.click(screen.getByRole("button", { name: "Save initiative" }));
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("already exists in ETB");
   });
 });
@@ -234,7 +272,7 @@ describe("feature switch", () => {
       path === "/features" ? { initiative_input: false } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
     renderAt("/new");
     expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "+ New initiative" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "+ New AI idea" })).not.toBeInTheDocument();
   });
 
   it("shows the button when it is on", async () => {
@@ -242,6 +280,42 @@ describe("feature switch", () => {
     get.mockImplementation((async (path: string) =>
       path === "/features" ? { initiative_input: true } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
     renderAt("/");
-    expect(await screen.findByRole("link", { name: "+ New initiative" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "+ New AI idea" })).toBeInTheDocument();
+  });
+});
+
+describe("demo role switch", () => {
+  const answer = (rights: Record<string, unknown>) =>
+    mockApi((async (path: string) => {
+      if (path === "/auth/rights") return { user: "Jonas", ...rights };
+      if (path === "/me/use-cases" || path === "/approvals") return [];
+      if (path === "/features") return { initiative_input: true };
+      return ok();
+    }) as never);
+
+  beforeEach(() => window.sessionStorage.clear());
+
+  it("lets a demo presenter switch from normal user to demo approver", async () => {
+    answer({ rights: { canApprove: false, canAdmin: false }, demo_presenter: true, demo_approver: false });
+    renderAt("/my");
+    const normal = await screen.findByRole("radio", { name: "Normal user" });
+    expect(normal).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("navigation", { name: "Views" })).queryByRole("link", { name: /Approvals/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Approver (demo)" }));
+    expect(window.sessionStorage.getItem("ai-cockpit.demo-approver")).toBe("true");
+  });
+
+  it("shows the approvals while the presenter is demo approver", async () => {
+    answer({ rights: { canApprove: true, canAdmin: false }, demo_presenter: true, demo_approver: true, user: "Jonas (demo approver)" });
+    renderAt("/my");
+    expect(await screen.findByRole("radio", { name: "Approver (demo)" })).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("navigation", { name: "Views" })).getByRole("link", { name: /Approvals/ })).toBeInTheDocument();
+  });
+
+  it("is not offered to anyone else, approvers included", async () => {
+    answer({ rights: { canApprove: true, canAdmin: false } });
+    renderAt("/my");
+    await within(screen.getByRole("navigation", { name: "Views" })).findByRole("link", { name: /Approvals/ });
+    expect(screen.queryByRole("radiogroup", { name: "Demo role" })).not.toBeInTheDocument();
   });
 });

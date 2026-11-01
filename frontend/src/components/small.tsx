@@ -108,12 +108,31 @@ export function Chip({
   );
 }
 
-/** Shown on initiatives entered through the form until the pipeline has calculated them. */
-export function PendingTag({ initiative }: { initiative: Initiative }) {
-  if (initiative.status !== "pending") return null;
-  return (
-    <span className="pending-tag" title="Saved — the pipeline is calculating the final values">
-      Estimate pending
-    </span>
-  );
+/**
+ * Marks use cases the pipeline has not (fully) processed: new ideas and saved changes not in
+ * silver yet, and use cases that are not complete enough for the gold assessment.
+ */
+export function PendingTag({ initiative }: { initiative: Pick<Initiative, "status" | "processing"> }) {
+  if (initiative.status === "pending" || initiative.processing === "pending") {
+    return (
+      <span className="pending-tag" title="Saved — the pipeline is calculating the final values">
+        Estimate pending
+      </span>
+    );
+  }
+  if (initiative.processing === "changes_pending") {
+    return (
+      <span className="pending-tag" title="Changes saved — the pipeline has not processed them yet; values are a preview">
+        Changes pending
+      </span>
+    );
+  }
+  if (initiative.processing === "not_assessed") {
+    return (
+      <span className="pending-tag pending-tag-soft" title="Not assessed yet: inputs for the value assessment are missing">
+        Not assessed
+      </span>
+    );
+  }
+  return null;
 }

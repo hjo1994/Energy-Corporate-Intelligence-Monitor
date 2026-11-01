@@ -1,18 +1,28 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, createInitiative, fetchReferenceData, type ReferenceData } from "../api/client";
+import type { Stagegate } from "../api/types";
+import { GateDatesEditor } from "../components/GateDates";
 import { flagshipLabel } from "../domain/format";
+import { GATES, STAGE_GATE_RULES, gateRequirement, type GateRules } from "../domain/lifecycle";
 import { riskActions, riskLevelLabel } from "../domain/risk";
 import {
+  AI_LAYERS,
   EMPTY_FORM,
   LEVERS,
+  RUNNING_COST_RANGES,
   STAGES,
+  VALUE_DOMAINS,
+  domainOption,
+  previewInput,
   previewRiskLevel,
   previewValue,
   quarterOptions,
   toInput,
   typicalValues,
   validate,
+  type DomainField,
+  type DomainOption,
   type FormState,
   type LeverKey,
 } from "../domain/userInput";
@@ -22,7 +32,6 @@ type Errors = ReturnType<typeof validate>;
 
 const keur = (eur: number) => `${Math.round(eur / 1000).toLocaleString("en-US")}k €`;
 const signedKeur = (eur: number) => (eur > 0 ? "+" : eur < 0 ? "−" : "") + keur(Math.abs(eur));
-const fmt = (n: number | undefined, unit = "") => (n === undefined ? "" : `${n.toLocaleString("en-US")}${unit}`);
 
 const COMPLEXITY_HINT: Record<string, string> = {
   "1": "off the shelf",
@@ -45,12 +54,13 @@ function Field({ label, required, error, hint, children }: { label: string; requ
   );
 }
 
-function NumberInput({ value, onChange, unit, invalid, placeholder }: { value: string; onChange: (v: string) => void; unit?: string; invalid?: boolean; placeholder?: string }) {
+/** A number chosen from its domain; the option's value is what is stored. */
+function DomainSelect({ value, onChange, options, invalid }: { value: string; onChange: (v: string) => void; options: DomainOption[]; invalid?: boolean }) {
   return (
-    <span className={`nf-input nf-number${invalid ? " invalid" : ""}`}>
-      <input inputMode="decimal" value={value} placeholder={placeholder} aria-invalid={invalid || undefined} onChange={(e) => onChange(e.target.value)} />
-      {unit && <span className="nf-unit">{unit}</span>}
-    </span>
+    <select className={`nf-input${invalid ? " invalid" : ""}`} value={value} aria-invalid={invalid || undefined} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Choose …</option>
+      {options.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
+    </select>
   );
 }
 
@@ -99,27 +109,45 @@ export function NewInitiativeView() {
     [ref],
   );
   const owners = (ref?.owners ?? []).filter((o) => o.category === form.businessUnit);
-  const solutionType = ref?.solutionTypes.find((t) => String(t.id) === form.solutionTypeId)?.name;
   const flagship = ref?.valueTypes.find((t) => String(t.id) === form.valueTypeId)?.name;
-  const typical = typicalValues(solutionType, flagship);
+  const typical = typicalValues(form.aiLayer || undefined, flagship);
+  const aiLayers = ref?.options?.ai_layers?.map((o) => o.value) ?? AI_LAYERS;
+  const costRanges = ref?.options?.running_cost_ranges ?? RUNNING_COST_RANGES;
   const quarters = useMemo(() => quarterOptions(), []);
+  const domains = { ...VALUE_DOMAINS, ...(ref?.options?.value_domains as Record<DomainField, DomainOption[]> | undefined) };
+  const rules: GateRules = ref?.options?.stage_gate_rules ?? STAGE_GATE_RULES;
+  const stages = ref?.options?.stages?.map((o) => o.value) ?? STAGES;
+  /** "Typical: …" as the label of the range the typical value falls in. */
+  const typicalHint = (field: DomainField, value: number | undefined, what = "Typical") =>
+    value === undefined ? undefined : `${what}: ${domainOption(domains[field], value)?.label ?? value}`;
+  /** A new stage asks for other gates: dates of gates it does not ask for are dropped. */
+  const changeStage = (stage: string) =>
+    setForm((f) => {
+      const asked = GATES.filter((g) => gateRequirement(stage, g, rules) === "passed");
+      const keep = (g: Stagegate) => asked.includes(g) || (g === "Needs" && asked.length > 0);
+      const gateDates = Object.fromEntries(GATES.map((g) => [g, keep(g) ? f.gateDates[g] : ""])) as FormState["gateDates"];
+      return { ...f, stage, gateDates };
+    });
+  const pick = (field: DomainField, key: keyof FormState) => (
+    <DomainSelect value={String(form[key])} options={domains[field]} invalid={!!errors[key]} onChange={(v) => set(key, v as never)} />
+  );
 
   const input = toInput(form);
-  const preview = previewValue(input);
+  const preview = previewValue(previewInput(input));
   const level = previewRiskLevel(input);
-  const errors: Errors = showErrors ? validate(form) : {};
+  const errors: Errors = showErrors ? validate(form, domains, undefined, rules) : {};
 
   async function save() {
     setShowErrors(true);
     setSaveError(null);
-    if (Object.keys(validate(form)).length > 0) return;
+    if (Object.keys(validate(form, domains, undefined, rules)).length > 0) return;
     setSaving(true);
     try {
       const created = await createInitiative(toInput(form));
       addInitiative(created);
-      navigate("/", { state: { created: created.name } });
+      navigate("/my", { state: { created: created.name } });
     } catch (err) {
-      setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The initiative could not be saved.");
+      setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The idea could not be saved.");
       setSaving(false);
     }
   }
@@ -136,62 +164,54 @@ export function NewInitiativeView() {
   const leverFields: Record<LeverKey, ReactNode> = {
     efficiency: (
       <div className="nf-grid2">
-        <Field label="Cases per year" error={errors.casesPerYear}>
-          <NumberInput value={form.casesPerYear} onChange={(v) => set("casesPerYear", v)} invalid={!!errors.casesPerYear} />
-        </Field>
-        <Field label="Hours saved per case" error={errors.hoursSavedPerCase} hint={typical.hoursSavedPerCase ? `Typical for this solution type: ${typical.hoursSavedPerCase} h` : undefined}>
-          <NumberInput value={form.hoursSavedPerCase} onChange={(v) => set("hoursSavedPerCase", v)} unit="h" invalid={!!errors.hoursSavedPerCase} />
+        <Field label="Cases per year" error={errors.casesPerYear}>{pick("cases_per_year", "casesPerYear")}</Field>
+        <Field label="Time saved per case" error={errors.hoursSavedPerCase} hint={typicalHint("hours_saved_per_case", typical.hoursSavedPerCase, "Typical for this AI layer")}>
+          {pick("hours_saved_per_case", "hoursSavedPerCase")}
         </Field>
       </div>
     ),
     quality: (
       <div className="nf-grid3">
         {!form.levers.efficiency && (
-          <Field label="Cases per year" error={errors.casesPerYear}>
-            <NumberInput value={form.casesPerYear} onChange={(v) => set("casesPerYear", v)} invalid={!!errors.casesPerYear} />
-          </Field>
+          <Field label="Cases per year" error={errors.casesPerYear}>{pick("cases_per_year", "casesPerYear")}</Field>
         )}
-        <Field label="Error rate today" error={errors.errorRatePct} hint={`Typical: ${typical.errorRatePct} %`}>
-          <NumberInput value={form.errorRatePct} onChange={(v) => set("errorRatePct", v)} unit="%" invalid={!!errors.errorRatePct} />
+        <Field label="Error rate today" error={errors.errorRateBefore} hint={typicalHint("error_rate_before", typical.errorRateBefore)}>
+          {pick("error_rate_before", "errorRateBefore")}
         </Field>
-        <Field label="Errors avoided" error={errors.errorsAvoidedPct} hint={typical.errorsAvoidedPct ? `Typical: ${typical.errorsAvoidedPct} %` : undefined}>
-          <NumberInput value={form.errorsAvoidedPct} onChange={(v) => set("errorsAvoidedPct", v)} unit="%" invalid={!!errors.errorsAvoidedPct} />
+        <Field label="Errors avoided" error={errors.errorsAvoided} hint={typicalHint("errors_avoided", typical.errorsAvoided)}>
+          {pick("errors_avoided", "errorsAvoided")}
         </Field>
-        <Field label="Cost per error" error={errors.costPerError} hint={`Typical for this flagship: ${fmt(typical.costPerError, " €")}`}>
-          <NumberInput value={form.costPerError} onChange={(v) => set("costPerError", v)} unit="€" invalid={!!errors.costPerError} />
+        <Field label="Cost per error" error={errors.costPerError} hint={typicalHint("cost_per_error", typical.costPerError, "Typical for this flagship")}>
+          {pick("cost_per_error", "costPerError")}
         </Field>
       </div>
     ),
     riskReduction: (
       <div className="nf-grid3">
-        <Field label="Incidents per year" error={errors.riskEventsPerYear}>
-          <NumberInput value={form.riskEventsPerYear} onChange={(v) => set("riskEventsPerYear", v)} invalid={!!errors.riskEventsPerYear} />
+        <Field label="Incidents per year" error={errors.riskEventsPerYear}>{pick("risk_events_per_year", "riskEventsPerYear")}</Field>
+        <Field label="Incidents avoided" error={errors.eventsAvoided} hint={typicalHint("events_avoided", typical.eventsAvoided)}>
+          {pick("events_avoided", "eventsAvoided")}
         </Field>
-        <Field label="Incidents avoided" error={errors.eventsAvoidedPct} hint={typical.eventsAvoidedPct ? `Typical: ${typical.eventsAvoidedPct} %` : undefined}>
-          <NumberInput value={form.eventsAvoidedPct} onChange={(v) => set("eventsAvoidedPct", v)} unit="%" invalid={!!errors.eventsAvoidedPct} />
-        </Field>
-        <Field label="Cost per incident" error={errors.costPerEvent} hint={`Typical for this flagship: ${fmt(typical.costPerEvent, " €")}`}>
-          <NumberInput value={form.costPerEvent} onChange={(v) => set("costPerEvent", v)} unit="€" invalid={!!errors.costPerEvent} />
+        <Field label="Cost per incident" error={errors.costPerEvent} hint={typicalHint("cost_per_event", typical.costPerEvent, "Typical for this flagship")}>
+          {pick("cost_per_event", "costPerEvent")}
         </Field>
       </div>
     ),
     speed: (
       <div className="nf-grid3">
-        <Field label="Delay-relevant events per year" error={errors.delayEventsPerYear}>
-          <NumberInput value={form.delayEventsPerYear} onChange={(v) => set("delayEventsPerYear", v)} invalid={!!errors.delayEventsPerYear} />
+        <Field label="Delay-relevant events per year" error={errors.delayEventsPerYear}>{pick("delay_events_per_year", "delayEventsPerYear")}</Field>
+        <Field label="Cost of delay per event" error={errors.costOfDelayPerEvent} hint={typicalHint("cost_of_delay_per_event", typical.costOfDelayPerEvent, "Typical for this flagship")}>
+          {pick("cost_of_delay_per_event", "costOfDelayPerEvent")}
         </Field>
-        <Field label="Cost of delay per event" error={errors.costOfDelayPerEvent} hint={`Typical for this flagship: ${fmt(typical.costOfDelayPerEvent, " €")}`}>
-          <NumberInput value={form.costOfDelayPerEvent} onChange={(v) => set("costOfDelayPerEvent", v)} unit="€" invalid={!!errors.costOfDelayPerEvent} />
-        </Field>
-        <Field label="Lead time saved" error={errors.leadTimeSavedPct} hint={typical.leadTimeSavedPct ? `Typical: ${typical.leadTimeSavedPct} %` : undefined}>
-          <NumberInput value={form.leadTimeSavedPct} onChange={(v) => set("leadTimeSavedPct", v)} unit="%" invalid={!!errors.leadTimeSavedPct} />
+        <Field label="Lead time saved" error={errors.leadTimeSaved} hint={typicalHint("lead_time_saved", typical.leadTimeSaved)}>
+          {pick("lead_time_saved", "leadTimeSaved")}
         </Field>
       </div>
     ),
   };
 
   const FORMULA: Record<LeverKey, string> = {
-    efficiency: "cases × hours saved × 60 €/h",
+    efficiency: "cases × time saved × 60 €/h",
     quality: "cases × error rate × errors avoided × cost per error",
     riskReduction: "incidents × share avoided × cost per incident",
     speed: "events × cost of delay × lead time saved",
@@ -211,9 +231,12 @@ export function NewInitiativeView() {
     <div className="nf">
       <header className="nf-head">
         <div>
-          <span className="nf-crumb">Cockpit / New initiative</span>
-          <h1>Add an AI initiative</h1>
-          <p className="muted">Enter the drivers. The value and the risk level are calculated from them.</p>
+          <span className="nf-crumb">My use cases / New AI idea</span>
+          <h1>Add a new AI idea</h1>
+          <p className="muted">
+            Choose the drivers. The value and the risk level are calculated from them. An approver checks the idea and
+            assigns a use case lead. The details (form 2) can be added at any time on the use case page.
+          </p>
         </div>
         <span className="muted">
           Fields marked <b className="nf-req">*</b> are required
@@ -256,16 +279,16 @@ export function NewInitiativeView() {
                   {ref.valueTypes.map((t) => <option key={t.id} value={t.id}>{flagshipLabel(t.name)}</option>)}
                 </select>
               </Field>
-              <Field label="Solution type" required error={errors.solutionTypeId}>
-                <select className="nf-input" value={form.solutionTypeId} onChange={(e) => set("solutionTypeId", e.target.value)}>
+              <Field label="AI layer" required error={errors.aiLayer} hint="The solution type follows in the details after approval.">
+                <select className="nf-input" value={form.aiLayer} onChange={(e) => set("aiLayer", e.target.value)}>
                   <option value="">Choose …</option>
-                  {ref.solutionTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {aiLayers.map((l) => <option key={l} value={l}>{l}</option>)}
                 </select>
               </Field>
               <Field label="Stage" required error={errors.stage}>
-                <select className="nf-input" value={form.stage} onChange={(e) => set("stage", e.target.value)}>
+                <select className="nf-input" value={form.stage} onChange={(e) => changeStage(e.target.value)}>
                   <option value="">Choose …</option>
-                  {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {stages.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
               <div className="nf-grid2 nf-dates">
@@ -283,6 +306,8 @@ export function NewInitiativeView() {
                 </Field>
               </div>
             </div>
+            <GateDatesEditor stage={form.stage} dates={form.gateDates} mode="new" rules={rules} showProblems={showErrors}
+              onChange={(gate: Stagegate, date: string) => setForm((f) => ({ ...f, gateDates: { ...f.gateDates, [gate]: date } }))} />
           </section>
 
           <section className="card nf-card" aria-labelledby="nf-value">
@@ -331,11 +356,12 @@ export function NewInitiativeView() {
                   ))}
                 </select>
               </Field>
-              <Field label="One-time cost" required error={errors.oneTimeCosts}>
-                <NumberInput value={form.oneTimeCosts} onChange={(v) => set("oneTimeCosts", v)} unit="€" invalid={!!errors.oneTimeCosts} />
-              </Field>
-              <Field label="Operating cost" required error={errors.operatingCosts}>
-                <NumberInput value={form.operatingCosts} onChange={(v) => set("operatingCosts", v)} unit="€ / yr" invalid={!!errors.operatingCosts} />
+              <Field label="One-time cost" required error={errors.oneTimeCosts}>{pick("one_time_costs", "oneTimeCosts")}</Field>
+              <Field label="Running costs" required error={errors.runningCostRange} hint="A range is enough at this point.">
+                <select className="nf-input" value={form.runningCostRange} onChange={(e) => set("runningCostRange", e.target.value as FormState["runningCostRange"])}>
+                  <option value="">Choose …</option>
+                  {costRanges.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
               </Field>
             </div>
           </section>
@@ -389,12 +415,14 @@ export function NewInitiativeView() {
           </div>
           {saveError && <p className="nf-save-error" role="alert">{saveError}</p>}
           <button type="button" className="nf-btn nf-primary" disabled={saving} onClick={() => void save()}>
-            {saving ? "Saving …" : "Save initiative"}
+            {saving ? "Submitting …" : "Submit idea"}
           </button>
           <button type="button" className="nf-btn nf-secondary" onClick={() => navigate(-1)}>
             Cancel
           </button>
-          <span className="nf-side-small">Final values are calculated by the pipeline within about a minute after saving.</span>
+          <span className="nf-side-small">
+            The idea goes to the approvers. Final values are calculated by the pipeline within about a minute.
+          </span>
         </aside>
       </div>
     </div>

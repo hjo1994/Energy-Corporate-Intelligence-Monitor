@@ -1,14 +1,16 @@
-"""Values derived from the stored Initiative columns.
+"""Values derived from the stored silver Initiative columns.
 
-Not part of the data model (the pipeline only stores the inputs), so they
-are computed here — once as SQL expressions for sorting/aggregating, once in
-Python for the response. Both follow the input-orchestration value heuristic:
+Not part of the data model, so they are computed here — once as SQL
+expressions for sorting/aggregating, once in Python for the response:
 
 - hypothetical value = sum of the four value buckets (EUR per year)
-- potential value    = hypothetical value x confidence x delivery (EUR per year)
-- annual cost        = one-time costs / depreciation years + operating costs
+- annual cost        = one-time costs / depreciation years + running costs
                        (stored as expected costs, i.e. already weighted by delivery;
                        cost if delivered = annual cost / delivery)
+
+The potential value, the realized value and the risk level come from gold
+(AssessedInitiatives); before a use case is assessed the API shows a
+provisional potential computed like gold does (provisional_potential).
 
 A missing input makes the derived value NULL instead of silently counting as 0.
 """
@@ -18,44 +20,39 @@ from sqlalchemy import ColumnElement, case
 
 from app.models import Initiative
 
-_BUCKETS = (
-    Initiative.efficiency_score_eur,
-    Initiative.quality_score_eur,
-    Initiative.risk_reduction_score_eur,
-    Initiative.strategic_value_score_eur,
-)
+_BUCKET_NAMES = ("efficiency_score_eur", "quality_score_eur", "risk_reduction_score_eur", "strategic_value_score_eur")
+_BUCKETS = tuple(getattr(Initiative, n) for n in _BUCKET_NAMES)
 
 hypothetical_value_sql: ColumnElement = _BUCKETS[0] + _BUCKETS[1] + _BUCKETS[2] + _BUCKETS[3]
-potential_value_sql: ColumnElement = (
-    hypothetical_value_sql * Initiative.confidence_score * Initiative.delivery_score
-)
 annual_cost_sql: ColumnElement = (
     case(
         (Initiative.depreciation_years > 0, Initiative.one_time_costs * 1.0 / Initiative.depreciation_years),
         else_=None,
     )
-    + Initiative.operating_costs
+    + Initiative.running_costs
 )
 
 
-def hypothetical_value(i: Initiative) -> float | None:
-    buckets = (
-        i.efficiency_score_eur,
-        i.quality_score_eur,
-        i.risk_reduction_score_eur,
-        i.strategic_value_score_eur,
-    )
+def _get(i, name):
+    return i.get(name) if isinstance(i, dict) else getattr(i, name, None)
+
+
+def hypothetical_value(i) -> float | None:
+    buckets = [_get(i, n) for n in _BUCKET_NAMES]
     return None if any(b is None for b in buckets) else sum(buckets)
 
 
-def potential_value(i: Initiative) -> float | None:
+def provisional_potential(i) -> float | None:
+    """Same formula as gold: sum of the buckets x confidence x delivery."""
     hypothetical = hypothetical_value(i)
-    if hypothetical is None or i.confidence_score is None or i.delivery_score is None:
+    confidence, delivery = _get(i, "confidence_score"), _get(i, "delivery_score")
+    if hypothetical is None or confidence is None or delivery is None:
         return None
-    return hypothetical * i.confidence_score * i.delivery_score
+    return hypothetical * confidence * delivery
 
 
-def annual_cost(i: Initiative) -> float | None:
-    if i.one_time_costs is None or not i.depreciation_years or i.operating_costs is None:
+def annual_cost(i) -> float | None:
+    one_time, years, running = _get(i, "one_time_costs"), _get(i, "depreciation_years"), _get(i, "running_costs")
+    if one_time is None or not years or running is None:
         return None
-    return i.one_time_costs / i.depreciation_years + i.operating_costs
+    return one_time / years + running

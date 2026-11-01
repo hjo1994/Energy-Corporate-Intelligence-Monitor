@@ -23,7 +23,8 @@ def test_every_data_endpoint_requires_authentication(client, monkeypatch):
     for path in [
         "/api/initiatives", "/api/initiatives/1", "/api/initiatives/summary", "/api/owners",
         "/api/business-units", "/api/stages", "/api/risk-classifications", "/api/solution-types",
-        "/api/value-types",
+        "/api/value-types", "/api/form-options", "/api/me/use-cases", "/api/use-cases/1", "/api/approvals",
+        "/api/use-cases/1/similar",
         "/api/auth/rights",
     ]:
         assert client.get(path).status_code == 401, path
@@ -31,9 +32,15 @@ def test_every_data_endpoint_requires_authentication(client, monkeypatch):
 
 def test_auth_rights_follow_the_groups(client, monkeypatch):
     body = client.get("/api/auth/rights").json()
-    assert body["rights"] == {"canViewInitiatives": True}
+    assert body["rights"] == {"canViewInitiatives": True, "canApprove": False, "canAdmin": False}
     monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["some_other_group"]')
-    assert client.get("/api/auth/rights").json()["rights"] == {"canViewInitiatives": False}
+    assert client.get("/api/auth/rights").json()["rights"] == {
+        "canViewInitiatives": False, "canApprove": False, "canAdmin": False}
+    monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["ai_cockpit_approvers"]')
+    assert client.get("/api/auth/rights").json()["rights"]["canApprove"] is True
+    monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["ai_cockpit_admins"]')
+    assert client.get("/api/auth/rights").json()["rights"] == {
+        "canViewInitiatives": False, "canApprove": True, "canAdmin": True}
     # reading still works: the API only requires a signed-in user, not the right
     assert client.get("/api/initiatives").status_code == 200
 
@@ -42,7 +49,10 @@ def test_list_nests_owner_and_types(client):
     body = client.get("/api/initiatives").json()
     assert body["total"] == 4
     alpha = next(i for i in body["items"] if i["name"] == "Alpha")
-    assert alpha["owner"] == {"id": 1, "name": "Owner A", "department": "Assets", "category": "ETB"}
+    assert alpha["owner"] == {"id": 1, "name": "Owner A", "department": "Assets", "category": "ETB",
+                              "email": "owner.a@example.com"}
+    assert (alpha["id"], alpha["use_case_id"], alpha["version_id"]) == (1, 1, 2)  # the current version
+    assert (alpha["processing"], alpha["provisional"], alpha["stage"]) == ("assessed", False, "Idea")
     assert alpha["solution_type"]["name"] == "Copilot"
     assert alpha["value_type"]["name"] == "CAPEX delivery"
     assert alpha["risk_classification"] == {"id": 2, "name": "Geringes Risiko"}
@@ -57,10 +67,13 @@ def test_derived_values(client):
     assert alpha["potential_value_eur"] == pytest.approx(54000.0)
     assert alpha["annual_cost_eur"] == pytest.approx(44000.0)
     assert alpha["efficiency_score_eur"] == 10000.0 and alpha["confidence_score"] == 0.6
+    assert alpha["running_costs"] == alpha["operating_costs"] == 19000.0
+    assert items["Beta"]["realized_value_eur"] == 1000.0
     # missing inputs give null, not 0
     gamma = items["Gamma"]
     assert gamma["hypothetical_value_eur"] is None and gamma["potential_value_eur"] is None
     assert gamma["annual_cost_eur"] is None
+    assert (gamma["processing"], gamma["provisional"]) == ("not_assessed", True)  # incomplete: not in gold
 
 
 def test_filter_stage_multi_and_business_unit(client):
@@ -71,8 +84,9 @@ def test_filter_stage_multi_and_business_unit(client):
 
 
 def test_filter_risk_classification(client):
+    # the risk level comes from gold: use cases not assessed have none yet
     assert names(client.get("/api/initiatives?risk_classification_id=2")) == ["Alpha"]
-    assert len(names(client.get("/api/initiatives?risk_classification_id=1&risk_classification_id=2"))) == 4
+    assert names(client.get("/api/initiatives?risk_classification_id=1&risk_classification_id=2")) == ["Alpha", "Beta"]
 
 
 def test_search_escapes_like_wildcards(client):
@@ -100,25 +114,30 @@ def test_invalid_params_rejected(client):
 
 
 def test_get_one_and_404(client):
-    assert client.get("/api/initiatives/1").json()["name"] == "Alpha"
+    assert client.get("/api/initiatives/1").json()["name"] == "Alpha"  # by UseCaseID
+    assert client.get("/api/initiatives/2").json()["name"] == "Beta"
     assert client.get("/api/initiatives/999").status_code == 404
 
 
 def test_summary(client):
     s = client.get("/api/initiatives/summary").json()
     assert s["total"] == 4
-    assert s["with_potential_value"] == 2 and s["without_potential_value"] == 2
+    assert s["with_potential_value"] == 2 and s["without_potential_value"] == 2 and s["not_assessed"] == 2
     assert s["total_potential_value_eur"] == pytest.approx(58550.0)
     assert s["average_potential_value_eur"] == pytest.approx(29275.0)
     assert s["total_hypothetical_value_eur"] == pytest.approx(120000.0)
+    assert s["total_realized_value_eur"] == pytest.approx(1000.0)
     assert s["total_annual_cost_eur"] == pytest.approx(61500.0)
     assert s["without_owner"] == 1
     assert {x["stage"]: x["count"] for x in s["by_stage"]} == {"Idea": 2, "PoC": 1, "Unknown": 1}
-    assert [(r["id"], r["count"]) for r in s["by_risk_classification"]] == [(1, 3), (2, 1)]
+    assert [(r["id"], r["count"]) for r in s["by_risk_classification"]] == [(1, 1), (2, 1)]
 
 
 def test_reference_endpoints(client):
-    assert [o["name"] for o in client.get("/api/owners").json()] == ["Owner A", "Owner B"]
+    assert [o["name"] for o in client.get("/api/owners").json()] == ["Lead C", "Owner A", "Owner B"]
+    assert [o["name"] for o in client.get("/api/owners?search=innov").json()] == ["Owner B"]
+    assert [o["name"] for o in client.get("/api/owners?search=dev.user@").json()] == ["Lead C"]
+    assert [o["name"] for o in client.get("/api/owners?search=owner&limit=1").json()] == ["Owner A"]
     assert [o["name"] for o in client.get("/api/owners?business_unit=IT").json()] == ["Owner B"]
     assert client.get("/api/solution-types").json()[0]["name"] == "Copilot"
     assert client.get("/api/value-types").json()[0]["name"] == "CAPEX delivery"
@@ -149,8 +168,8 @@ def test_sees_rows_committed_by_the_writer(db_path):
 
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "INSERT INTO Initiative(Name, Stage, RiskClassificationID, Timestamp, KeyHash, RowHash, IsActive,"
-        " BusinessTransactionID) VALUES ('Epsilon', 'Idea', 1, '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
+        "INSERT INTO Initiative(UseCaseID, Name, Stage, Timestamp, KeyHash, RowHash, IsActive,"
+        " BusinessTransactionID) VALUES (6, 'Epsilon', 'Idea', '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -176,8 +195,8 @@ def test_sees_file_replaced_by_rename(db_path, tmp_path):
         "INSERT INTO BusinessTransaction(ID, BronzeID, BronzeTableName) VALUES (1, 1, 'IT_Initiatives_Extract')"
     )
     conn.execute(
-        "INSERT INTO Initiative(ID, Name, Stage, RiskClassificationID, Timestamp, KeyHash, RowHash, IsActive,"
-        " BusinessTransactionID) VALUES (1, 'Only', 'Idea', 1, '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
+        "INSERT INTO Initiative(ID, UseCaseID, Name, Stage, Timestamp, KeyHash, RowHash, IsActive,"
+        " BusinessTransactionID) VALUES (1, 1, 'Only', 'Idea', '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -206,11 +225,12 @@ def test_sql_stays_portable_to_the_cluster_database(client):
 
     statements = []
     event.listen(client.app.state.engine, "before_cursor_execute", lambda c, cur, stmt, *a: statements.append(stmt))
-    for sort in ["potential_value_eur", "hypothetical_value_eur", "annual_cost_eur", "solution_complexity_score",
+    client.get("/api/initiatives/summary")
+    for sort in ["potential_value_eur", "realized_value_eur", "hypothetical_value_eur", "annual_cost_eur", "solution_complexity_score",
                  "risk_classification", "date_delivery", "name", "stage"]:
         for order in ["asc", "desc"]:
             assert client.get(f"/api/initiatives?sort={sort}&order={order}").status_code == 200
-    assert statements and not any("NULLS" in s.upper() for s in statements)
+    assert statements and not any("NULLS" in s.upper() or "FILTER (" in s.upper() for s in statements)
 
 
 def test_soft_deleted_initiatives_are_hidden_unless_asked_for(client):
@@ -221,3 +241,23 @@ def test_soft_deleted_initiatives_are_hidden_unless_asked_for(client):
     assert client.get("/api/initiatives/summary").json()["total"] == 4
     assert {b["name"]: b["count"] for b in client.get("/api/business-units").json()}["ETB"] == 2
     assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Idea"] == 2
+
+
+def test_a_new_silver_version_shows_until_gold_has_assessed_it(client, db_path):
+    # the pipeline wrote a new version of Beta, silver_to_gold has not run yet
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        'INSERT INTO Initiative(UseCaseID, Name, Stage, OwnerID, Timestamp, KeyHash, RowHash, IsActive,'
+        ' BusinessTransactionID, EfficiencyScoreEur, QualityScoreEur, RiskReductionScoreEur, StrategicValueScoreEur,'
+        ' ConfidenceScore, DeliveryScore, EmployeePersonalData, PerformanceOrBehaviourControl, DecisionsOnEmployees,'
+        ' ProfilingOfIndividuals, ChangesEmployeeWorkflows, ProhibitedPractice) VALUES (2, \'Beta\', \'MVP\', 1,'
+        " '2026-10-24 00:00:00', 'key-beta', 'r2', 1, 1, 10000, 0, 0, 0, 0.8, 0.9, 'yes', 0, 'none', 0, 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+    beta = client.get("/api/initiatives/2").json()
+    assert (beta["stage"], beta["processing"], beta["provisional"]) == ("MVP", "not_assessed", True)
+    assert beta["potential_value_eur"] == pytest.approx(7200.0)  # provisional, same formula as gold
+    assert beta["risk_classification"]["id"] == 3 and beta["realized_value_eur"] is None
+    assert client.get("/api/initiatives").json()["total"] == 4  # still one row per use case
+
