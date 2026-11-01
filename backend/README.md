@@ -2,77 +2,62 @@
 
 Eigenes Kubernetes-Deployment. Stellt die Daten aus der DB über eine
 REST-API bereit — generischer Lesezugriff, nicht exklusiv ans Dashboard
-gebunden; potenziell mehrere Applikationen als Konsumenten. Einziger
-Schreibpfad: `POST /api/initiatives` (Eingabemaske) schreibt in die
-Bronze-Tabelle `UserInput_Initiatives_Extract`; alle anderen Endpunkte lesen
+gebunden; potenziell mehrere Applikationen als Konsumenten. Schreibpfade: `POST /api/initiatives` (Formular 1), `PATCH /api/use-cases/{id}`
+(Formular 1 bearbeiten, Formular 2, Stage-Gate) und `POST /api/use-cases/{id}/decision`
+(Genehmigung) schreiben je eine User-Action in die
+Bronze-Tabelle `UserActionExtracts`; alle anderen Endpunkte lesen
 über eine read-only-Verbindung. Im Cluster braucht das Backend dafür
 Schreibzugriff auf die DB: das geteilte RWX-Volume ohne `readOnly` mounten
 (wie bei Airflow, das dieselbe Datei beschreibt). Das Backend schreibt
-ausschließlich in `UserInput_Initiatives_Extract`.
+ausschließlich in `UserActionExtracts`.
 
 ## Endpunkte
 
-| Endpunkt | Zweck |
-|---|---|
-| `GET /api/healthz` | Liveness, ohne Auth, prüft nicht die DB. Kein `/startup`/`/readz`: das Referenz-Deployment konfiguriert keine Probes |
-| `GET /api/auth/rights` | angemeldeter Nutzer und seine Rechte (für das Frontend) |
-| `GET /api/initiatives` | Liste; Filter `stage`, `business_unit`, `department`, `risk_classification_id` (mehrfach angebbar), `owner_id`, `solution_type_id`, `value_type_id`, `search` (Substring in Name/Description); `sort` (`name`, `stage`, `potential_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500, Default 50), `offset`. Antwort `{items, total, limit, offset}` mit verschachteltem `owner`/`solution_type`/`value_type`/`risk_classification` (id, name) |
-| `POST /api/initiatives` | Neue Initiative aus der Eingabemaske → Bronze `UserInput_Initiatives_Extract` (Felder snake_case, Anteile 0–1, mindestens ein vollständiger Value-Hebel). `201` mit der Initiative als `pending` (vorläufige Werte), `409` bei gleichem Namen in derselben Business Unit (auch inaktiv oder noch pending), `422` bei ungültigen Werten. Kein Airflow-Anstoß: Der Sensor des DAGs `bronze_to_silver_user_input` prüft die Tabelle jede Minute |
-| `GET /api/features` | Feature-Schalter für das Frontend: `{"initiative_input": true/false}` aus `AI_COCKPIT_ENABLE_INITIATIVE_INPUT` (Default `true`; `false` blendet „+ New initiative“ aus und `POST /api/initiatives` antwortet `403`) |
-| `GET /api/initiatives/{id}` | Einzelne Initiative |
-| `GET /api/initiatives/summary` | Gesamtzahl, Anzahl je Stage und je Risikostufe, Summe/Ø Potenzial, Summe hypothetischer Nutzen und Kosten/Jahr, Ø Komplexität, Anzahl ohne Owner |
-| `GET /api/owners` | Owner (optional `business_unit`) |
-| `GET /api/business-units` | Distinkte `Owner.category` mit Initiativen-Anzahl |
-| `GET /api/stages` | Stage-Werte mit Anzahl |
-| `GET /api/risk-classifications` | Die 5 Risikostufen der Rahmenbetriebsvereinbarung KI (auch ungenutzte) mit Beschreibung und abgeleiteten Maßnahmen |
-| `GET /api/solution-types`, `GET /api/value-types` | Lookup-Kataloge |
+Pfade mit `{id}` meinen die **UseCaseID** (stabil über alle Versionen). Eine
+Idee, die die Pipeline noch nicht verarbeitet hat, hat `id` = −Record-ID: lesbar,
+aber noch nicht änder- oder entscheidbar (`409`).
 
-### Felder einer Initiative
+| Endpunkt | Zweck | Recht |
+|---|---|---|
+| `GET /api/healthz` | Liveness, ohne Auth, prüft nicht die DB | – |
+| `GET /api/auth/rights` | angemeldeter Nutzer und Rechte `canViewInitiatives`, `canApprove`, `canAdmin` | angemeldet |
+| `GET /api/initiatives` | Dashboard-Liste: aktuelle Silber-Version je Use Case mit Gold-Werten. Filter `stage`, `business_unit`, `department`, `risk_classification_id` (Gold), `approval_status`, `owner_id`, `solution_type_id`, `value_type_id`, `search`; `sort` (`name`, `stage`, `potential_value_eur`, `realized_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500), `offset`, `include_inactive`, `include_pending` | angemeldet |
+| `GET /api/initiatives/summary` | Kennzahlen; Potenzial, realisierter Wert und Risiko aus Gold, dazu `not_assessed` | angemeldet |
+| `GET /api/initiatives/{id}` | ein Use Case im Dashboard-Format | angemeldet |
+| `POST /api/initiatives` | **Formular 1**: neue AI-Idee → User-Action `create`. `ai_layer` statt Solution Type, `running_cost_range` (`up_to_10k`, `10k_to_50k`, `50k_to_100k`, `over_100k`; gespeichert als 5k/30k/75k/150k €/Jahr) statt Betriebskosten. `201` als `pending`, `409` bei gleichem Namen in derselben Business Unit | angemeldet |
+| `GET /api/me/use-cases` | **Meine Use Cases**: eingereicht, Owner oder Lead (Abgleich über `Owner.Email`, sonst Name), mit `roles`, `todos` (`complete_details`, `revise_and_resubmit`), `form2_progress` | angemeldet |
+| `GET /api/use-cases/{id}` | alle Felder aus Formular 1 und 2, Gold-Werte, eingegebene Treiber (`drivers`), `revision`, `can_edit`, `can_decide`, `todos` | angemeldet |
+| `PATCH /api/use-cases/{id}` | Teilupdate → User-Action `update`. `base_revision` Pflicht (`409`, wenn inzwischen geändert); `name`/Business Unit `422`; Formular-2-Felder erst nach Genehmigung (`409`); `resubmit: true` schickt eine abgelehnte Idee zurück in `pending` | Einreicher, Owner, Lead, Admin |
+| `GET /api/approvals` | **Approver-Inbox**: offene Ideen, älteste zuerst | `canApprove` |
+| `POST /api/use-cases/{id}/decision` | `approve` (mit `lead_id`, `needs_gate_passed_at`, Default heute) oder `reject` (mit `comment`) → User-Action `approve`/`reject`; nur aus `pending` | `canApprove` |
+| `GET /api/use-cases/{id}/similar` | Re-use-Check: aktive Use Cases mit der größten Wortüberschneidung in Name und Beschreibung | `canApprove` |
+| `GET /api/form-options` | Auswahllisten für Formular 1 und 2 | angemeldet |
+| `GET /api/owners` | Owner, optional `business_unit`, `search` (Name, Abteilung, E-Mail), `limit` | angemeldet |
+| `GET /api/features` | Feature-Schalter `initiative_input` (`AI_COCKPIT_ENABLE_INITIATIVE_INPUT`; `false` sperrt alle Schreibpfade mit `403`) | angemeldet |
+| `GET /api/business-units`, `/api/stages`, `/api/risk-classifications`, `/api/solution-types`, `/api/value-types` | Lookups (Zählungen über die aktuellen, aktiven Versionen) | angemeldet |
 
-Gespeichert (von der Input Orchestration geschätzt, siehe deren README):
-`stage`, die vier Nutzen-Buckets `efficiency_score_eur`, `quality_score_eur`,
-`risk_reduction_score_eur`, `strategic_value_score_eur` (€/Jahr), die
-Abschläge `confidence_score` und `delivery_score`,
-`solution_complexity_score`, `one_time_costs`, `operating_costs` (€/Jahr),
-`depreciation_years`, `risk_classification`.
+### Felder eines Use Cases
 
-Abgeleitet (nicht gespeichert, `app/derived.py`, in SQL für Sortierung/Summary
-und in Python für die Antwort):
+Aus der aktuellen Silber-Version: `stage`, die vier Nutzen-Buckets (€/Jahr),
+`confidence_score`, `delivery_score`, `solution_complexity_score`,
+`one_time_costs`, `running_costs` (€/Jahr; `operating_costs` liefert denselben
+Wert, bis die UI umgestellt ist), `depreciation_years`, Status und Gate.
+Aus Gold (`AssessedInitiatives`): `potential_value_eur`, `realized_value_eur`,
+`risk_classification`. Abgeleitet (`app/derived.py`):
+`hypothetical_value_eur` (Summe der Buckets) und `annual_cost_eur` (einmalige
+Kosten / Abschreibungsjahre + laufende Kosten).
 
-- `hypothetical_value_eur` = Summe der vier Buckets
-- `potential_value_eur` = hypothetischer Nutzen × Confidence × Delivery — der
-  „Mehrwert“, den das Dashboard zeigt
-- `annual_cost_eur` = einmalige Kosten / Abschreibungsjahre + Betriebskosten.
-  Seit 24.10.2026 speichert die Input Orchestration die Kosten als
-  **Erwartungswerte** (Kosten bei Lieferung × `delivery_score`, Abschreibung
-  einheitlich 5 Jahre); damit ist auch `annual_cost_eur` delivery-gewichtet.
-  Kosten bei Lieferung = Wert / `delivery_score`.
-
-Fehlt ein Eingangswert, ist der abgeleitete Wert `null` (nie 0).
-
-**Soft-Delete und Herkunft:** Die Input Orchestration löscht keine
-Initiativen mehr, sondern setzt `is_active = false`, wenn eine Initiative
-nicht mehr im Quellblatt steht. Liste, Summary, `/api/business-units` und
-`/api/stages` zählen nur aktive; `GET /api/initiatives?include_inactive=true`
-zeigt auch inaktive, `GET /api/initiatives/{id}` liefert jede. Jede
-Initiative trägt `is_active` und `business_transaction_id` (der Lauf, der sie
-zuletzt angelegt/geändert hat: Tabelle `BusinessTransaction` mit
-`BronzeTableName` + `BronzeID` = die Bronze-Zeile, aus der sie gebaut wurde;
-dort stehen `Timestamp` und `SourceFileID`). Tabellen- und Spaltennamen der
-DB entsprechen dem Datenmodell (PascalCase, z. B. `Initiative.DateStart`,
-`OwnerID`); die API-Felder bleiben snake_case (`date_start`, `owner`).
-
-**Pending:** Über die Eingabemaske erfasste Initiativen, die der DAG noch
-nicht verarbeitet hat, liefert `GET /api/initiatives` mit `status: "pending"`
-(sonst `active`/`inactive`), negativer `id` (= −`user_input_id`), ohne
-`business_transaction_id` und mit vorläufig berechneten Werten
-(`app/user_input.py`, gleiche Formeln wie der DAG, geprüft gegen
-`tests/fixtures/user_input_cases.json`, Kopie aus der Input Orchestration).
-Sie stehen nach allen übrigen auf der letzten Seite, folgen den Filtern und
-lassen sich mit `include_pending=false` ausblenden. Fehlt die Tabelle
-`UserInput_Initiatives_Extract` noch (die Input Orchestration legt sie bei
-ihrem ersten Task an), gibt es keine Pending-Einträge und `POST` antwortet
-`503` mit Hinweis; ist die DB für das Backend read-only, ebenfalls `503`.
+**Noch nicht verarbeitet:** Jede Änderung geht zuerst nach Bronze; Silber und
+Gold folgen nach den DAG-Läufen (je etwa eine Minute). Die Endpunkte legen
+unverarbeitete User-Actions deshalb über den aktuellen Stand, so wie der DAG
+sie anwenden wird (`app/use_cases.py`), und markieren das in `processing`:
+`pending` (neue Idee, noch nicht in Silber), `changes_pending` (Änderungen
+unterwegs), `not_assessed` (Gold hat die aktuelle Version noch nicht bewertet,
+etwa weil sie unvollständig ist) oder `assessed`. Solange nicht `assessed`,
+sind Potenzial und Risiko vorläufig berechnet (`provisional: true`, gleiche
+Formeln, geprüft gegen `tests/fixtures/user_input_cases.json`). Fehlt die
+Tabelle `UserActionExtracts` noch, gibt es keine Pending-Einträge und die
+Schreibpfade antworten `503`; ist die DB für das Backend read-only, ebenfalls.
 
 Interaktive Doku: `/api/docs` (Swagger UI offline aus `swagger-ui-bundle`,
 `app/docs.py`), Schema unter `/api/openapi.json`.
@@ -91,16 +76,20 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   `PYTHONPATH=local_stubs` und `EG_AUTH_DEV_MODE=True`. Der Stub kann nur den
   Dev-Modus und verweigert sonst mit 401. **`PYTHONPATH` darf im Deployment
   `local_stubs` nie enthalten**, siehe `local_stubs/README.md`.
-- **Rechte:** Aktuell genügt Anmeldung. `canViewInitiatives` wird von einer
-  Platzhaltergruppe aus dem Template abgeleitet und ist nur informativ, bis
-  die echte Gruppe feststeht (TODO in `app/auth.py`).
+- **Rechte:** Lesen und Einreichen verlangt nur Anmeldung. `canApprove`
+  (Inbox, Entscheidung, Re-use-Check) und `canAdmin` (darf jeden Use Case
+  bearbeiten, darf auch genehmigen) kommen aus AD-Gruppen, die je
+  Installation gesetzt werden: `AI_COCKPIT_APPROVER_GROUPS` und
+  `AI_COCKPIT_ADMIN_GROUPS` (kommagetrennt; leer = niemand).
+  `canViewInitiatives` wird weiter von einer Platzhaltergruppe abgeleitet und
+  ist nur informativ (TODO in `app/auth.py`).
 - **Frontend:** meldet per OIDC an (`eg-auth-react`) und schickt den Token als
   Bearer-Header; lokal läuft alles im Dev-Modus (Bypass im Frontend, siehe
   `frontend/README.md`).
 - Getestet ist das gegen den **Stub**: Gating, 401 ohne Anmeldung, Rechte aus
   Gruppen. Das Verhalten des echten `eg-auth` ist nicht geprüft.
 
-`business_unit` = `Owner.category`. **Initiativen ohne Owner (aktuell 23 von
+`business_unit` = `Owner.category`. **Use Cases ohne Owner (Stand Excel-Import 23 von
 165) gehören damit zu keiner Business Unit** und tauchen in BU-Filter und
 `/api/business-units` nicht auf — bis die Owner-Verknüpfung nachgezogen wird.
 Die BU-Werte kommen unverändert aus der Quelle (z. B. `"50 Hertz"`,
@@ -112,9 +101,9 @@ Die BU-Werte kommen unverändert aus der Quelle (z. B. `"50 Hertz"`,
 
 Siehe Interim-Entscheidung im Root-README. Konkret umgesetzt:
 
-- Lesende Endpunkte öffnen die Datei auf SQLite-Ebene `mode=ro`. Nur
-  `POST /api/initiatives` nutzt eine schreibende Verbindung (für
-  `UserInput_Initiatives_Extract`); das Volume ist dafür ein RWX-Volume ohne
+- Lesende Endpunkte öffnen die Datei auf SQLite-Ebene `mode=ro`. Nur die
+  drei Schreibpfade nutzen eine schreibende Verbindung (ausschließlich für
+  `UserActionExtracts`); das Volume ist dafür ein RWX-Volume ohne
   `readOnly`.
 - **Kein Connection-Pool** (`NullPool`): Jede Anfrage öffnet die Datei neu
   und sieht damit sofort, was die DAGs committet haben (sie schreiben in

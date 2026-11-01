@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.user_input import key_hash, provisional_values, risk_level
+from app.derived import provisional_potential
+from app.user_input import RUNNING_COST_RANGES, key_hash, merged, provisional_values, risk_level, running_cost_range
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "user_input_cases.json").read_text())
 SNAKE = {
@@ -30,26 +31,39 @@ def fixture_input(case):
 
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=[c["name"] for c in FIXTURE["cases"]])
 def test_provisional_values_match_the_shared_fixture(case):
-    record = SimpleNamespace(**fixture_input(case))
+    inputs = fixture_input(case)
     expected = case["expected"]
-    assert risk_level(record) == expected["riskLevel"]
+    assert risk_level(inputs) == expected["riskLevel"]
     if "efficiency" not in expected:
         return
-    v = provisional_values(record)
+    v = provisional_values(inputs)
     hypothetical = (v["efficiency_score_eur"] + v["quality_score_eur"] + v["risk_reduction_score_eur"]
                     + v["strategic_value_score_eur"])
     actual = {
         "efficiency": v["efficiency_score_eur"], "quality": v["quality_score_eur"],
         "riskReduction": v["risk_reduction_score_eur"], "strategic": v["strategic_value_score_eur"],
         "hypothetical": hypothetical, "confidenceScore": v["confidence_score"], "deliveryScore": v["delivery_score"],
-        "potential": hypothetical * v["confidence_score"] * v["delivery_score"],
-        "oneTimeCosts": v["one_time_costs"], "operatingCosts": v["operating_costs"],
+        "potential": provisional_potential(v),
+        "oneTimeCosts": v["one_time_costs"], "operatingCosts": v["running_costs"],
         "depreciationYears": v["depreciation_years"],
-        "annualCost": v["one_time_costs"] / v["depreciation_years"] + v["operating_costs"],
+        "annualCost": v["one_time_costs"] / v["depreciation_years"] + v["running_costs"],
     }
     for key, value in expected.items():
         if key != "riskLevel":
             assert actual[key] == pytest.approx(value), key
+
+
+def test_merged_drivers_later_values_win():
+    first = SimpleNamespace(cases_per_year=100, hours_saved_per_case=1, estimate_basis="rough")
+    second = SimpleNamespace(cases_per_year=None, hours_saved_per_case=2, estimate_basis=None)
+    assert merged([first, second], ("cases_per_year", "hours_saved_per_case", "estimate_basis")) == {
+        "cases_per_year": 100, "hours_saved_per_case": 2, "estimate_basis": "rough"}
+
+
+def test_running_cost_ranges_round_trip():
+    for key, (_, amount) in RUNNING_COST_RANGES.items():
+        assert running_cost_range(amount) == key
+    assert running_cost_range(10_000) == "up_to_10k" and running_cost_range(10_001) == "10k_to_50k"
 
 
 def test_key_hash_matches_the_input_orchestration():
@@ -61,36 +75,44 @@ def test_key_hash_matches_the_input_orchestration():
 # --- API ---------------------------------------------------------------------
 
 
+
+
+def form1(**over):
+    values = fixture_input(FIXTURE["cases"][0])
+    values.pop("operating_costs")
+    return {
+        "name": "Smart Invoice Check", "description": "Checks invoices against orders",
+        "owner_id": 1, "value_type_id": 1, "ai_layer": "AI for business process optimization", "stage": "Idea",
+        "date_delivery": "Q3 2027", **values, "running_cost_range": "10k_to_50k",
+        "solution_complexity_score": 4, **over,
+    }
+
+
 @pytest.fixture()
 def submit(client):
-    def post(**over):
-        body = {
-            "name": "Smart Invoice Check", "description": "Checks invoices against orders",
-            "owner_id": 1, "value_type_id": 1, "solution_type_id": 1, "stage": "Idea",
-            "date_delivery": "Q3 2027",
-            **fixture_input(FIXTURE["cases"][0]),
-            "solution_complexity_score": 4,
-            **over,
-        }
-        return client.post("/api/initiatives", json=body)
-
-    return post
+    return lambda **over: client.post("/api/initiatives", json=form1(**over))
 
 
-def test_post_stores_the_record_and_returns_it_pending(submit, db_path):
+def test_post_stores_a_create_action_and_returns_it_pending(submit, db_path):
     resp = submit()
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["status"] == "pending" and body["id"] == -body["user_input_id"]
+    assert (body["processing"], body["approval_status"], body["provisional"]) == ("pending", "pending", True)
     assert body["owner"]["name"] == "Owner A" and body["date_delivery"].startswith("2027-07-01")
+    assert body["ai_layer"] == "AI for business process optimization" and body["solution_type"] is None
+    # 10k-50k range -> 30,000 entered, x 0.65 expected: annual cost = 130,000/5 + 19,500
+    assert body["running_costs"] == pytest.approx(19_500)
     assert body["potential_value_eur"] == pytest.approx(187980)
-    assert body["annual_cost_eur"] == pytest.approx(58500)
+    assert body["annual_cost_eur"] == pytest.approx(45_500)
     assert body["risk_classification"]["id"] == 2
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            'SELECT "Name", "SubmittedBy", "SourceFileID", "OwnerID" FROM "UserInput_Initiatives_Extract"'
+            'SELECT "ActionType", "UseCaseID", "Name", "SubmittedBy", "SourceFileID", "OwnerID", "OperatingCosts",'
+            ' "AILayer" FROM "UserActionExtracts"'
         ).fetchall()
-    assert row == [("Smart Invoice Check", "Dev User", "user-input", 1)]
+    assert row == [("create", None, "Smart Invoice Check", "Dev User", "user-input", 1, 30000.0,
+                    "AI for business process optimization")]
 
 
 def test_pending_initiatives_are_listed_after_the_others_and_follow_filters(submit, client):
@@ -102,9 +124,12 @@ def test_pending_initiatives_are_listed_after_the_others_and_follow_filters(subm
     assert client.get("/api/initiatives", params={"business_unit": "IT"}).json()["total"] == 1
     assert client.get("/api/initiatives", params={"business_unit": "ETB"}).json()["total"] == 3
     assert client.get("/api/initiatives", params={"include_pending": False}).json()["total"] == 4
+    assert client.get("/api/initiatives", params={"approval_status": "pending"}).json()["total"] == 1
     # paging over both stays consistent
     pages = [client.get("/api/initiatives", params={"limit": 2, "offset": o}).json()["items"] for o in (0, 2, 4)]
     assert [i["name"] for p in pages for i in p] == [i["name"] for i in items]
+    pending_id = items[-1]["id"]
+    assert client.get(f"/api/initiatives/{pending_id}").json()["name"] == "Smart Invoice Check"
 
 
 def test_duplicate_name_in_the_same_business_unit_is_409(submit, db_path):
@@ -112,11 +137,11 @@ def test_duplicate_name_in_the_same_business_unit_is_409(submit, db_path):
     with sqlite3.connect(db_path) as conn:
         for name in ("Alpha", "Omega"):
             conn.execute('UPDATE "Initiative" SET "KeyHash" = ? WHERE "Name" = ?', (key_hash("ETB", name), name))
-    assert submit(name="alpha").status_code == 409  # existing silver initiative in ETB
+    assert submit(name="alpha").status_code == 409  # existing use case in ETB
     assert submit(name="Alpha", owner_id=2).status_code == 201  # other business unit (IT)
     assert submit(name="New one").status_code == 201
     assert submit(name=" NEW  one ").status_code == 409  # still pending
-    assert submit(name="Omega").status_code == 409  # inactive initiatives keep their key
+    assert submit(name="Omega").status_code == 409  # inactive use cases keep their key
 
 
 @pytest.mark.parametrize(
@@ -125,10 +150,11 @@ def test_duplicate_name_in_the_same_business_unit_is_409(submit, db_path):
         {"stage": "Pilot"}, {"date_start": "2027-01-01"}, {"error_rate_before": 8},
         {"cases_per_year": -1}, {"estimate_basis": "guess"}, {"solution_complexity_score": 10},
         {"employee_personal_data": "maybe"}, {"name": "   "}, {"one_time_costs": None},
-        {"unknown_field": 1},
+        {"unknown_field": 1}, {"ai_layer": "Some AI"}, {"ai_layer": None}, {"running_cost_range": "5k"},
+        {"operating_costs": 1000},  # replaced by the range
         # no complete lever
         {"cases_per_year": None, "risk_events_per_year": None, "delay_events_per_year": None},
-        {"owner_id": 99}, {"value_type_id": 99}, {"solution_type_id": 99},
+        {"owner_id": 99}, {"value_type_id": 99},
     ],
 )
 def test_invalid_input_is_422(submit, over):
@@ -140,27 +166,29 @@ def test_post_requires_authentication(client, monkeypatch):
     assert client.post("/api/initiatives", json={}).status_code == 401
 
 
-def test_missing_user_input_table_means_no_pending_and_post_503(client, db_path):
+def test_missing_user_action_table_means_no_pending_and_post_503(client, db_path):
     # e.g. Backend deployed before the input orchestration has created the table
     with sqlite3.connect(db_path) as conn:
-        conn.execute('DROP TABLE "UserInput_Initiatives_Extract"')
+        conn.execute('DROP TABLE "UserActionExtracts"')
     resp = client.get("/api/initiatives", params={"limit": 500})
     assert resp.status_code == 200 and resp.json()["total"] == 4
-    post = client.post("/api/initiatives", json={**fixture_input(FIXTURE["cases"][0]), "name": "x",
-                       "description": "d", "owner_id": 1, "value_type_id": 1, "solution_type_id": 1,
-                       "stage": "Idea", "solution_complexity_score": 4})
+    assert client.get("/api/initiatives/1").status_code == 200
+    post = client.post("/api/initiatives", json=form1())
     assert post.status_code == 503 and "not available yet" in post.json()["detail"]
 
 
-def test_read_only_database_gives_a_clear_503(submit, db_path):
-    import os
-    import stat
+def test_read_only_database_gives_a_clear_503(client, db_path, monkeypatch):
+    # A read-only file (chmod) does not stop root, so the write engine is made read-only instead.
+    import sqlite3 as sq
+    from urllib.parse import quote
 
-    os.chmod(db_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-    try:
-        resp = submit()
-    finally:
-        os.chmod(db_path, stat.S_IRUSR | stat.S_IWUSR)
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    uri = f"file:{quote(str(db_path))}?mode=ro"
+    client.app.state.write_engine = create_engine(
+        "sqlite://", creator=lambda: sq.connect(uri, uri=True, check_same_thread=False), poolclass=NullPool)
+    resp = client.post("/api/initiatives", json=form1())
     assert resp.status_code == 503 and "read-only" in resp.json()["detail"]
 
 

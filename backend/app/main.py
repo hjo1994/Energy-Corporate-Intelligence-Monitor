@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
 from app import auth
-from app.api import initiatives, reference
+from app.api import initiatives, reference, use_cases
 from app.config import get_db_path
 from app.db import make_engine, make_write_engine
 from app import docs
@@ -51,6 +51,7 @@ def get_app(db_path: Path | None = None) -> FastAPI:
     app.include_router(auth.auth_router)
     app.include_router(initiatives.router)
     app.include_router(reference.router)
+    app.include_router(use_cases.router)
 
     # Offline Swagger UI
     app.include_router(docs.router)
