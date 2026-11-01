@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from app.lifecycle import VALUE_DOMAINS, domain_problems
 from app.user_input import RUNNING_COST_RANGES, running_cost_range
 
 
@@ -38,7 +39,7 @@ class RiskClassificationOut(RiskClassificationRef):
 
 # ---------- choice lists (same as the CHECK constraints of UserActionExtracts) ----------
 
-STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown")
+STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown")
 STAGEGATES = ("Needs", "Scope", "Deploy", "Retire")
 APPROVAL_STATUSES = ("pending", "approved", "rejected")
 ESTIMATE_BASES = ("rough", "benchmark", "measured")
@@ -100,8 +101,12 @@ class InitiativeOut(_Out):
     risk_classification: RiskClassificationRef | None
     ai_layer: str | None = None
     approval_status: Literal["pending", "approved", "rejected"] | None = None  # NULL: imported from a sheet
-    stagegate: str | None = None
-    passed_at: datetime | None = None
+    # one date per stage gate: up to today = passed, later = planned (see app/lifecycle.py)
+    needs_gate_date: datetime | None = None
+    scope_gate_date: datetime | None = None
+    deploy_gate_date: datetime | None = None
+    retire_gate_date: datetime | None = None
+    last_gate: Literal[STAGEGATES] | None = None  # type: ignore[valid-type]  # latest gate passed by today
     is_active: bool
     # "active"/"inactive" (soft-deleted) or "pending" (created in the UI, not processed yet)
     status: Literal["active", "inactive", "pending"] = "active"
@@ -210,6 +215,8 @@ class UseCaseDetail(InitiativeOut):
     pending_action_ids: list[int]
     revision: str  # send back as base_revision when saving
     form2_progress: Form2Progress
+    # what does not fit between stage and gate dates (e.g. a sheet use case in Production without dates)
+    stage_problems: list[str] = []
     todos: list[str] = []
     can_edit: bool = False
     can_decide: bool = False
@@ -228,8 +235,12 @@ class MyUseCase(_Out):
     name: str
     approval_status: str | None
     stage: str | None
-    stagegate: str | None
-    passed_at: datetime | None
+    needs_gate_date: datetime | None = None
+    scope_gate_date: datetime | None = None
+    deploy_gate_date: datetime | None = None
+    retire_gate_date: datetime | None = None
+    last_gate: str | None = None
+    stage_problems: list[str] = []
     comment: str | None
     potential_value_eur: float | None
     risk_classification: RiskClassificationRef | None
@@ -303,11 +314,29 @@ class _Form1Values(BaseModel):
     cost_of_delay_per_event: Count | None = None
     lead_time_saved: Share | None = None
 
+    @model_validator(mode="after")
+    def _in_domain(self) -> "_Form1Values":
+        # every number of form 1 is one of the values of its domain (app/lifecycle.py)
+        problems = domain_problems({f: getattr(self, f, None) for f in VALUE_DOMAINS})
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
 
-class InitiativeIn(_Form1Values):
+
+class _GateDates(BaseModel):
+    """One date per stage gate; whether they fit the stage is checked by the API (it needs today)."""
+
+    needs_gate_date: date | None = None
+    scope_gate_date: date | None = None
+    deploy_gate_date: date | None = None
+    retire_gate_date: date | None = None
+
+
+class InitiativeIn(_GateDates, _Form1Values):
     """Form 1, a new AI idea; the same rules as the CHECK constraints of
-    UserActionExtracts, plus: at least one complete value lever. The AI layer
-    replaces the solution type (now form 2), running costs come as a range."""
+    UserActionExtracts, plus: at least one complete value lever, numbers from
+    their domains, gate dates that fit the stage. The AI layer replaces the
+    solution type (now form 2), running costs come as a range."""
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Text
@@ -349,14 +378,15 @@ FORM2_INPUT_FIELDS = (
     "lead_id", "solution_type_id", "enabling_team", "complexity_solidity", "strategic_kpis", "tactical_kpis",
     "value_domain", "autonomy_level", "eu_ai_act_class", "eu_ai_act_role", "works_council_risk_class",
     "target_user_groups", "applicable_to", "capability_direction", "safety_component",
-    "works_council_approved_at", "expected_users", "stagegate", "passed_at",
+    "works_council_approved_at", "expected_users",
     "measured_benefits", "actual_capex", "actual_opex",
 )
 
 
-class UseCasePatch(_Form1Values):
-    """A partial update (form 1 edits, form 2, a stage gate): only the fields
-    sent count. Name and business unit cannot change."""
+class UseCasePatch(_GateDates, _Form1Values):
+    """A partial update (form 1 edits, form 2, stage and gate dates): only the
+    fields sent count. Name and business unit cannot change; everything else can,
+    at any time."""
 
     base_revision: str  # `revision` of the state the user edited; a newer one -> 409
 
@@ -379,7 +409,7 @@ class UseCasePatch(_Form1Values):
     changes_employee_workflows: bool | None = None
     prohibited_practice: bool | None = None
 
-    # form 2 (only once the idea is approved)
+    # form 2
     lead_id: int | None = None
     solution_type_id: int | None = None
     enabling_team: Literal[ENABLING_TEAMS] | None = None  # type: ignore[valid-type]
@@ -397,8 +427,6 @@ class UseCasePatch(_Form1Values):
     safety_component: bool | None = None
     works_council_approved_at: date | None = None
     expected_users: Annotated[int, Field(ge=0)] | None = None
-    stagegate: Literal[STAGEGATES] | None = None  # type: ignore[valid-type]
-    passed_at: date | None = None
     measured_benefits: Count | None = None  # EUR, total to date
     actual_capex: Count | None = None  # EUR, spent to date
     actual_opex: Count | None = None
@@ -414,12 +442,6 @@ class UseCasePatch(_Form1Values):
                     raise ValueError(f"{field} cannot be changed after the idea was submitted")
         return data
 
-    @model_validator(mode="after")
-    def _gate_with_date(self) -> "UseCasePatch":
-        if (self.stagegate is None) != (self.passed_at is None):
-            raise ValueError("stagegate and passed_at go together")
-        return self
-
 
 class DecisionIn(BaseModel):
     """The approver's decision on a pending idea."""
@@ -427,8 +449,7 @@ class DecisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: Literal["approve", "reject"]
-    lead_id: int | None = None  # required to approve
-    needs_gate_passed_at: date | None = None  # default: today
+    lead_id: int | None = None  # required to approve; approving passes the needs gate (today, unless dated)
     comment: ShortText | None = None  # required to reject
     base_revision: str | None = None
 

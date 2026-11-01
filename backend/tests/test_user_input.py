@@ -77,8 +77,19 @@ def test_key_hash_matches_the_input_orchestration():
 
 
 
+# all four levers, every number from its domain (app/lifecycle.py):
+# 5000 x 0.4 h x 60 € = 120,000; 5000 x 7.5 % x 50 % x 500 € = 93,750; 3 x 25 % x 30,000 € = 22,500;
+# 12 x 150,000 € x 10 % = 180,000 -> 416,250 hypothetical, x 0.6 x 0.65 = 162,337.5 potential
+FORM1_VALUES = {
+    "cases_per_year": 5000, "hours_saved_per_case": 0.4, "error_rate_before": 0.075, "errors_avoided": 0.5,
+    "cost_per_error": 500, "risk_events_per_year": 3, "events_avoided": 0.25, "cost_per_event": 30000,
+    "delay_events_per_year": 12, "cost_of_delay_per_event": 150000, "lead_time_saved": 0.1,
+    "one_time_costs": 175000,
+}
+
+
 def form1(**over):
-    values = fixture_input(FIXTURE["cases"][0])
+    values = {**fixture_input(FIXTURE["cases"][0]), **FORM1_VALUES}
     values.pop("operating_costs")
     return {
         "name": "Smart Invoice Check", "description": "Checks invoices against orders",
@@ -101,10 +112,10 @@ def test_post_stores_a_create_action_and_returns_it_pending(submit, db_path):
     assert (body["processing"], body["approval_status"], body["provisional"]) == ("pending", "pending", True)
     assert body["owner"]["name"] == "Owner A" and body["date_delivery"].startswith("2027-07-01")
     assert body["ai_layer"] == "AI for business process optimization" and body["solution_type"] is None
-    # 10k-50k range -> 30,000 entered, x 0.65 expected: annual cost = 130,000/5 + 19,500
+    # 10k-50k range -> 30,000 entered, x 0.65 expected: annual cost = 175,000 x 0.65 / 5 + 19,500
     assert body["running_costs"] == pytest.approx(19_500)
-    assert body["potential_value_eur"] == pytest.approx(187980)
-    assert body["annual_cost_eur"] == pytest.approx(45_500)
+    assert body["potential_value_eur"] == pytest.approx(162_337.5)
+    assert body["annual_cost_eur"] == pytest.approx(42_250)
     assert body["risk_classification"]["id"] == 2
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
@@ -148,7 +159,8 @@ def test_duplicate_name_in_the_same_business_unit_is_409(submit, db_path):
     "over",
     [
         {"stage": "Pilot"}, {"date_start": "2027-01-01"}, {"error_rate_before": 8},
-        {"cases_per_year": -1}, {"estimate_basis": "guess"}, {"solution_complexity_score": 10},
+        {"cases_per_year": -1}, {"cases_per_year": 3000}, {"one_time_costs": 200000}, {"lead_time_saved": 0.15},
+        {"estimate_basis": "guess"}, {"solution_complexity_score": 10},
         {"employee_personal_data": "maybe"}, {"name": "   "}, {"one_time_costs": None},
         {"unknown_field": 1}, {"ai_layer": "Some AI"}, {"ai_layer": None}, {"running_cost_range": "5k"},
         {"operating_costs": 1000},  # replaced by the range

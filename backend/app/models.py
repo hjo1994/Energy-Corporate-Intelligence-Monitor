@@ -10,7 +10,7 @@ writes. Keep both in sync.
 
 Layers:
 - Bronze UserActionExtracts (UserAction): one record per action in the UI —
-  create (form 1), update (form 1 edits, form 2, stage gate), approve,
+  create (form 1), update (form 1 edits, form 2, stage and gate dates), approve,
   reject. The only table the Backend writes.
 - Silver Initiative: append-only, one row per version of a use case
   (UseCaseID); the current version is the one with the highest ID.
@@ -76,6 +76,11 @@ class BusinessTransaction(Base):
     bronze_table_name = Column("BronzeTableName", String, nullable=False)
 
 
+# Stage gate -> attribute of its date (columns NeedsGateDate, ...), in gate order.
+GATE_DATE_FIELDS = {
+    "Needs": "needs_gate_date", "Scope": "scope_gate_date", "Deploy": "deploy_gate_date", "Retire": "retire_gate_date",
+}
+
 # Form 2 fields stored as plain values (same names in bronze, silver and gold).
 FORM2_FIELDS = (
     "ai_layer", "enabling_team", "complexity_solidity", "strategic_kpis", "tactical_kpis", "value_domain",
@@ -99,8 +104,11 @@ class Initiative(Base):
     description = Column("Description", String, nullable=True)
     stage = Column("Stage", String, nullable=False)
     status = Column("Status", String, nullable=True)  # pending / approved / rejected; NULL = from a sheet
-    stagegate = Column("Stagegate", String, nullable=True)  # last gate passed
-    passed_at = Column("PassedAt", DateTime, nullable=True)
+    # one date per stage gate: up to today = passed, later = planned
+    needs_gate_date = Column("NeedsGateDate", DateTime, nullable=True)
+    scope_gate_date = Column("ScopeGateDate", DateTime, nullable=True)
+    deploy_gate_date = Column("DeployGateDate", DateTime, nullable=True)
+    retire_gate_date = Column("RetireGateDate", DateTime, nullable=True)
     comment = Column("Comment", String, nullable=True)  # comment of the last decision
     date_start = Column("DateStart", DateTime, nullable=True)
     date_delivery = Column("DateDelivery", DateTime, nullable=True)
@@ -201,8 +209,10 @@ class UserAction(Base):
     action_type = Column("ActionType", String, nullable=False)  # create / update / approve / reject
     use_case_id = Column("UseCaseID", Integer, nullable=True)  # empty for create
     status = Column("Status", String, nullable=True)
-    stagegate = Column("Stagegate", String, nullable=True)
-    passed_at = Column("PassedAt", DateTime, nullable=True)
+    needs_gate_date = Column("NeedsGateDate", DateTime, nullable=True)
+    scope_gate_date = Column("ScopeGateDate", DateTime, nullable=True)
+    deploy_gate_date = Column("DeployGateDate", DateTime, nullable=True)
+    retire_gate_date = Column("RetireGateDate", DateTime, nullable=True)
     comment = Column("Comment", String, nullable=True)
 
     name = Column("Name", String, nullable=True)

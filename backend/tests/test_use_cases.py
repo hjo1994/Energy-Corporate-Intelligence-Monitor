@@ -3,6 +3,7 @@
 The pipeline is not part of these tests: `process` stands in for
 bronze_to_silver_user_input turning a create record into the first silver
 version; everything else is shown through the overlay of unprocessed actions."""
+import datetime
 import sqlite3
 
 import pytest
@@ -65,6 +66,10 @@ def test_form_options(client):
     assert options["running_cost_ranges"][1]["amount"] == 30000
     assert "Operational and advanced AI" in [o["value"] for o in options["ai_layers"]]
     assert {"enabling_teams", "eu_ai_act_classes", "stagegates", "applicable_to"} <= set(options)
+    assert options["stage_gate_rules"]["PoC"] == {"passed": ["Scope"], "not_passed": ["Deploy"]}
+    assert "Retired" in [o["value"] for o in options["stages"]]
+    assert options["value_domains"]["one_time_costs"][0] == {"value": 25000, "label": "under 50k €"}
+    assert set(options["value_domains"]) >= {"cases_per_year", "hours_saved_per_case", "lead_time_saved"}
 
 
 def test_sheet_use_case_detail(client):
@@ -96,7 +101,7 @@ def test_a_pending_idea_can_be_read_but_not_changed(client, submit, as_approver)
     created = submit()
     pending = detail(client, created["id"])
     assert (pending["processing"], pending["approval_status"], pending["can_edit"]) == ("pending", "pending", False)
-    assert pending["drivers"]["cases_per_year"] == 3000 and pending["running_cost_range"] == "10k_to_50k"
+    assert pending["drivers"]["cases_per_year"] == 5000 and pending["running_cost_range"] == "10k_to_50k"
     assert client.patch(f"/api/use-cases/{created['id']}", json={"base_revision": "0-1", "stage": "PoC"}
                         ).status_code == 409
     assert client.post(f"/api/use-cases/{created['id']}/decision",
@@ -122,39 +127,109 @@ def test_lifecycle_approve_then_form2(client, idea, as_approver, monkeypatch):
     before = detail(client, 6)
     assert (before["processing"], before["can_decide"]) == ("not_assessed", True)  # gold has not run yet
 
-    # form 2 opens only after approval
-    assert client.patch("/api/use-cases/6", json={"base_revision": before["revision"],
-                                                  "enabling_team": "EL.AI"}).status_code == 409
+    # form 2 can be filled in at any time, also before the approval
+    resp = client.patch("/api/use-cases/6", json={"base_revision": before["revision"], "enabling_team": "EL.AI"})
+    assert resp.status_code == 200, resp.text
+    before = resp.json()
     assert client.post("/api/use-cases/6/decision", json={"decision": "approve"}).status_code == 422  # no lead
-    resp = client.post("/api/use-cases/6/decision",
-                       json={"decision": "approve", "lead_id": 3, "needs_gate_passed_at": "2026-10-31"})
+    assert client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3,
+                                                          "needs_gate_passed_at": "2026-10-31"}).status_code == 422
+    resp = client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3})
     assert resp.status_code == 200, resp.text
     approved = resp.json()
-    assert (approved["approval_status"], approved["stagegate"], approved["passed_at"]) == (
-        "approved", "Needs", "2026-10-31T00:00:00")
+    today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    # approving passes the needs gate today
+    assert (approved["approval_status"], approved["needs_gate_date"], approved["last_gate"]) == (
+        "approved", f"{today}T00:00:00", "Needs")
     assert approved["lead"]["name"] == "Lead C" and approved["todos"] == ["complete_details"]
     assert client.get("/api/approvals").json() == []
     assert client.post("/api/use-cases/6/decision",
                        json={"decision": "reject", "comment": "late"}).status_code == 409  # not pending any more
 
     # a stale revision is refused instead of overwriting
-    stale = client.patch("/api/use-cases/6", json={"base_revision": before["revision"], "enabling_team": "EL.AI"})
+    stale = client.patch("/api/use-cases/6", json={"base_revision": before["revision"], "enabling_team": "DiY"})
     assert stale.status_code == 409 and stale.json()["detail"]["revision"] == approved["revision"]
 
     resp = client.patch("/api/use-cases/6", json={
-        "base_revision": approved["revision"], "enabling_team": "EL.AI", "eu_ai_act_class": "minimal",
+        "base_revision": approved["revision"], "eu_ai_act_class": "minimal",
         "applicable_to": ["ETB", "50Hertz", "ETB"], "expected_users": 40, "solution_type_id": 1,
-        "hours_saved_per_case": 1.0, "stagegate": "Scope", "passed_at": "2026-12-01", "actual_capex": 20000,
+        "hours_saved_per_case": 2.5, "scope_gate_date": "2030-03-01", "actual_capex": 20000,
         "actual_opex": 3000, "measured_benefits": 5000,
     })
     assert resp.status_code == 200, resp.text
     uc = resp.json()
     assert (uc["enabling_team"], uc["applicable_to"], uc["expected_users"]) == ("EL.AI", "ETB,50Hertz", 40)
-    assert (uc["stagegate"], uc["approval_status"], uc["actual_costs"]) == ("Scope", "approved", 23000)
-    # value recomputed provisionally from all actions merged: 3000 cases x 1 h x 60 €
-    assert uc["efficiency_score_eur"] == 180000 and uc["quality_score_eur"] == 192000
-    assert uc["drivers"]["hours_saved_per_case"] == 1.0 and uc["drivers"]["cases_per_year"] == 3000
+    assert (uc["scope_gate_date"], uc["last_gate"], uc["approval_status"], uc["actual_costs"]) == (
+        "2030-03-01T00:00:00", "Needs", "approved", 23000)  # a planned gate is not passed
+    # value recomputed provisionally from all actions merged: 5000 cases x 2.5 h x 60 €
+    assert uc["efficiency_score_eur"] == 750000 and uc["quality_score_eur"] == 93750
+    assert uc["drivers"]["hours_saved_per_case"] == 2.5 and uc["drivers"]["cases_per_year"] == 5000
     assert uc["form2_progress"]["filled"] == 7
+
+
+def patch(client, id, **fields):
+    return client.patch(f"/api/use-cases/{id}", json={"base_revision": detail(client, id)["revision"], **fields})
+
+
+def test_stage_and_gate_dates_must_fit(client, idea):
+    # PoC needs the scope gate passed (form 2 Excel: "scope gate must be passed before PoC")
+    resp = patch(client, 6, stage="PoC")
+    assert resp.status_code == 422 and "scope gate" in resp.json()["detail"]
+    assert patch(client, 6, stage="PoC", scope_gate_date="2030-01-01").status_code == 422  # in the future
+    resp = patch(client, 6, stage="PoC", needs_gate_date="2026-02-01", scope_gate_date="2026-03-01",
+                 deploy_gate_date="2030-06-01")
+    assert resp.status_code == 200, resp.text
+    uc = resp.json()
+    assert (uc["stage"], uc["last_gate"], uc["stage_problems"]) == ("PoC", "Scope", [])
+    # in PoC the deploy gate is not passed yet
+    resp = patch(client, 6, deploy_gate_date="2026-04-01")
+    assert resp.status_code == 422 and "deploy gate" in resp.json()["detail"]
+    # gates in order
+    resp = patch(client, 6, scope_gate_date="2026-01-01")
+    assert resp.status_code == 422 and "before the needs gate" in resp.json()["detail"]
+    # Production needs the deploy gate passed too
+    assert patch(client, 6, stage="Production").status_code == 422
+    resp = patch(client, 6, stage="Production", deploy_gate_date="2026-05-01")
+    assert resp.status_code == 200 and resp.json()["last_gate"] == "Deploy"
+    # back to an earlier stage: the scope and deploy gates must move to the future
+    assert patch(client, 6, stage="Exploration").status_code == 422
+    resp = patch(client, 6, stage="Exploration", scope_gate_date="2030-01-01", deploy_gate_date="2030-06-01")
+    assert resp.status_code == 200 and resp.json()["last_gate"] == "Needs"
+    # no rule for On hold; other edits are never blocked by the stage
+    assert patch(client, 6, stage="On hold").status_code == 200
+
+
+def test_old_mismatch_is_shown_but_does_not_block_other_edits(client, db_path):
+    conn = sqlite3.connect(db_path)
+    # Beta comes from the sheet: in Production, no gate dates; Dev User (Lead C) leads it
+    conn.execute('UPDATE "Initiative" SET "Stage" = \'Production\', "LeadID" = 3 WHERE "UseCaseID" = 2')
+    conn.commit()
+    conn.close()
+    uc = detail(client, 2)
+    assert uc["last_gate"] is None and len(uc["stage_problems"]) == 2
+    assert patch(client, 2, description="Still fine").status_code == 200
+    assert patch(client, 2, scope_gate_date="2026-03-01").status_code == 422  # the deploy gate is still missing
+
+
+def test_new_idea_in_a_later_stage_needs_its_gate_dates(submit, client):
+    resp = client.post("/api/initiatives", json=form1(name="Later", stage="MVP"))
+    assert resp.status_code == 422 and "scope gate" in resp.json()["detail"]
+    created = submit(name="Later", stage="MVP", needs_gate_date="2026-01-10", scope_gate_date="2026-02-10")
+    pending = detail(client, created["id"])
+    assert (pending["scope_gate_date"], pending["last_gate"]) == ("2026-02-10T00:00:00", "Scope")
+
+
+def test_approval_keeps_a_needs_date_from_the_past_and_never_ends_after_a_later_gate(client, submit, db_path,
+                                                                                     as_approver):
+    created = submit(name="Dated", stage="PoC", scope_gate_date="2026-02-10")  # needs gate not dated
+    process(db_path, created["user_input_id"], 7)
+    conn = sqlite3.connect(db_path)
+    conn.execute('UPDATE "Initiative" SET "Stage" = \'PoC\', "ScopeGateDate" = \'2026-02-10 00:00:00\''
+                 ' WHERE "UseCaseID" = 7')
+    conn.commit()
+    conn.close()
+    approved = client.post("/api/use-cases/7/decision", json={"decision": "approve", "lead_id": 3}).json()
+    assert approved["needs_gate_date"] == "2026-02-10T00:00:00" and approved["stage_problems"] == []
 
 
 def test_name_and_business_unit_cannot_change(client, idea):

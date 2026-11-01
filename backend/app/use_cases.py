@@ -27,8 +27,10 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
 from app import derived
+from app.lifecycle import gate_dates, last_passed_gate, stage_problems
 from app.models import (
     FORM2_FIELDS,
+    GATE_DATE_FIELDS,
     RISK_ANSWERS,
     AssessedInitiative,
     BusinessTransaction,
@@ -46,7 +48,7 @@ ACTION_TABLE = UserAction.__tablename__
 
 # Silver attributes a use case state carries (besides the bookkeeping below).
 SILVER_FIELDS = (
-    "name", "description", "stage", "status", "stagegate", "passed_at", "comment", "date_start", "date_delivery",
+    "name", "description", "stage", "status", *GATE_DATE_FIELDS.values(), "comment", "date_start", "date_delivery",
     "efficiency_score_eur", "quality_score_eur", "risk_reduction_score_eur", "strategic_value_score_eur",
     "solution_complexity_score", "confidence_score", "delivery_score", "one_time_costs", "running_costs",
     "depreciation_years", "measured_benefits", "actual_costs",
@@ -55,7 +57,7 @@ SILVER_FIELDS = (
 # User-action fields copied onto the state when set (Name and business unit never change).
 _COPIED = (
     "description", "owner_id", "lead_id", "value_type_id", "solution_type_id", "stage", "status", "comment",
-    *RISK_ANSWERS, *FORM2_FIELDS, "measured_benefits",
+    *GATE_DATE_FIELDS.values(), *RISK_ANSWERS, *FORM2_FIELDS, "measured_benefits",
 )
 # Form 2 fields counted for the "complete the details" to-do (lead and solution type included).
 FORM2_PROGRESS_FIELDS = ("lead_id", "solution_type_id", *FORM2_FIELDS)
@@ -219,11 +221,10 @@ def _overlay(state: dict, on_top: list[UserAction], all_actions: list[UserAction
                 state[name] = quarter_start(getattr(action, name))
         if action.solution_complexity_score is not None:
             state["solution_complexity_score"] = float(action.solution_complexity_score)
-        if action.stagegate is not None:
-            state.update(stagegate=action.stagegate, passed_at=action.passed_at)
         if action.action_type == "approve":
-            state.update(status="approved", lead_id=action.lead_id, stagegate=action.stagegate or "Needs",
-                         passed_at=action.passed_at or action.timestamp)
+            # approving passes the needs gate (the API sends the date; else it stays or is the approval time)
+            state.update(status="approved", lead_id=action.lead_id,
+                         needs_gate_date=action.needs_gate_date or state["needs_gate_date"] or action.timestamp)
         elif action.action_type == "reject":
             state["status"] = "rejected"
         state["changed_by"], state["updated_at"] = action.submitted_by, action.timestamp
@@ -258,6 +259,9 @@ def _finish(state: dict) -> None:
     state["hypothetical_value_eur"] = derived.hypothetical_value(state)
     state["annual_cost_eur"] = derived.annual_cost(state)
     state["revision"] = f"{state['version_id'] or 0}-{state['last_action_id'] or 0}"
+    day = today()
+    state["last_gate"] = last_passed_gate(state, day)
+    state["stage_problems"] = stage_problems(state["stage"], gate_dates(state), day)
     filled = sum(1 for name in FORM2_PROGRESS_FIELDS if state.get(name) not in (None, ""))
     state["form2_progress"] = {"filled": filled, "total": len(FORM2_PROGRESS_FIELDS)}
 

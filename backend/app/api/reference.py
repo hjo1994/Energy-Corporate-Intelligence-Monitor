@@ -11,6 +11,7 @@ from app.auth import authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session
 from app import schemas
+from app.lifecycle import STAGE_GATE_RULES, VALUE_DOMAINS
 from app.models import Initiative, Owner, RiskClassification, SolutionType, ValueType, current_version_ids
 from app.schemas import BusinessUnitCount, OwnerOut, RiskClassificationOut, StageCount, TypeOut
 from app.user_input import RUNNING_COST_RANGES
@@ -102,6 +103,12 @@ def form_options() -> dict:
     return {
         "stages": _options(schemas.STAGES),
         "stagegates": _options(schemas.STAGEGATES),
+        # stage -> gates that must be passed / must not be passed yet (form 2 Excel, app/lifecycle.py)
+        "stage_gate_rules": {stage: {"passed": list(passed), "not_passed": list(not_yet)}
+                             for stage, (passed, not_yet) in STAGE_GATE_RULES.items()},
+        # form 1: every number from a domain; the value is what is stored
+        "value_domains": {field: [{"value": v, "label": label} for v, label in domain]
+                          for field, domain in VALUE_DOMAINS.items()},
         "ai_layers": _options(schemas.AI_LAYERS),
         "running_cost_ranges": [{"value": k, "label": label, "amount": amount}
                                 for k, (label, amount) in RUNNING_COST_RANGES.items()],
