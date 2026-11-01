@@ -7,10 +7,13 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
+import { applyDevUser, storedDevUser } from "./shared/auth/devUsers";
 
 const root = createRoot(document.getElementById("root")!);
 
 if (AUTH_DEV_BYPASS) {
+  // the demo persona this tab was switched to (see DevUserSwitch)
+  applyDevUser(storedDevUser());
   root.render(
     <StrictMode>
       <BrowserRouter>

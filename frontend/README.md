@@ -188,6 +188,14 @@ Backend muss mit `EG_AUTH_DEV_MODE=True` laufen. Der Bypass gilt nur im
 Dev-Server (`import.meta.env.DEV`) — ein Produktions-Build ignoriert ihn, auch
 wenn die Variable in der Build-Umgebung steht (getestet).
 
+**Demo mit zwei Personen (Dev-Bypass):** Kennt das Backend Personas
+(`EG_AUTH_DEV_USERS`, siehe `backend/README.md`), erscheint oben statt
+„Sign out“ ein Auswahlfeld **Demo user**. Die Wahl gilt je Browser-Tab
+(sessionStorage) und wird als Token `dev:<email>` gesendet. So zeigt ein
+Fenster den Einreicher, ein zweites den Approver mit seiner Inbox. Im
+Produktions-Build gibt es das Feld nicht; dort meldet sich jede Person per SSO
+an.
+
 ## Lokal starten
 
 ```bash

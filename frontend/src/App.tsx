@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { fetchApprovals, fetchFeatures, fetchMyUseCases } from "./api/client";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
+import { DevUserSwitch } from "./shared/auth/DevUserSwitch";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
@@ -76,7 +77,9 @@ function Shell() {
             + New AI idea
           </NavLink>
         )}
-        {!AUTH_DEV_BYPASS && (
+        {AUTH_DEV_BYPASS ? (
+          <DevUserSwitch />
+        ) : (
           <NavLink to="/logout" className="logout">
             Sign out
           </NavLink>
