@@ -96,7 +96,8 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   `canViewInitiatives` wird weiter von einer Platzhaltergruppe abgeleitet und
   ist nur informativ (TODO in `app/auth.py`).
 - **Demo-Presenter (auch in Produktion):** `AI_COCKPIT_DEMO_PRESENTERS`
-  (kommagetrennt, E-Mail-Adressen oder AD-Gruppen; leer = niemand, Default)
+  (kommagetrennt, SSO-Anzeigenamen, E-Mail-Adressen oder AD-Gruppen; leer =
+  niemand, Default)
   nennt die Konten, die ihre Sitzung für eine Demo in den Approver-Modus
   schalten dürfen. Sie melden sich normal per SSO an und arbeiten als normaler
   Nutzer; mit dem Header `X-Demo-Role: approver` (Schalter im Frontend)

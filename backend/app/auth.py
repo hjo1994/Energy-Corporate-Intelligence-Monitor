@@ -48,7 +48,7 @@ authorizer = FastAPIResourceProtector(groups_to_rights=map_groups_to_rights)
 
 # ---------- demo presenters ----------
 # For demos with one SSO account: the accounts in AI_COCKPIT_DEMO_PRESENTERS (comma-separated
-# e-mail addresses or AD groups; empty = nobody, the default) may switch their session to
+# SSO display names, e-mail addresses or AD groups; empty = nobody, the default) may switch their session to
 # approver rights with the header "X-Demo-Role: approver". The identity stays the SSO identity;
 # what they do as demo approver is recorded under "<name> (demo approver)". Everyone else's
 # header is ignored.
@@ -61,8 +61,9 @@ def is_demo_presenter(user: Any) -> bool:
     if not allowed:
         return False
     email = (getattr(user, "email", None) or "").casefold()
+    name = (getattr(user, "name", None) or "").strip().casefold()
     groups = {g.casefold() for g in (getattr(user, "groups", None) or [])}
-    return bool((email and email in allowed) or groups & allowed)
+    return bool((email and email in allowed) or (name and name in allowed) or groups & allowed)
 
 
 @dataclass

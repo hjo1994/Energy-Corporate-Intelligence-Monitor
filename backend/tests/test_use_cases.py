@@ -375,3 +375,12 @@ def test_demo_role_header_is_ignored_for_everyone_else(client, idea, monkeypatch
     assert client.get("/api/approvals", headers=sneaky).status_code == 403
     assert client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3},
                        headers=sneaky).status_code == 403
+
+
+def test_demo_presenter_by_sso_name(client, monkeypatch):
+    monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
+    monkeypatch.setenv("AI_COCKPIT_DEMO_PRESENTERS", " jonas ")
+    rights = client.get("/api/auth/rights", headers={**JONAS, "X-Demo-Role": "approver"}).json()
+    assert (rights["demo_presenter"], rights["rights"]["canApprove"]) == (True, True)
+    other = client.get("/api/auth/rights", headers={**APPROVER, "X-Demo-Role": "approver"}).json()
+    assert other["demo_presenter"] is False
