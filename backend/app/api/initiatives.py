@@ -9,6 +9,7 @@ id = −record ID), see app/use_cases.py.
 """
 from __future__ import annotations
 
+import datetime
 from typing import Annotated, Literal
 
 from eg_auth.fastapi import UserInfo
@@ -21,7 +22,9 @@ from app.auth import authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
 from app.derived import annual_cost_sql, hypothetical_value_sql
+from app.lifecycle import gate_dates, stage_problems
 from app.models import (
+    GATE_DATE_FIELDS,
     AssessedInitiative,
     Initiative,
     Owner,
@@ -44,6 +47,7 @@ from app.use_cases import (
     load_states,
     pending_create_state,
     table_exists,
+    today,
     unprocessed_actions,
     with_refs,
 )
@@ -202,6 +206,20 @@ def _pending_matches(p: InitiativeOut, stage, business_unit, department, owner_i
     )
 
 
+def check_stage_gates(stage: str | None, dates: dict, day: datetime.date) -> None:
+    """422 when the gate dates do not fit the stage (app/lifecycle.py)."""
+    problems = stage_problems(stage, dates, day)
+    if problems:
+        raise HTTPException(status_code=422, detail=" ".join(problems))
+
+
+def as_datetimes(fields: dict, names) -> None:
+    for name in names:
+        if isinstance(fields.get(name), datetime.date) and not isinstance(fields[name], datetime.datetime):
+            fields[name] = datetime.datetime.combine(fields[name], datetime.time())
+
+
+
 @router.post("", response_model=InitiativeOut, status_code=201)
 def create_initiative(
     body: InitiativeIn,
@@ -243,6 +261,8 @@ def create_initiative(
             )
 
     values = body.model_dump(exclude={"running_cost_range"})
+    check_stage_gates(body.stage, gate_dates(values), today())
+    as_datetimes(values, GATE_DATE_FIELDS.values())
     record = UserAction(
         **values,
         operating_costs=RUNNING_COST_RANGES[body.running_cost_range][1],

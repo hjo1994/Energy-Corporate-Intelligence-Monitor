@@ -16,13 +16,13 @@ from eg_auth.fastapi import UserInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.initiatives import commit
+from app.api.initiatives import as_datetimes, check_stage_gates, commit
 from app.auth import authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
-from app.models import Owner, SolutionType, UserAction, ValueType
+from app.lifecycle import gate_dates
+from app.models import GATE_DATE_FIELDS, Owner, SolutionType, UserAction, ValueType
 from app.schemas import (
-    FORM2_INPUT_FIELDS,
     ApprovalItem,
     DecisionIn,
     MyUseCase,
@@ -37,6 +37,7 @@ from app.use_cases import (
     load_state,
     load_states,
     table_exists,
+    today,
     todos,
     user_owner_ids,
     with_refs,
@@ -176,9 +177,10 @@ def update_use_case(
     user: User,
     session: Annotated[Session, Depends(get_write_session)],
 ) -> UseCaseDetail:
-    """Save form 1 edits, form 2 or a stage gate as an 'update' action. Only the fields sent
-    count (null = not sent). 409 when the use case changed since `base_revision`, while the
-    idea is still being processed, or for form 2 fields before approval."""
+    """Save form 1 edits, form 2, the stage or gate dates as an 'update' action, at any time.
+    Only the fields sent count (null = not sent). When the stage or a gate date is sent, stage
+    and gate dates together must fit (422 otherwise). 409 when the use case changed since
+    `base_revision` or while the idea is still being processed."""
     _writable(session)
     state = _state_or_404(session, use_case_id)
     _not_processing(state)
@@ -190,8 +192,10 @@ def update_use_case(
     fields = {k: v for k, v in body.model_dump(exclude={"base_revision", "resubmit"}).items() if v is not None}
     if not fields and not body.resubmit:
         raise HTTPException(status_code=422, detail="Nothing to change")
-    if any(f in FORM2_INPUT_FIELDS for f in fields) and state["status"] not in ("approved", None):
-        raise HTTPException(status_code=409, detail="The use case details (form 2) open once the idea is approved.")
+    if "stage" in fields or any(f in fields for f in GATE_DATE_FIELDS.values()):
+        # an edit of something else is never blocked by an old mismatch (e.g. from the sheet)
+        dates = gate_dates({**state, **fields})
+        check_stage_gates(fields.get("stage", state["stage"]), dates, today())
     if body.resubmit:
         if state["status"] != "rejected":
             raise HTTPException(status_code=409, detail="Only a rejected idea can be resubmitted.")
@@ -213,9 +217,7 @@ def update_use_case(
         fields["operating_costs"] = RUNNING_COST_RANGES[fields.pop("running_cost_range")][1]
     if "applicable_to" in fields:
         fields["applicable_to"] = ",".join(dict.fromkeys(fields["applicable_to"]))
-    for name in ("works_council_approved_at", "passed_at"):
-        if name in fields:
-            fields[name] = datetime.datetime.combine(fields[name], datetime.time())
+    as_datetimes(fields, ("works_council_approved_at", *GATE_DATE_FIELDS.values()))
 
     commit(session, UserAction(
         **fields, action_type="update", use_case_id=state["use_case_id"], timestamp=utcnow(),
@@ -231,8 +233,9 @@ def decide(
     user: User,
     session: Annotated[Session, Depends(get_write_session)],
 ) -> UseCaseDetail:
-    """Approve (with use case lead and the date the Needs gate was passed, default today) or
-    reject (with a comment) a pending idea. Approvers only."""
+    """Approve (with use case lead; passes the needs gate) or reject (with a comment) a pending
+    idea. Approvers only. Approving sets the needs gate date to today unless the submitter has
+    already dated it in the past; never later than a later gate that is already passed."""
     _writable(session)
     if not getattr(user.rights, "canApprove", False):
         raise HTTPException(status_code=403, detail="Only approvers can decide on ideas.")
@@ -247,12 +250,20 @@ def decide(
     if body.decision == "approve":
         if session.get(Owner, body.lead_id) is None:
             raise HTTPException(status_code=422, detail="Unknown lead")
-        passed = body.needs_gate_passed_at or now.date()
-        record = UserAction(action_type="approve", lead_id=body.lead_id, stagegate="Needs",
-                            passed_at=datetime.datetime.combine(passed, datetime.time()), comment=body.comment)
+        record = UserAction(action_type="approve", lead_id=body.lead_id, comment=body.comment,
+                            needs_gate_date=_needs_gate_on_approval(state, now.date()))
     else:
         record = UserAction(action_type="reject", comment=body.comment)
     record.use_case_id, record.timestamp = state["use_case_id"], now
     record.source_file_id, record.submitted_by = "user-input", user.name
     commit(session, record)
     return _detail(session, _state_or_404(session, use_case_id), user)
+
+
+def _needs_gate_on_approval(state: dict, day: datetime.date) -> datetime.datetime | None:
+    """The needs gate date an approval sets; None keeps the one the submitter gave (in the past)."""
+    dates = gate_dates(state)
+    if dates["Needs"] is not None and dates["Needs"] <= day:
+        return None
+    later = [d for gate, d in dates.items() if gate != "Needs" and d is not None and d <= day]
+    return datetime.datetime.combine(min([day, *later]), datetime.time())

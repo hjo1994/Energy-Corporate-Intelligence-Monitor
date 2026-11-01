@@ -3,7 +3,7 @@
 Eigenes Kubernetes-Deployment. Stellt die Daten aus der DB über eine
 REST-API bereit — generischer Lesezugriff, nicht exklusiv ans Dashboard
 gebunden; potenziell mehrere Applikationen als Konsumenten. Schreibpfade: `POST /api/initiatives` (Formular 1), `PATCH /api/use-cases/{id}`
-(Formular 1 bearbeiten, Formular 2, Stage-Gate) und `POST /api/use-cases/{id}/decision`
+(Formular 1 bearbeiten, Formular 2, Stage und Gate-Daten) und `POST /api/use-cases/{id}/decision`
 (Genehmigung) schreiben je eine User-Action in die
 Bronze-Tabelle `UserActionExtracts`; alle anderen Endpunkte lesen
 über eine read-only-Verbindung. Im Cluster braucht das Backend dafür
@@ -24,14 +24,14 @@ aber noch nicht änder- oder entscheidbar (`409`).
 | `GET /api/initiatives` | Dashboard-Liste: aktuelle Silber-Version je Use Case mit Gold-Werten. Filter `stage`, `business_unit`, `department`, `risk_classification_id` (Gold), `approval_status`, `owner_id`, `solution_type_id`, `value_type_id`, `search`; `sort` (`name`, `stage`, `potential_value_eur`, `realized_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500), `offset`, `include_inactive`, `include_pending` | angemeldet |
 | `GET /api/initiatives/summary` | Kennzahlen; Potenzial, realisierter Wert und Risiko aus Gold, dazu `not_assessed` | angemeldet |
 | `GET /api/initiatives/{id}` | ein Use Case im Dashboard-Format | angemeldet |
-| `POST /api/initiatives` | **Formular 1**: neue AI-Idee → User-Action `create`. `ai_layer` statt Solution Type, `running_cost_range` (`up_to_10k`, `10k_to_50k`, `50k_to_100k`, `over_100k`; gespeichert als 5k/30k/75k/150k €/Jahr) statt Betriebskosten. `201` als `pending`, `409` bei gleichem Namen in derselben Business Unit | angemeldet |
+| `POST /api/initiatives` | **Formular 1**: neue AI-Idee → User-Action `create`. `ai_layer` statt Solution Type, `running_cost_range` (`up_to_10k`, `10k_to_50k`, `50k_to_100k`, `over_100k`; gespeichert als 5k/30k/75k/150k €/Jahr) statt Betriebskosten. Alle Zahlen nur aus ihrem Wertebereich (`value_domains`, sonst `422`); Gate-Daten passend zur Stage (siehe unten). `201` als `pending`, `409` bei gleichem Namen in derselben Business Unit | angemeldet |
 | `GET /api/me/use-cases` | **Meine Use Cases**: eingereicht, Owner oder Lead (Abgleich über `Owner.Email`, sonst Name), mit `roles`, `todos` (`complete_details`, `revise_and_resubmit`), `form2_progress` | angemeldet |
 | `GET /api/use-cases/{id}` | alle Felder aus Formular 1 und 2, Gold-Werte, eingegebene Treiber (`drivers`), `revision`, `can_edit`, `can_decide`, `todos` | angemeldet |
-| `PATCH /api/use-cases/{id}` | Teilupdate → User-Action `update`. `base_revision` Pflicht (`409`, wenn inzwischen geändert); `name`/Business Unit `422`; Formular-2-Felder erst nach Genehmigung (`409`); `resubmit: true` schickt eine abgelehnte Idee zurück in `pending` | Einreicher, Owner, Lead, Admin |
+| `PATCH /api/use-cases/{id}` | Teilupdate → User-Action `update`. `base_revision` Pflicht (`409`, wenn inzwischen geändert); `name`/Business Unit `422`; alles andere jederzeit änderbar, auch Formular 2 vor der Genehmigung. Wird `stage` oder ein Gate-Datum geschickt, müssen Stage und Gate-Daten zusammen passen (`422`); `resubmit: true` schickt eine abgelehnte Idee zurück in `pending` | Einreicher, Owner, Lead, Admin |
 | `GET /api/approvals` | **Approver-Inbox**: offene Ideen, älteste zuerst | `canApprove` |
-| `POST /api/use-cases/{id}/decision` | `approve` (mit `lead_id`, `needs_gate_passed_at`, Default heute) oder `reject` (mit `comment`) → User-Action `approve`/`reject`; nur aus `pending` | `canApprove` |
+| `POST /api/use-cases/{id}/decision` | `approve` (mit `lead_id`; setzt das Needs-Gate-Datum auf heute, außer der Einreicher hat schon ein vergangenes angegeben, und nie nach einem später passierten Gate) oder `reject` (mit `comment`) → User-Action `approve`/`reject`; nur aus `pending` | `canApprove` |
 | `GET /api/use-cases/{id}/similar` | Re-use-Check: aktive Use Cases mit der größten Wortüberschneidung in Name und Beschreibung | `canApprove` |
-| `GET /api/form-options` | Auswahllisten für Formular 1 und 2 | angemeldet |
+| `GET /api/form-options` | Auswahllisten für Formular 1 und 2, dazu `stage_gate_rules` und `value_domains` (Wert + Label je Zahlenfeld von Formular 1) | angemeldet |
 | `GET /api/owners` | Owner, optional `business_unit`, `search` (Name, Abteilung, E-Mail), `limit` | angemeldet |
 | `GET /api/features` | Feature-Schalter `initiative_input` (`AI_COCKPIT_ENABLE_INITIATIVE_INPUT`; `false` sperrt alle Schreibpfade mit `403`) | angemeldet |
 | `GET /api/business-units`, `/api/stages`, `/api/risk-classifications`, `/api/solution-types`, `/api/value-types` | Lookups (Zählungen über die aktuellen, aktiven Versionen) | angemeldet |
@@ -41,11 +41,23 @@ aber noch nicht änder- oder entscheidbar (`409`).
 Aus der aktuellen Silber-Version: `stage`, die vier Nutzen-Buckets (€/Jahr),
 `confidence_score`, `delivery_score`, `solution_complexity_score`,
 `one_time_costs`, `running_costs` (€/Jahr; `operating_costs` liefert denselben
-Wert, bis die UI umgestellt ist), `depreciation_years`, Status und Gate.
+Wert, bis die UI umgestellt ist), `depreciation_years`, Status, die Gate-Daten
+`needs_gate_date`, `scope_gate_date`, `deploy_gate_date`, `retire_gate_date`
+und daraus `last_gate` (das späteste Gate mit Datum bis heute).
 Aus Gold (`AssessedInitiatives`): `potential_value_eur`, `realized_value_eur`,
 `risk_classification`. Abgeleitet (`app/derived.py`):
 `hypothetical_value_eur` (Summe der Buckets) und `annual_cost_eur` (einmalige
 Kosten / Abschreibungsjahre + laufende Kosten).
+
+**Stage und Stage-Gates** (`app/lifecycle.py`): ein Datum je Gate, bis heute
+= passiert, später = geplant. Regel aus der Form-2-Excel („scope gate must be
+passed before PoC, deploy gate must be passed before production“):
+Idea/Exploration – Scope und Deploy noch nicht passiert; PoC/MVP/Implementation –
+Scope passiert, Deploy noch nicht; Production/Retired – Scope und Deploy
+passiert; On hold/Cancelled/Unknown – keine Regel. Gesetzte Daten in
+Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel. Passt ein
+Stand nicht (etwa ein Use Case aus dem Blatt in Production ohne Daten), steht
+das in `stage_problems`; andere Änderungen blockiert das nicht.
 
 **Noch nicht verarbeitet:** Jede Änderung geht zuerst nach Bronze; Silber und
 Gold folgen nach den DAG-Läufen (je etwa eine Minute). Die Endpunkte legen
