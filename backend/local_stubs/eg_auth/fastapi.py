@@ -47,7 +47,7 @@ class UserInfo:
     name: str
     email: str
     groups: List[str]
-    rights: BaseRights
+    rights: dict  # like the real package: the claims as a dict, not the Rights model
 
 
 class FastAPIResourceProtector:
@@ -71,6 +71,6 @@ class FastAPIResourceProtector:
             for claim, expected in required_claims.items():
                 if getattr(rights, claim, None) != expected:
                     raise HTTPException(status_code=403, detail=f"Missing right: {claim}")
-            return UserInfo(name=user["name"], email=user["email"], groups=groups, rights=rights)
+            return UserInfo(name=user["name"], email=user["email"], groups=groups, rights=rights.model_dump())
 
         return Depends(dependency)

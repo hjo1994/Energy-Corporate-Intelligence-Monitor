@@ -87,6 +87,14 @@ class ActingUser:
     demo_approver: bool = False
 
 
+def _claims(rights: Any) -> dict:
+    """The rights of an eg-auth UserInfo as a dict: the real package hands them over as a dict,
+    the local stub (and older versions) as the Rights model."""
+    if isinstance(rights, dict):
+        return rights
+    return rights.model_dump() if hasattr(rights, "model_dump") else dict(vars(rights))
+
+
 def acting_user(request: Request, user: Annotated[UserInfo, authorizer()]) -> ActingUser:
     from app.users import is_listed_approver, sync_user
 
@@ -96,9 +104,11 @@ def acting_user(request: Request, user: Annotated[UserInfo, authorizer()]) -> Ac
     if is_listed_approver(user):
         role = "approver"
     approver = role == "approver"
-    can_approve = bool(user.rights.canApprove) or approver
+    claims = _claims(user.rights)
+    can_approve = bool(claims.get("canApprove")) or approver
     # every real approver (role or AD group) manages the users; a demo approver does not
-    rights = user.rights.model_copy(update={"canApprove": can_approve, "canManageUsers": can_approve})
+    rights = Rights(**{**{name: bool(claims.get(name)) for name in Rights.model_fields},
+                       "canApprove": can_approve, "canManageUsers": can_approve})
     # A presenter's view follows the switch: "Approver (demo)" -> approver rights (recorded as
     # "<name> (demo approver)" unless they are an approver anyway), "Normal user" -> none, so
     # the normal user's view can be shown even by a real approver.
