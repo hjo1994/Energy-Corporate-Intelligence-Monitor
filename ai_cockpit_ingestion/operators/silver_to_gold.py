@@ -3,7 +3,8 @@ AssessedInitiatives (one row per use case, updated in place; see
 transforms.gold for the formulas).
 
 A use case is due when its current version is complete (all value buckets,
-the six risk answers, OneTimeCosts and RunningCosts set) and
+ConfidenceScore and DeliveryScore, the six risk answers, OneTimeCosts and
+RunningCosts set) and
 
 - it has no gold row yet (it just became complete), or
 - its current version is newer than the one its gold row was built from

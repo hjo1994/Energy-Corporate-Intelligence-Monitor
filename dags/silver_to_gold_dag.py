@@ -3,7 +3,8 @@
 Like the bronze_to_silver DAGs: schedule "@continuous" with max_active_runs=1,
 and the DAG's own sensor wait_for_silver_changes (operators/silver_to_gold.py)
 checks every POKE_SECONDS whether a use case is due — it has just become
-complete (value buckets, risk answers, one-time and running costs all set),
+complete (value buckets, confidence and delivery score, risk answers,
+one-time and running costs all set),
 one of its attributes changed (new silver version), or its runtime-based
 RealizedValue was last computed before today. Reschedule mode, soft fail
 after SENSOR_TIMEOUT without changes. Then silver_to_gold assesses the due

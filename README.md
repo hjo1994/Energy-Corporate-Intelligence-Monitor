@@ -154,8 +154,8 @@ angemeldete Nutzer (in Silber `ChangedBy`).
 **Gold** (`AssessedInitiatives`, `silver_to_gold`, `operators/silver_to_gold.py`,
 Formeln in `transforms/gold.py`): eine Zeile je Use Case aus seiner aktuellen
 Silber-Version, in place aktualisiert. Bewertet werden nur **vollständige**
-Use Cases: alle vier Value-Buckets, die sechs Risiko-Antworten, `OneTimeCosts`
-und `RunningCosts` gesetzt. Fällig ist ein Use Case, wenn er gerade vollständig
+Use Cases: alle vier Value-Buckets, `ConfidenceScore` und `DeliveryScore`,
+die sechs Risiko-Antworten, `OneTimeCosts` und `RunningCosts` gesetzt. Fällig ist ein Use Case, wenn er gerade vollständig
 wurde (noch keine Gold-Zeile), wenn es eine neuere Silber-Version gibt als die
 bewertete (eines der Rechen-Attribute oder ein kopiertes Feld wie Status oder
 Gate hat sich geändert) oder wenn sein laufzeitbasierter RealizedValue zuletzt

@@ -2,10 +2,11 @@
 (models.AssessedInitiative), deterministic:
 
 - Complete = all value buckets (efficiency, quality, risk reduction,
-  strategic), the six risk answers, OneTimeCosts and RunningCosts are set.
+  strategic), ConfidenceScore and DeliveryScore, the six risk answers,
+  OneTimeCosts and RunningCosts are set.
   Only complete use cases are assessed.
 - PotentialValue = (efficiency + quality + risk reduction + strategic)
-  x ConfidenceScore x DeliveryScore, EUR per year (a missing factor counts as 1).
+  x ConfidenceScore x DeliveryScore, EUR per year.
 - RealizedValue:
   - real values reported (MeasuredBenefits): MeasuredBenefits - ActualCosts
     (ActualCosts = ActualCapex + ActualOpex, missing = 0);
@@ -31,8 +32,9 @@ RISK_ANSWERS = {
     "ChangesEmployeeWorkflows": "changes_employee_workflows",
     "ProhibitedPractice": "prohibited_practice",
 }
+FACTORS = ("confidence_score", "delivery_score")
 COSTS = ("one_time_costs", "running_costs")
-MANDATORY = (*BUCKETS, *RISK_ANSWERS.values(), *COSTS)
+MANDATORY = (*BUCKETS, *FACTORS, *RISK_ANSWERS.values(), *COSTS)
 DAYS_PER_YEAR = 365.25
 
 
@@ -61,7 +63,7 @@ def runtime_years(date_delivery: datetime.datetime | None, today: datetime.date)
 
 def assess(version, today: datetime.date) -> Assessment:
     hypothetical = sum(getattr(version, b) for b in BUCKETS)
-    potential = hypothetical * _factor(version.confidence_score) * _factor(version.delivery_score)
+    potential = hypothetical * version.confidence_score * version.delivery_score
 
     runtime_based = False
     if version.measured_benefits is not None:
@@ -77,6 +79,3 @@ def assess(version, today: datetime.date) -> Assessment:
     answers = {column: getattr(version, attribute) for column, attribute in RISK_ANSWERS.items()}
     return Assessment(potential, realized, user_input_risk_level(answers).level, runtime_based)
 
-
-def _factor(value: float | None) -> float:
-    return 1.0 if value is None else value
