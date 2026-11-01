@@ -283,3 +283,39 @@ describe("feature switch", () => {
     expect(await screen.findByRole("link", { name: "+ New AI idea" })).toBeInTheDocument();
   });
 });
+
+describe("view as submitter", () => {
+  beforeEach(() => window.sessionStorage.clear());
+
+  it("lets an admin look at the app as a normal user and back", async () => {
+    mockApi((async (path: string) => {
+      if (path === "/auth/rights") return { user: "Jonas", rights: { canApprove: true, canAdmin: true } };
+      if (path === "/me/use-cases" || path === "/approvals") return [];
+      if (path === "/features") return { initiative_input: true };
+      return ok();
+    }) as never);
+    renderAt("/approvals");
+    const views = within(screen.getByRole("navigation", { name: "Views" }));
+    expect(await views.findByRole("link", { name: /Approvals/ })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Submitter" }));
+    expect(views.queryByRole("link", { name: /Approvals/ })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem("ai-cockpit.view-as-submitter")).toBe("true");
+    expect(await screen.findByText("Submitter", { selector: ".kpi-value" })).toBeInTheDocument(); // sent to My use cases
+
+    await userEvent.click(screen.getByRole("radio", { name: "Admin" }));
+    expect(views.getByRole("link", { name: /Approvals/ })).toBeInTheDocument();
+  });
+
+  it("is not offered to normal users", async () => {
+    mockApi((async (path: string) => {
+      if (path === "/auth/rights") return { user: "Jonas", rights: { canApprove: false, canAdmin: false } };
+      if (path === "/me/use-cases") return [];
+      if (path === "/features") return { initiative_input: true };
+      return ok();
+    }) as never);
+    renderAt("/my");
+    await screen.findByText("Submitter", { selector: ".kpi-value" });
+    expect(screen.queryByRole("radiogroup", { name: "View as" })).not.toBeInTheDocument();
+  });
+});

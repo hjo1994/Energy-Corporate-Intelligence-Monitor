@@ -3,6 +3,7 @@ import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { fetchApprovals, fetchFeatures, fetchMyUseCases } from "./api/client";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { DevUserSwitch } from "./shared/auth/DevUserSwitch";
+import { ViewAsSwitch } from "./components/ViewAsSwitch";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
@@ -39,7 +40,7 @@ const Count = ({ n, label }: { n: number; label: string }) =>
   n > 0 ? <span className="tab-count" aria-label={`${n} ${label}`}>{n}</span> : null;
 
 function Shell() {
-  const { load, reload, filters, setFilters, rights } = useApp();
+  const { load, reload, filters, setFilters, rights, viewAsSubmitter } = useApp();
   const counts = useCounts(rights.canApprove);
   // AI_COCKPIT_ENABLE_INITIATIVE_INPUT on the backend; hidden until it says yes
   const [inputEnabled, setInputEnabled] = useState(false);
@@ -77,6 +78,7 @@ function Shell() {
             + New AI idea
           </NavLink>
         )}
+        <ViewAsSwitch />
         {AUTH_DEV_BYPASS ? (
           <DevUserSwitch />
         ) : (
@@ -113,7 +115,7 @@ function Shell() {
             <Route path="/new" element={inputEnabled ? <NewInitiativeView /> : <Navigate to="/" replace />} />
             <Route path="/my" element={<MyUseCasesView />} />
             <Route path="/use-cases/:id" element={<UseCaseView />} />
-            <Route path="/approvals" element={<ApprovalsView />} />
+            <Route path="/approvals" element={viewAsSubmitter ? <Navigate to="/my" replace /> : <ApprovalsView />} />
             {/* the former Value tab now lives on the start page */}
             <Route path="/value" element={<Navigate to="/" replace />} />
             <Route path="*" element={<CockpitView />} />
