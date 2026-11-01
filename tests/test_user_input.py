@@ -162,21 +162,24 @@ def test_lifecycle_approve_detail_and_stage_gate(engine):
     _act(engine, "approve", 1, LeadID=2)
     assert _silver(engine) == _counts(read=1, updated=1)
     alpha = _initiatives(engine)["Alpha"]
-    assert (alpha.status, alpha.lead_id, alpha.stagegate, alpha.passed_at, alpha.changed_by) == (
-        "approved", 2, "Needs", datetime.datetime(2026, 11, 1, 9, 0), "sara")
+    # approving sets the Needs gate date to the decision day (the record's Timestamp)
+    assert (alpha.status, alpha.lead_id, alpha.needs_gate_date, alpha.scope_gate_date, alpha.changed_by) == (
+        "approved", 2, datetime.datetime(2026, 11, 1, 9, 0), None, "sara")
 
     # form 2 plus one changed driver: the buckets are recomputed from all actions merged
     _act(engine, "update", 1, AILayer="Operational and advanced AI", EUAIActClass="minimal", ExpectedUsers=40,
          HoursSavedPerCase=1.0, ActualCapex=20_000, MeasuredBenefits=5_000)
-    _act(engine, "update", 1, ActualOpex=3_000, Stagegate="Scope", PassedAt=datetime.datetime(2026, 12, 1))
+    _act(engine, "update", 1, ActualOpex=3_000, Stage="PoC", ScopeGateDate=datetime.datetime(2026, 11, 20),
+         DeployGateDate=datetime.datetime(2027, 3, 1))  # deploy gate planned
     assert _silver(engine) == _counts(read=2, updated=2)
     alpha = _initiatives(engine)["Alpha"]
     assert (alpha.ai_layer, alpha.eu_ai_act_class, alpha.expected_users) == ("Operational and advanced AI", "minimal", 40)
     assert alpha.efficiency_score_eur == 3000 * 1.0 * 60  # was 0.5 h per case
     assert alpha.quality_score_eur == 192000  # untouched drivers kept
     assert (alpha.measured_benefits, alpha.actual_costs) == (5_000, 23_000)
-    assert (alpha.stagegate, alpha.passed_at, alpha.status, alpha.lead_id) == (
-        "Scope", datetime.datetime(2026, 12, 1), "approved", 2)
+    assert (alpha.stage, alpha.needs_gate_date, alpha.scope_gate_date, alpha.deploy_gate_date, alpha.status, alpha.lead_id) == (
+        "PoC", datetime.datetime(2026, 11, 1, 9, 0), datetime.datetime(2026, 11, 20), datetime.datetime(2027, 3, 1),
+        "approved", 2)
 
     # every version is a full snapshot; the first stays as it was
     versions = _versions(engine, 1)

@@ -67,9 +67,9 @@ def test_table_is_created_with_the_data_model(engine):
     assert USER_ACTION_TABLE_NAME in inspector.get_table_names()
     columns = [c["name"] for c in inspector.get_columns(USER_ACTION_TABLE_NAME)]
     assert columns[:4] == ["ID", "Timestamp", "SourceFileID", "SubmittedBy"]
-    assert {"ActionType", "UseCaseID", "Stagegate", "LeadID", "CasesPerYear", "LeadTimeSaved", "EstimateBasis",
+    assert {"ActionType", "UseCaseID", "NeedsGateDate", "RetireGateDate", "LeadID", "CasesPerYear", "LeadTimeSaved", "EstimateBasis",
             "ProhibitedPractice", "AILayer", "MeasuredBenefits", "ActualCapex", "ActualOpex"} <= set(columns)
-    assert len(columns) == 60
+    assert len(columns) == 62
     assert {fk["referred_table"] for fk in inspector.get_foreign_keys(USER_ACTION_TABLE_NAME)} == {
         "Owner", "ValueType", "SolutionType",
     }
@@ -111,8 +111,7 @@ def test_valid_record_is_stored_with_empty_levers_left_null(engine):
         {"Status": "done"},
         {"AILayer": "Some AI"},
         {"EUAIActClass": "medium"},
-        {"Stagegate": "Needs"},  # without PassedAt
-        {"PassedAt": datetime.datetime(2026, 11, 1)},  # without Stagegate
+        {"Stage": "Archived"},
         {"ActionType": "update"},  # without UseCaseID
         {"ActionType": "approve", "UseCaseID": 1},  # without LeadID
         {"ActionType": "reject", "UseCaseID": 1},  # without Comment
@@ -130,7 +129,7 @@ def test_update_needs_only_the_use_case_and_what_changes(engine):
     add(engine)
     update = {c: None for c in record()} | {
         "Timestamp": datetime.datetime(2026, 11, 1), "SubmittedBy": "sara", "ActionType": "update", "UseCaseID": 1,
-        "AILayer": "Operational and advanced AI", "Stagegate": "Scope", "PassedAt": datetime.datetime(2026, 11, 1),
+        "AILayer": "Operational and advanced AI", "Stage": "Retired", "RetireGateDate": datetime.datetime(2026, 11, 1),
     }
     with engine.begin() as conn:
         conn.execute(insert(USER_ACTION_TABLE).values(update))

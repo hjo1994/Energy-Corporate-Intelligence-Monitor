@@ -122,9 +122,15 @@ Backend), `ActionType`:
   des Owners + Name; schon vergeben → Konflikt.
 - `update` (Formular 1 bearbeiten, Formular 2, Stage-Gate): nur die gesetzten
   Felder zählen, sie werden auf die aktuelle Version gelegt. Name und Business
-  Unit sind unveränderlich (wird ignoriert, Warnung). `Stagegate` + `PassedAt`
-  = zuletzt passiertes Gate.
-- `approve` (nur aus `pending`): `LeadID` Pflicht, Needs-Gate passiert.
+  Unit sind unveränderlich (wird ignoriert, Warnung). Stage-Gates:
+  `NeedsGateDate`, `ScopeGateDate`, `DeployGateDate`, `RetireGateDate`, ein
+  Datum je Gate; ein Datum bis heute heißt passiert, ein späteres geplant. Die
+  Zuordnung Stage ↔ Gate (Form-2-Excel: Scope-Gate vor PoC, Deploy-Gate vor
+  Production) prüft das Backend beim Speichern; die Pipeline übernimmt die
+  Daten so, wie sie kommen.
+- `approve` (nur aus `pending`): `LeadID` Pflicht; `NeedsGateDate` wird das
+  mitgeschickte Datum, sonst bleibt ein schon gesetztes, sonst der Zeitstempel
+  der Freigabe.
 - `reject` (nur aus `pending`): `Comment` Pflicht.
 
 `bronze_to_silver_user_input` (`operators/user_input_to_silver.py`) liest nur
@@ -139,7 +145,7 @@ macht ihn „UI-owned“; der Blatt-Import lässt ihn danach in Ruhe. `force`
 rechnet zusätzlich alle Use Cases mit User-Actions neu.
 
 Typisiert und per CHECK/FK abgesichert: Stammdaten als IDs der Config-Tabellen
-(`OwnerID`, `LeadID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (9 Werte),
+(`OwnerID`, `LeadID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (10 Werte, inkl. `Retired`),
 `DateStart`/`DateDelivery` als Quartal („Q2 2027“), die Value-Treiber je Hebel
 (Anteile 0–1, leerer Hebel = 0), `EstimateBasis`, `DeliveryLikelihood`,
 `SolutionComplexityScore` (1–9), `OneTimeCosts`, `OperatingCosts`, die
@@ -287,6 +293,11 @@ Pfade im Cluster: `SOURCE_DIR=/data/source`, `AI_COCKPIT_DB_PATH=/data/db/ai_coc
   `bronze_to_silver_*`-DAGs bauen Silber danach aus Bronze neu auf; die
   Use Cases bekommen dabei neue `UseCaseID`s. Lokal verifiziert gegen die
   Excel: 164 Use Cases, zweiter Lauf und `force` nur „unchanged“.
+  Eine Datenbank mit dem Lifecycle-Stand davor (`Stagegate` + `PassedAt`)
+  bekommt die vier Gate-Daten: Silber und Gold per `ALTER TABLE`, befüllt aus
+  dem alten Paar (die alten Spalten bleiben ungenutzt stehen);
+  `UserActionExtracts` wird wegen der geänderten CHECKs neu angelegt und
+  umkopiert.
 
 ## Deploy-Hinweise (Stand 25.10.2026)
 

@@ -155,8 +155,8 @@ def test_new_use_case_is_assessed_once_and_reassessed_when_it_changes(engine):
     # a descriptive change (approval) is copied too, the values stay
     _action(engine, ActionType="approve", UseCaseID=1, LeadID=1)
     assert _gold(engine)["updated"] == 1
-    assert (_rows(engine)["Alpha"].status, _rows(engine)["Alpha"].lead_id, _rows(engine)["Alpha"].stagegate) == (
-        "approved", 1, "Needs")
+    alpha = _rows(engine)["Alpha"]
+    assert (alpha.status, alpha.lead_id, alpha.needs_gate_date is not None) == ("approved", 1, True)
     with Session(engine) as s:
         run = s.scalars(select(TransformationRun).order_by(TransformationRun.id.desc())).first()
         assert (run.bronze_table_name, run.status, run.rows_read, run.rows_updated) == ("Initiative", "success", 1, 1)

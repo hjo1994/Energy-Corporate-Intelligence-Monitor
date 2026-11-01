@@ -79,3 +79,58 @@ def test_old_database_is_migrated_and_silver_rebuilt(tmp_path):
     with Session(engine) as s:
         assert s.query(Initiative).count() == 1
     engine.dispose()
+
+
+def test_last_gate_becomes_one_date_per_gate(tmp_path):
+    """A lifecycle database from before the gate dates (Stagegate + PassedAt) gets one date per gate."""
+    path = tmp_path / "lifecycle.db"
+    engine = get_engine(path)  # the current model
+    engine.dispose()
+    conn = sqlite3.connect(path)
+    # back to the previous shape: the bronze table with Stagegate/PassedAt, silver with the old pair
+    conn.executescript(f"""
+        INSERT INTO "Owner" ("ID", "Name") VALUES (3, 'Lead');
+        DROP TABLE "{USER_ACTION_TABLE_NAME}";
+        CREATE TABLE "{USER_ACTION_TABLE_NAME}" ("ID" INTEGER PRIMARY KEY, "Timestamp" DATETIME NOT NULL,
+            "SourceFileID" TEXT NOT NULL, "SubmittedBy" TEXT, "ActionType" TEXT NOT NULL, "UseCaseID" INTEGER,
+            "Stage" TEXT, "Stagegate" TEXT, "PassedAt" DATETIME, "LeadID" INTEGER);
+        INSERT INTO "{USER_ACTION_TABLE_NAME}" VALUES (1, '2026-10-30 10:00:00', 'ui', 'jonas', 'update', 7,
+            'PoC', 'Scope', '2026-10-20 00:00:00', NULL);
+        INSERT INTO "{USER_ACTION_TABLE_NAME}" VALUES (2, '2026-10-30 11:00:00', 'ui', 'jonas', 'approve', 8,
+            NULL, 'Needs', '2026-10-30 11:00:00', 3);
+        ALTER TABLE "Initiative" RENAME TO "Initiative_new";
+        CREATE TABLE "Initiative" AS SELECT * FROM "Initiative_new" WHERE 0;
+        DROP TABLE "Initiative_new";
+    """)
+    cols = [r[1] for r in conn.execute('PRAGMA table_info("Initiative")')]
+    gate_cols = ("NeedsGateDate", "ScopeGateDate", "DeployGateDate", "RetireGateDate")
+    kept = [c for c in cols if c not in gate_cols]
+    conn.executescript(f"""
+        CREATE TABLE "Initiative_old" AS SELECT {", ".join(f'"{c}"' for c in kept)} FROM "Initiative";
+        DROP TABLE "Initiative";
+        ALTER TABLE "Initiative_old" RENAME TO "Initiative";
+        ALTER TABLE "Initiative" ADD COLUMN "Stagegate" TEXT;
+        ALTER TABLE "Initiative" ADD COLUMN "PassedAt" DATETIME;
+    """)
+    conn.commit()
+    conn.close()
+
+    engine = get_engine(path)
+    try:
+        inspector = inspect(engine)
+        assert set(gate_cols) <= {c["name"] for c in inspector.get_columns("Initiative")}
+        bronze = {c["name"] for c in inspector.get_columns(USER_ACTION_TABLE_NAME)}
+        assert set(gate_cols) <= bronze and "Stagegate" not in bronze
+        with engine.connect() as c:
+            rows = c.execute(select(USER_ACTION_TABLE).order_by(USER_ACTION_TABLE.c.ID)).all()
+        assert [(r.ID, r.Stage, r.NeedsGateDate, r.ScopeGateDate) for r in rows] == [
+            (1, "PoC", None, datetime.datetime(2026, 10, 20)),
+            (2, None, datetime.datetime(2026, 10, 30, 11), None),
+        ]
+    finally:
+        engine.dispose()
+
+    engine = get_engine(path)  # idempotent
+    with engine.connect() as c:
+        assert len(c.execute(select(USER_ACTION_TABLE)).all()) == 2
+    engine.dispose()

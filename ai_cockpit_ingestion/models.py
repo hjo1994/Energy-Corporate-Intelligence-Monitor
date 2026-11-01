@@ -83,14 +83,20 @@ USER_INPUT_SOURCE_FILE_ID = "user-input"  # SourceFileID of every user-action re
 
 # What a record does (written by the Backend, one record per action):
 # - create:  form 1, a new AI idea; UseCaseID empty (BronzeToSilver assigns it), status pending
-# - update:  form 1 edits, form 2, a stage gate date; only the fields that are set count
-# - approve: needs gate passed; LeadID required
+# - update:  form 1 edits, form 2, stage and stage gate dates; only the fields that are set count
+# - approve: LeadID required; sets NeedsGateDate (the decision day) unless it is set already
 # - reject:  Comment required
 ACTION_TYPES = ("create", "update", "approve", "reject")
 APPROVAL_STATUSES = ("pending", "approved", "rejected")
 STAGEGATES = ("Needs", "Scope", "Deploy", "Retire")
+# One date per stage gate ("form 2 data fields": date passed needs/scope/deploy/retire gate).
+# A date up to today = passed, a later date = planned. Which gates must lie in the past or the
+# future depends on the stage (backend; "scope gate must be passed before PoC, deploy gate must
+# be passed before production").
+GATE_DATE_COLUMNS = {"Needs": "NeedsGateDate", "Scope": "ScopeGateDate", "Deploy": "DeployGateDate", "Retire": "RetireGateDate"}
 
-STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown")
+# maturity/stage of "form 2 data fields" (incl. Retired) plus On hold / Cancelled / Unknown from the sheets
+STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown")
 ESTIMATE_BASES = ("rough", "benchmark", "measured")  # how solid the value drivers are
 DELIVERY_LIKELIHOODS = ("low", "medium", "high")
 EMPLOYEE_PERSONAL_DATA = ("no", "pseudonymised", "yes")
@@ -172,8 +178,7 @@ USER_ACTION_TABLE = Table(
     Column("ActionType", String, nullable=False),
     Column("UseCaseID", Integer, nullable=True),  # empty for create
     Column("Status", String, nullable=True),  # e.g. pending again after a resubmission
-    Column("Stagegate", String, nullable=True),
-    Column("PassedAt", DateTime, nullable=True),
+    *(Column(c, DateTime, nullable=True) for c in GATE_DATE_COLUMNS.values()),
     Column("Comment", String, nullable=True),
     # master data, config values by ID (Name and business unit cannot change after create)
     Column("Name", String, nullable=True),
@@ -210,12 +215,10 @@ USER_ACTION_TABLE = Table(
     Column("ActualOpex", Float, nullable=True),  # EUR, spent to date
     _one_of("ActionType", ACTION_TYPES),
     _one_of("Status", APPROVAL_STATUSES),
-    _one_of("Stagegate", STAGEGATES),
     CheckConstraint(f"\"ActionType\" <> 'create' OR ({_all_set(CREATE_REQUIRED)})", name="ck_useraction_create"),
     CheckConstraint('"ActionType" = \'create\' OR "UseCaseID" IS NOT NULL', name="ck_useraction_usecaseid"),
     CheckConstraint('"ActionType" <> \'approve\' OR "LeadID" IS NOT NULL', name="ck_useraction_approve"),
     CheckConstraint('"ActionType" <> \'reject\' OR "Comment" IS NOT NULL', name="ck_useraction_reject"),
-    CheckConstraint('("Stagegate" IS NULL) = ("PassedAt" IS NULL)', name="ck_useraction_gate"),
     _one_of("Stage", STAGES),
     _quarter("DateStart"),
     _quarter("DateDelivery"),
@@ -386,9 +389,11 @@ class Initiative(Base):
     # Approval workflow of the UI: pending -> approved / rejected. NULL for
     # initiatives imported from the sheets (already in the portfolio).
     status = Column("Status", String, nullable=True)
-    # The last stage gate passed (Needs / Scope / Deploy / Retire) and when.
-    stagegate = Column("Stagegate", String, nullable=True)
-    passed_at = Column("PassedAt", DateTime, nullable=True)
+    # Stage gate dates: up to today = passed, later = planned (see GATE_DATE_COLUMNS).
+    needs_gate_date = Column("NeedsGateDate", DateTime, nullable=True)
+    scope_gate_date = Column("ScopeGateDate", DateTime, nullable=True)
+    deploy_gate_date = Column("DeployGateDate", DateTime, nullable=True)
+    retire_gate_date = Column("RetireGateDate", DateTime, nullable=True)
     comment = Column("Comment", String, nullable=True)  # comment of the last decision
 
     # Only ETB and the UI have start/delivery quarters (see
@@ -505,8 +510,10 @@ class AssessedInitiative(Base):
     name = Column("Name", String, nullable=False)
     description = Column("Description", String, nullable=True)
     status = Column("Status", String, nullable=True)
-    stagegate = Column("Stagegate", String, nullable=True)
-    passed_at = Column("PassedAt", DateTime, nullable=True)
+    needs_gate_date = Column("NeedsGateDate", DateTime, nullable=True)
+    scope_gate_date = Column("ScopeGateDate", DateTime, nullable=True)
+    deploy_gate_date = Column("DeployGateDate", DateTime, nullable=True)
+    retire_gate_date = Column("RetireGateDate", DateTime, nullable=True)
     stage = Column("Stage", String, nullable=False)
     date_start = Column("DateStart", DateTime, nullable=True)
     date_delivery = Column("DateDelivery", DateTime, nullable=True)

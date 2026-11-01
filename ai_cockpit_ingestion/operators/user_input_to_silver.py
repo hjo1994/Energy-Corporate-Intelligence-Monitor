@@ -16,11 +16,12 @@ Differences to the sheet mode (operators.bronze_to_silver):
     rejects such input with 409); the record is not taken.
   - update: the fields that are set replace those of the current version.
     Name and business unit cannot change: a different name, or an owner from
-    another business unit, is ignored (warning). A stage gate (Stagegate +
-    PassedAt) becomes the use case's last passed gate.
-  - approve: only from pending -> approved, with the use case lead (LeadID)
-    and the Needs gate (or the gate given) passed at PassedAt (default: the
-    record's Timestamp).
+    another business unit, is ignored (warning). Stage gate dates
+    (NeedsGateDate ... RetireGateDate) are taken as given; the Backend checks
+    them against the stage.
+  - approve: only from pending -> approved, with the use case lead (LeadID);
+    the Needs gate date becomes NeedsGateDate of the record, else the one the
+    use case already has, else the record's Timestamp (the decision day).
   - reject: only from pending -> rejected, with the comment.
   - unknown use case, or a decision on a use case that is not pending ->
     conflict, nothing written.
@@ -51,6 +52,7 @@ from ai_cockpit_ingestion.lineage import utcnow
 from ai_cockpit_ingestion.models import (
     USER_ACTION_TABLE,
     USER_ACTION_TABLE_NAME,
+    GATE_DATE_COLUMNS,
     BusinessTransaction,
     Initiative,
     Owner,
@@ -152,8 +154,8 @@ class _Context:
         content = self._merge(current, record, self._actions_of(current.use_case_id, up_to=record["ID"]))
         if record["ActionType"] == "approve":
             content.update(
-                status="approved", lead_id=record["LeadID"], stagegate=record["Stagegate"] or "Needs",
-                passed_at=record["PassedAt"] or record["Timestamp"],
+                status="approved", lead_id=record["LeadID"],
+                needs_gate_date=record.get("NeedsGateDate") or current.needs_gate_date or record["Timestamp"],
             )
         elif record["ActionType"] == "reject":
             content["status"] = "rejected"
@@ -247,8 +249,9 @@ class _Context:
                 content["date_start" if column == "DateStart" else "date_delivery"] = quarter_start(record[column])
         if record.get("SolutionComplexityScore") is not None:
             content["solution_complexity_score"] = float(record["SolutionComplexityScore"])
-        if record.get("Stagegate") is not None:
-            content.update(stagegate=record["Stagegate"], passed_at=record["PassedAt"])
+        for gate, column in GATE_DATE_COLUMNS.items():
+            if record.get(column) is not None:
+                content[f"{gate.lower()}_gate_date"] = record[column]
 
         merged = _merged(actions)
         if all(merged.get(c) is not None for c in BASE_INPUTS):
