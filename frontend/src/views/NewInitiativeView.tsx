@@ -4,9 +4,12 @@ import { ApiError, createInitiative, fetchReferenceData, type ReferenceData } fr
 import { flagshipLabel } from "../domain/format";
 import { riskActions, riskLevelLabel } from "../domain/risk";
 import {
+  AI_LAYERS,
   EMPTY_FORM,
   LEVERS,
+  RUNNING_COST_RANGES,
   STAGES,
+  previewInput,
   previewRiskLevel,
   previewValue,
   quarterOptions,
@@ -99,13 +102,14 @@ export function NewInitiativeView() {
     [ref],
   );
   const owners = (ref?.owners ?? []).filter((o) => o.category === form.businessUnit);
-  const solutionType = ref?.solutionTypes.find((t) => String(t.id) === form.solutionTypeId)?.name;
   const flagship = ref?.valueTypes.find((t) => String(t.id) === form.valueTypeId)?.name;
-  const typical = typicalValues(solutionType, flagship);
+  const typical = typicalValues(form.aiLayer || undefined, flagship);
+  const aiLayers = ref?.options?.ai_layers?.map((o) => o.value) ?? AI_LAYERS;
+  const costRanges = ref?.options?.running_cost_ranges ?? RUNNING_COST_RANGES;
   const quarters = useMemo(() => quarterOptions(), []);
 
   const input = toInput(form);
-  const preview = previewValue(input);
+  const preview = previewValue(previewInput(input));
   const level = previewRiskLevel(input);
   const errors: Errors = showErrors ? validate(form) : {};
 
@@ -117,9 +121,9 @@ export function NewInitiativeView() {
     try {
       const created = await createInitiative(toInput(form));
       addInitiative(created);
-      navigate("/", { state: { created: created.name } });
+      navigate("/my", { state: { created: created.name } });
     } catch (err) {
-      setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The initiative could not be saved.");
+      setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The idea could not be saved.");
       setSaving(false);
     }
   }
@@ -211,9 +215,12 @@ export function NewInitiativeView() {
     <div className="nf">
       <header className="nf-head">
         <div>
-          <span className="nf-crumb">Cockpit / New initiative</span>
-          <h1>Add an AI initiative</h1>
-          <p className="muted">Enter the drivers. The value and the risk level are calculated from them.</p>
+          <span className="nf-crumb">My use cases / New AI idea</span>
+          <h1>Add a new AI idea</h1>
+          <p className="muted">
+            Enter the drivers. The value and the risk level are calculated from them. An approver checks the idea and
+            assigns a use case lead; the details (form 2) follow after approval.
+          </p>
         </div>
         <span className="muted">
           Fields marked <b className="nf-req">*</b> are required
@@ -256,10 +263,10 @@ export function NewInitiativeView() {
                   {ref.valueTypes.map((t) => <option key={t.id} value={t.id}>{flagshipLabel(t.name)}</option>)}
                 </select>
               </Field>
-              <Field label="Solution type" required error={errors.solutionTypeId}>
-                <select className="nf-input" value={form.solutionTypeId} onChange={(e) => set("solutionTypeId", e.target.value)}>
+              <Field label="AI layer" required error={errors.aiLayer} hint="The solution type follows in the details after approval.">
+                <select className="nf-input" value={form.aiLayer} onChange={(e) => set("aiLayer", e.target.value)}>
                   <option value="">Choose …</option>
-                  {ref.solutionTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {aiLayers.map((l) => <option key={l} value={l}>{l}</option>)}
                 </select>
               </Field>
               <Field label="Stage" required error={errors.stage}>
@@ -334,8 +341,11 @@ export function NewInitiativeView() {
               <Field label="One-time cost" required error={errors.oneTimeCosts}>
                 <NumberInput value={form.oneTimeCosts} onChange={(v) => set("oneTimeCosts", v)} unit="€" invalid={!!errors.oneTimeCosts} />
               </Field>
-              <Field label="Operating cost" required error={errors.operatingCosts}>
-                <NumberInput value={form.operatingCosts} onChange={(v) => set("operatingCosts", v)} unit="€ / yr" invalid={!!errors.operatingCosts} />
+              <Field label="Running costs" required error={errors.runningCostRange} hint="A range is enough at this point.">
+                <select className="nf-input" value={form.runningCostRange} onChange={(e) => set("runningCostRange", e.target.value as FormState["runningCostRange"])}>
+                  <option value="">Choose …</option>
+                  {costRanges.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
               </Field>
             </div>
           </section>
@@ -389,12 +399,14 @@ export function NewInitiativeView() {
           </div>
           {saveError && <p className="nf-save-error" role="alert">{saveError}</p>}
           <button type="button" className="nf-btn nf-primary" disabled={saving} onClick={() => void save()}>
-            {saving ? "Saving …" : "Save initiative"}
+            {saving ? "Submitting …" : "Submit idea"}
           </button>
           <button type="button" className="nf-btn nf-secondary" onClick={() => navigate(-1)}>
             Cancel
           </button>
-          <span className="nf-side-small">Final values are calculated by the pipeline within about a minute after saving.</span>
+          <span className="nf-side-small">
+            The idea goes to the approvers. Final values are calculated by the pipeline within about a minute.
+          </span>
         </aside>
       </div>
     </div>

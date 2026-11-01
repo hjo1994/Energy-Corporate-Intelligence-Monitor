@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchAllInitiatives } from "./api/client";
-import type { Initiative } from "./api/types";
+import { fetchAllInitiatives, fetchRights } from "./api/client";
+import type { Initiative, Rights } from "./api/types";
 import { applyFilters, EMPTY_FILTERS, type Filters } from "./domain/filters";
 
 type Load =
@@ -19,6 +19,8 @@ interface AppState {
   visible: Initiative[];
   /** show an initiative just created through the input form right away (it is "pending") */
   addInitiative: (initiative: Initiative) => void;
+  /** what the signed-in user may do (approver inbox, admin) */
+  rights: Rights;
 }
 
 // While initiatives entered through the form are pending, the list is re-read this often until
@@ -31,6 +33,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
+  const [rights, setRights] = useState<Rights>({ canApprove: false, canAdmin: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRights().then((r) => !cancelled && setRights(r));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +68,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const hasPending = load.state === "ready" && load.items.some((i) => i.status === "pending");
+  // re-read while the pipeline still has to process something the users entered
+  const hasPending =
+    load.state === "ready" && load.items.some((i) => i.status === "pending" || i.processing === "changes_pending");
   useEffect(() => {
     if (!hasPending) return;
     let cancelled = false;
@@ -79,8 +92,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const visible = useMemo(() => applyFilters(all, filters), [all, filters]);
 
   const value = useMemo(
-    () => ({ load, reload, filters, setFilters, all, visible, addInitiative }),
-    [load, reload, filters, setFilters, all, visible, addInitiative],
+    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights }),
+    [load, reload, filters, setFilters, all, visible, addInitiative, rights],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -1,5 +1,19 @@
 import { serviceApi } from "../shared/api/serviceApi";
-import type { Initiative, InitiativeInput, InitiativePage, Owner, TypeRef } from "./types";
+import type {
+  ApprovalItem,
+  DecisionInput,
+  FormOptions,
+  Initiative,
+  InitiativeInput,
+  InitiativePage,
+  MyUseCase,
+  Owner,
+  Rights,
+  SimilarUseCase,
+  TypeRef,
+  UseCaseDetail,
+  UseCasePatch,
+} from "./types";
 
 const PAGE_SIZE = 500; // backend maximum
 
@@ -64,19 +78,22 @@ export interface ReferenceData {
   owners: Owner[];
   valueTypes: TypeRef[];
   solutionTypes: TypeRef[];
+  options: FormOptions;
 }
 
 export async function fetchReferenceData(): Promise<ReferenceData> {
   try {
-    const [owners, valueTypes, solutionTypes] = await Promise.all([
+    const [owners, valueTypes, solutionTypes, options] = await Promise.all([
       serviceApi.get<Owner[]>("/owners"),
       serviceApi.get<TypeRef[]>("/value-types"),
       serviceApi.get<TypeRef[]>("/solution-types"),
+      serviceApi.get<FormOptions>("/form-options"),
     ]);
     return {
       owners,
       valueTypes: valueTypes.map((t) => clean(t) as TypeRef),
       solutionTypes: solutionTypes.map((t) => clean(t) as TypeRef),
+      options,
     };
   } catch (err) {
     throw toApiError(err);
@@ -89,15 +106,82 @@ export async function createInitiative(input: InitiativeInput): Promise<Initiati
     const created = await serviceApi.post<Initiative>("/initiatives", input);
     return { ...created, solution_type: clean(created.solution_type), value_type: clean(created.value_type) };
   } catch (err) {
-    const response = (err as { response?: { status?: number; data?: { detail?: unknown } } } | null)?.response;
-    // 409 (name already taken in the business unit) and 422 carry a message for the user
-    if (response?.status === 409 && typeof response.data?.detail === "string") {
-      throw new ApiError(409, response.data.detail);
-    }
-    if (response?.status === 422) {
-      throw new ApiError(422, "Some values were rejected by the server. Please check the form.");
-    }
+    throw toWriteError(err);
+  }
+}
+
+// 409 (name taken, a newer version, not allowed in this state) and 422 carry a message for the user.
+function toWriteError(err: unknown): ApiError {
+  const response = (err as { response?: { status?: number; data?: { detail?: unknown } } } | null)?.response;
+  if ((response?.status === 409 || response?.status === 403) && typeof response.data?.detail === "string") {
+    return new ApiError(response.status, response.data.detail);
+  }
+  if (response?.status === 422) {
+    const detail = response.data?.detail;
+    return new ApiError(422, typeof detail === "string" ? detail : "Some values were rejected by the server. Please check the form.");
+  }
+  return toApiError(err);
+}
+
+// ---------- lifecycle ----------
+
+const NO_RIGHTS: Rights = { canApprove: false, canAdmin: false };
+
+/** What the signed-in user may do; no rights if the backend cannot tell. */
+export async function fetchRights(): Promise<Rights> {
+  try {
+    const r = await serviceApi.get<{ rights?: Partial<Rights> }>("/auth/rights");
+    return { canApprove: r?.rights?.canApprove === true, canAdmin: r?.rights?.canAdmin === true };
+  } catch {
+    return NO_RIGHTS;
+  }
+}
+
+export async function fetchMyUseCases(): Promise<MyUseCase[]> {
+  try {
+    return await serviceApi.get<MyUseCase[]>("/me/use-cases");
+  } catch (err) {
     throw toApiError(err);
+  }
+}
+
+export async function fetchUseCase(id: number): Promise<UseCaseDetail> {
+  try {
+    return await serviceApi.get<UseCaseDetail>(`/use-cases/${id}`);
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+export async function fetchApprovals(): Promise<ApprovalItem[]> {
+  try {
+    return await serviceApi.get<ApprovalItem[]>("/approvals");
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+export async function fetchSimilar(id: number): Promise<SimilarUseCase[]> {
+  try {
+    return await serviceApi.get<SimilarUseCase[]>(`/use-cases/${id}/similar`);
+  } catch {
+    return []; // the re-use check is a hint, never blocks the decision
+  }
+}
+
+export async function updateUseCase(id: number, patch: UseCasePatch): Promise<UseCaseDetail> {
+  try {
+    return await serviceApi.patch<UseCaseDetail>(`/use-cases/${id}`, patch);
+  } catch (err) {
+    throw toWriteError(err);
+  }
+}
+
+export async function decideUseCase(id: number, decision: DecisionInput): Promise<UseCaseDetail> {
+  try {
+    return await serviceApi.post<UseCaseDetail>(`/use-cases/${id}/decision`, decision);
+  } catch (err) {
+    throw toWriteError(err);
   }
 }
 

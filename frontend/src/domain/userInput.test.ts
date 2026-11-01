@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { InitiativeInput } from "../api/types";
-import { EMPTY_FORM, parseNumber, previewRiskLevel, previewValue, toInput, validate, type FormState } from "./userInput";
+import { EMPTY_FORM, parseNumber, previewInput, previewRiskLevel, previewValue, toInput, validate, type FormState } from "./userInput";
 
 // Same cases as the pipeline (binding) and the backend's pending values — one file in this repo.
 const FIXTURE = JSON.parse(
@@ -20,7 +20,7 @@ describe("preview formulas against the shared fixture", () => {
     const i = input(c);
     expect(previewRiskLevel(i)).toBe(c.expected.riskLevel);
     if (!("efficiency" in c.expected)) return;
-    const p = previewValue(i);
+    const p = previewValue(i as unknown as Parameters<typeof previewValue>[0]); // the fixture carries the amount
     const actual: Record<string, number> = {
       efficiency: p.buckets.efficiency,
       quality: p.buckets.quality,
@@ -48,7 +48,7 @@ const filled: FormState = {
   businessUnit: "ETB",
   ownerId: "1",
   valueTypeId: "1",
-  solutionTypeId: "1",
+  aiLayer: "AI for productivity and efficiency",
   stage: "Idea",
   dateDelivery: "Q3 2027",
   levers: { efficiency: true, quality: true, riskReduction: false, speed: false },
@@ -60,7 +60,7 @@ const filled: FormState = {
   riskEventsPerYear: "4", // lever switched off -> not sent
   complexity: "4",
   oneTimeCosts: "200,000",
-  operatingCosts: "0",
+  runningCostRange: "up_to_10k",
 };
 
 describe("form", () => {
@@ -84,14 +84,19 @@ describe("form", () => {
       date_delivery: "Q3 2027",
       solution_complexity_score: 4,
       one_time_costs: 200000,
+      ai_layer: "AI for productivity and efficiency",
+      running_cost_range: "up_to_10k",
     });
+    expect(body).not.toHaveProperty("solution_type_id");
     expect(validate(filled)).toEqual({});
+    // the preview counts 5,000 € / year for "up to 10k", weighted by delivery (medium: 0.65)
+    expect(previewValue(previewInput(body)).operatingCosts).toBeCloseTo(3250, 6);
   });
 
   it("requires the basics and one complete lever", () => {
     const errors = validate({ ...EMPTY_FORM });
     expect(Object.keys(errors)).toEqual(
-      expect.arrayContaining(["name", "ownerId", "stage", "complexity", "oneTimeCosts", "levers"]),
+      expect.arrayContaining(["name", "ownerId", "aiLayer", "stage", "complexity", "oneTimeCosts", "runningCostRange", "levers"]),
     );
     expect(validate({ ...filled, hoursSavedPerCase: "", levers: { ...filled.levers, quality: false } }).levers).toBeDefined();
     expect(validate({ ...filled, errorRatePct: "120" }).errorRatePct).toMatch(/percentage/);

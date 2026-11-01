@@ -1,4 +1,4 @@
-import type { InitiativeInput } from "../api/types";
+import type { InitiativeInput, RunningCostRange } from "../api/types";
 
 // The input form's live preview. Binding are the values the pipeline computes
 // (input orchestration, transforms/user_input_heuristic.py); these formulas mirror it and are
@@ -8,6 +8,24 @@ export const HOURLY_RATE_EUR = 60;
 export const DEPRECIATION_YEARS = 5;
 export const CONFIDENCE_SCORE = { rough: 0.35, benchmark: 0.6, measured: 0.8 } as const;
 export const DELIVERY_SCORE = { low: 0.4, medium: 0.65, high: 0.9 } as const;
+
+/** Running costs are asked as a range; the pipeline counts this amount per range (same as the backend). */
+export const RUNNING_COST_RANGES: { value: RunningCostRange; label: string; amount: number }[] = [
+  { value: "up_to_10k", label: "up to 10k € / year", amount: 5_000 },
+  { value: "10k_to_50k", label: "10k–50k € / year", amount: 30_000 },
+  { value: "50k_to_100k", label: "50k–100k € / year", amount: 75_000 },
+  { value: "over_100k", label: "more than 100k € / year", amount: 150_000 },
+];
+export const runningCostAmount = (range: RunningCostRange | "" | null | undefined): number =>
+  RUNNING_COST_RANGES.find((r) => r.value === range)?.amount ?? 0;
+export const runningCostLabel = (range: string | null | undefined): string | undefined =>
+  RUNNING_COST_RANGES.find((r) => r.value === range)?.label;
+
+export const AI_LAYERS = [
+  "AI for productivity and efficiency",
+  "AI for business process optimization",
+  "Operational and advanced AI",
+];
 
 export const STAGES = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown"];
 
@@ -36,8 +54,10 @@ type Drivers = Pick<
   | "estimate_basis"
   | "delivery_likelihood"
   | "one_time_costs"
-  | "operating_costs"
->;
+> & {
+  /** running costs per year as entered: the amount the pipeline counts for the chosen range */
+  operating_costs: number;
+};
 
 const product = (values: (number | null)[], factor = 1): number =>
   values.some((v) => v === null) ? 0 : values.reduce<number>((a, v) => a * (v as number), factor);
@@ -100,7 +120,7 @@ export interface FormState {
   businessUnit: string;
   ownerId: string;
   valueTypeId: string;
-  solutionTypeId: string;
+  aiLayer: string;
   stage: string;
   dateStart: string;
   dateDelivery: string;
@@ -120,7 +140,7 @@ export interface FormState {
   deliveryLikelihood: InitiativeInput["delivery_likelihood"];
   complexity: string;
   oneTimeCosts: string;
-  operatingCosts: string;
+  runningCostRange: RunningCostRange | "";
   employeePersonalData: InitiativeInput["employee_personal_data"];
   performanceOrBehaviourControl: boolean;
   decisionsOnEmployees: InitiativeInput["decisions_on_employees"];
@@ -135,7 +155,7 @@ export const EMPTY_FORM: FormState = {
   businessUnit: "",
   ownerId: "",
   valueTypeId: "",
-  solutionTypeId: "",
+  aiLayer: "",
   stage: "",
   dateStart: "",
   dateDelivery: "",
@@ -155,7 +175,7 @@ export const EMPTY_FORM: FormState = {
   deliveryLikelihood: "medium",
   complexity: "",
   oneTimeCosts: "",
-  operatingCosts: "",
+  runningCostRange: "",
   employeePersonalData: "no",
   performanceOrBehaviourControl: false,
   decisionsOnEmployees: "none",
@@ -176,6 +196,9 @@ const pct = (text: string) => {
   return n === null ? null : n / 100;
 };
 
+/** The preview's inputs: the body plus the amount counted for the running cost range. */
+export const previewInput = (body: InitiativeInput) => ({ ...body, operating_costs: runningCostAmount(body.running_cost_range) });
+
 /** The request body; drivers of switched-off levers are left out (null). */
 export function toInput(f: FormState): InitiativeInput {
   const on = f.levers;
@@ -185,7 +208,7 @@ export function toInput(f: FormState): InitiativeInput {
     description: f.description.trim(),
     owner_id: Number(f.ownerId),
     value_type_id: Number(f.valueTypeId),
-    solution_type_id: Number(f.solutionTypeId),
+    ai_layer: f.aiLayer,
     stage: f.stage,
     date_start: f.dateStart || null,
     date_delivery: f.dateDelivery || null,
@@ -204,7 +227,7 @@ export function toInput(f: FormState): InitiativeInput {
     delivery_likelihood: f.deliveryLikelihood,
     solution_complexity_score: Number(f.complexity),
     one_time_costs: parseNumber(f.oneTimeCosts) ?? 0,
-    operating_costs: parseNumber(f.operatingCosts) ?? 0,
+    running_cost_range: f.runningCostRange as RunningCostRange,
     employee_personal_data: f.employeePersonalData,
     performance_or_behaviour_control: f.performanceOrBehaviourControl,
     decisions_on_employees: f.decisionsOnEmployees,
@@ -229,11 +252,12 @@ export function validate(f: FormState): Partial<Record<keyof FormState | "levers
   const errors: Partial<Record<keyof FormState | "levers", string>> = {};
   const required: [keyof FormState, string][] = [
     ["name", "Enter a name."],
-    ["description", "Describe the initiative."],
+    ["description", "Describe the idea."],
     ["businessUnit", "Choose a business unit."],
     ["ownerId", "Choose an owner."],
     ["valueTypeId", "Choose a flagship."],
-    ["solutionTypeId", "Choose a solution type."],
+    ["aiLayer", "Choose the AI layer."],
+    ["runningCostRange", "Choose a range."],
     ["stage", "Choose a stage."],
     ["complexity", "Choose the complexity."],
   ];
@@ -249,10 +273,8 @@ export function validate(f: FormState): Partial<Record<keyof FormState | "levers
     const n = parseNumber(f[key]);
     if (f[key].trim() && (n === null || n > 100)) errors[key] = "Enter a percentage between 0 and 100.";
   }
-  for (const key of ["oneTimeCosts", "operatingCosts"] as const) {
-    if (!f[key].trim()) errors[key] = "Enter an amount (0 if none).";
-    else if (parseNumber(f[key]) === null) errors[key] = "Enter an amount ≥ 0.";
-  }
+  if (!f.oneTimeCosts.trim()) errors.oneTimeCosts = "Enter an amount (0 if none).";
+  else if (parseNumber(f.oneTimeCosts) === null) errors.oneTimeCosts = "Enter an amount ≥ 0.";
   const complete = LEVERS.some((l) => f.levers[l.key] && l.fields.every((field) => input[field] !== null));
   if (!complete) errors.levers = "Fill in all drivers of at least one value lever.";
   return errors;
@@ -270,6 +292,13 @@ export function quarterOptions(today: Date = new Date()): string[] {
 }
 
 // ---------- hints: the defaults the free-text heuristic uses ----------
+
+/** Form 1 asks for the AI layer; the solution type follows in form 2. Its typical family for the hints: */
+const FAMILY_BY_AI_LAYER: Record<string, "assistant" | "genai_process" | "ml"> = {
+  "AI for productivity and efficiency": "assistant",
+  "AI for business process optimization": "genai_process",
+  "Operational and advanced AI": "ml",
+};
 
 const FAMILY_BY_SOLUTION_TYPE: Record<string, "assistant" | "rpa" | "genai_process" | "ml"> = {
   Copilot: "assistant",
@@ -312,9 +341,11 @@ export interface Typical {
   leadTimeSavedPct?: number;
 }
 
-/** Typical values for the chosen solution type and flagship, shown as hints (never filled in). */
-export function typicalValues(solutionType: string | undefined, flagship: string | undefined): Typical {
-  const family = solutionType ? FAMILY_BY_SOLUTION_TYPE[solutionType] : undefined;
+/** Typical values for the chosen solution type (or AI layer) and flagship, shown as hints (never filled in). */
+export function typicalValues(solutionTypeOrLayer: string | undefined, flagship: string | undefined): Typical {
+  const family = solutionTypeOrLayer
+    ? FAMILY_BY_SOLUTION_TYPE[solutionTypeOrLayer] ?? FAMILY_BY_AI_LAYER[solutionTypeOrLayer]
+    : undefined;
   const fl = flagship ?? "";
   return {
     hoursSavedPerCase: family && HOURS_SAVED[family],

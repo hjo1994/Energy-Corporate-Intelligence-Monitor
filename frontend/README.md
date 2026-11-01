@@ -1,7 +1,9 @@
 # Frontend — React Dashboard
 
 Eigenes Kubernetes-Deployment, eigene Anwendung. Konsumiert ausschließlich die
-read-only Backend-API (`/api/initiatives`); kein eigener Datenzugriff.
+Backend-API (`/api/...`); kein eigener Datenzugriff. Geschrieben wird nur über die
+Lifecycle-Endpunkte (Formular 1, Formular 2, Entscheidung), die im Backend als
+User-Actions in Bronze landen.
 React 18 + Vite + TypeScript (Versionen wie das Plattform-Template, damit sie
 der Firmen-Spiegel führt; mit diesen Versionen getestet), Schrift (IBM Plex)
 als Dateien im Repo (`src/fonts/`, OFL-Lizenzen liegen bei; bewusst keine
@@ -71,6 +73,38 @@ Ansichten hinweg. Alle Initiativen werden einmal vollständig geladen
 im Browser — damit reagieren auch die Kennzahlen auf die Filter, was
 `/api/initiatives/summary` nicht kann. Bei deutlich mehr als einigen tausend
 Initiativen wäre das neu zu überdenken.
+
+## Lifecycle: Ideen, Freigabe, Formular 2
+
+Nach den abgenommenen Entwürfen (F1 = bisheriges Formular mit Anpassungen,
+F2 = Variante B „Checkliste je Stage Gate“, User-Ansicht A, Approver-Ansicht A):
+
+- **+ New AI idea** (`/new`) — Formular 1. Statt Solution Type die **AI layer**
+  (der Solution Type folgt in Formular 2), laufende Kosten als **Spanne**
+  (`running_cost_range`; die Vorschau rechnet wie das Backend mit 5k / 30k / 75k / 150k €
+  je Spanne). Nach dem Absenden geht es zu „My use cases“.
+- **My use cases** (`/my`) — alles, was ich eingereicht habe, besitze oder leite
+  (Filter nach Rolle), Kennzahlen, „Needs your attention“ aus den To-dos des
+  Backends (`revise_and_resubmit`, `complete_details`), Tabelle mit Freigabe,
+  Stage, letztem Gate, Potenzial (Vorschau mit `*`), Risiko und dem nächsten
+  Schritt. Der Tab zeigt die Zahl der offenen To-dos.
+- **Use case** (`/use-cases/:id`) — Formular 2 als Checkliste je Gate: Scope
+  (Team, Solution Type, Lead, EU AI Act, Betriebsrat …), Deploy (Betriebsrat-Freigabe,
+  Safety, Nutzer) und „While live“ (gemessener Nutzen, Ist-Capex/-Opex). Offen ist
+  nur, was das nächste Gate braucht; das Datum „… gate passed on“ setzt das Gate und
+  öffnet die nächste Gruppe. Gespeichert werden nur geänderte Felder, mit
+  `base_revision` (409 bei zwischenzeitlicher Änderung → Meldung, neu laden).
+  Abgelehnte Ideen: Kommentar der Approver, Beschreibung anpassen, erneut einreichen.
+- **Approvals** (`/approvals`, nur mit `canApprove` aus `/api/auth/rights`) —
+  Inbox der wartenden Ideen; rechts Value-, Risk- und Effort-Check, Re-use-Check
+  (`/similar`) und die Entscheidung: Lead zuweisen + Needs-Gate-Datum → freigeben,
+  oder mit Kommentar ablehnen.
+
+**Noch nicht verarbeitet:** Alles, was in der UI gespeichert, aber noch nicht in
+Silber/Gold verarbeitet ist, bleibt sichtbar und ist markiert (`processing` vom
+Backend): „Estimate pending“ (neue Idee), „Changes pending“ (gespeicherte
+Änderungen), „Not assessed“ (für Gold fehlen Eingaben). Solange etwas wartet,
+lesen die Ansichten die Daten alle paar Sekunden neu.
 
 ## Abweichungen vom Entwurf — wegen der echten Daten
 

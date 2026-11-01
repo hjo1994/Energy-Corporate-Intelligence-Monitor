@@ -1,15 +1,45 @@
 import { useEffect, useState } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
-import { fetchFeatures } from "./api/client";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { fetchApprovals, fetchFeatures, fetchMyUseCases } from "./api/client";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
 import { CockpitView } from "./views/CockpitView";
 import { NewInitiativeView } from "./views/NewInitiativeView";
+import { ApprovalsView } from "./views/ApprovalsView";
+import { MyUseCasesView } from "./views/MyUseCasesView";
+import { UseCaseView } from "./views/UseCaseView";
+
+/** Badge counts in the tabs: my open to-dos and the ideas waiting for a decision. */
+function useCounts(canApprove: boolean): { todos: number; approvals: number } {
+  const location = useLocation();
+  const [counts, setCounts] = useState({ todos: 0, approvals: 0 });
+  useEffect(() => {
+    let cancelled = false;
+    fetchMyUseCases().then(
+      (mine) => !cancelled && setCounts((c) => ({ ...c, todos: Array.isArray(mine) ? mine.filter((u) => u.todos?.length > 0).length : 0 })),
+      () => undefined,
+    );
+    if (canApprove) {
+      fetchApprovals().then(
+        (items) => !cancelled && setCounts((c) => ({ ...c, approvals: Array.isArray(items) ? items.length : 0 })),
+        () => undefined,
+      );
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [canApprove, location.pathname]);
+  return counts;
+}
+
+const Count = ({ n, label }: { n: number; label: string }) =>
+  n > 0 ? <span className="tab-count" aria-label={`${n} ${label}`}>{n}</span> : null;
 
 function Shell() {
-  const { load, reload, filters, setFilters } = useApp();
+  const { load, reload, filters, setFilters, rights } = useApp();
+  const counts = useCounts(rights.canApprove);
   // AI_COCKPIT_ENABLE_INITIATIVE_INPUT on the backend; hidden until it says yes
   const [inputEnabled, setInputEnabled] = useState(false);
   useEffect(() => {
@@ -32,10 +62,18 @@ function Shell() {
           </NavLink>
           <NavLink to="/list">List</NavLink>
           <NavLink to="/board">Board</NavLink>
+          <NavLink to="/my">
+            My use cases <Count n={counts.todos} label="to-dos" />
+          </NavLink>
+          {rights.canApprove && (
+            <NavLink to="/approvals">
+              Approvals <Count n={counts.approvals} label="waiting" />
+            </NavLink>
+          )}
         </nav>
         {inputEnabled && (
           <NavLink to="/new" className="new-btn">
-            + New initiative
+            + New AI idea
           </NavLink>
         )}
         {!AUTH_DEV_BYPASS && (
@@ -70,6 +108,9 @@ function Shell() {
             <Route path="/list" element={<ListView />} />
             <Route path="/board" element={<BoardView />} />
             <Route path="/new" element={inputEnabled ? <NewInitiativeView /> : <Navigate to="/" replace />} />
+            <Route path="/my" element={<MyUseCasesView />} />
+            <Route path="/use-cases/:id" element={<UseCaseView />} />
+            <Route path="/approvals" element={<ApprovalsView />} />
             {/* the former Value tab now lives on the start page */}
             <Route path="/value" element={<Navigate to="/" replace />} />
             <Route path="*" element={<CockpitView />} />
