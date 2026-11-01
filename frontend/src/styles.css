@@ -478,28 +478,31 @@ td { padding: 12px; vertical-align: middle; border-top: 1px solid var(--border);
 .lc-side-rows { display: flex; flex-direction: column; gap: 6px; }
 .lc-side-rows > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink-soft); }
 .lc-side-rows > div > span:last-child { color: var(--ink); text-align: right; }
-.lc-open { margin: 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .lc-team { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .lc-team li { display: flex; align-items: center; gap: 10px; }
 .lc-avatar { width: 30px; height: 30px; font-size: 12px; }
-.lc-stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.lc-step { display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; }
-.lc-step > span:last-child { display: flex; flex-direction: column; }
-.lc-step-sub { font-size: 12px; color: var(--ink-soft); }
-.lc-step-dot { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; background: var(--paper); border: 1px solid var(--border); flex-shrink: 0; }
-.lc-step-done .lc-step-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
-.lc-step-now { border-color: var(--ink); }
-.lc-step-now .lc-step-dot { background: var(--ink); border-color: var(--ink); color: #fff; }
-.lc-step-later { opacity: .7; }
+.lc-stage { max-width: 320px; }
+.lc-gates { display: flex; flex-direction: column; gap: 8px; }
+.lc-gates-intro { margin: 4px 0 0; }
+.lc-gate-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.lc-gate { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; min-width: 0; }
+.lc-gate.invalid { border-color: #c0392b; }
+.lc-gate-dot { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; background: var(--paper); border: 1px solid var(--border); flex-shrink: 0; }
+.lc-gate-passed .lc-gate-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lc-gate-planned .lc-gate-dot { border-color: var(--ink); border-style: dashed; }
+.lc-gate-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.lc-gate-body .nf-label { display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.lc-gate-state { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.lc-gate-state-passed { color: var(--accent); }
+.lc-gate-fixed { font-size: 14px; padding: 8px 0; }
+.lc-tag-warn { margin-left: 6px; background: #fff4e5; color: #8a5300; }
+.lc-decision-note { grid-column: 1 / -1; align-self: end; margin: 0; }
 .lc-group { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }
 .lc-group:not(.open) { background: var(--paper); }
 .lc-group-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .lc-group-head .muted { font-size: 13px; }
-.lc-count { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
-.lc-closed { margin: 0; font-size: 13px; }
 .lc-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
 .lc-wide { grid-column: 1 / -1; }
-.lc-gate { padding-top: 12px; border-top: 1px dashed var(--border); max-width: 320px; }
 .lc-multi { display: flex; flex-wrap: wrap; gap: 8px; }
 .lc-multi label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid #c9cfd6; border-radius: 999px; font-size: 13px; cursor: pointer; background: #fff; }
 .lc-multi label.on { background: var(--hero); border-color: var(--hero); color: #fff; }
@@ -536,5 +539,5 @@ td { padding: 12px; vertical-align: middle; border-top: 1px solid var(--border);
   .lc-checks { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
-  .lc-fields, .lc-stepper { grid-template-columns: minmax(0, 1fr); }
+  .lc-fields, .lc-gate-list { grid-template-columns: minmax(0, 1fr); }
 }

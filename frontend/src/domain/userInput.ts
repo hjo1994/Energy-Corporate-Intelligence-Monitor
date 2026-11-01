@@ -1,4 +1,5 @@
 import type { InitiativeInput, RunningCostRange } from "../api/types";
+import { STAGE_GATE_RULES, gateProblems, todayIso, type GateRules } from "./lifecycle";
 
 // The input form's live preview. Binding are the values the pipeline computes
 // (input orchestration, transforms/user_input_heuristic.py); these formulas mirror it and are
@@ -27,7 +28,109 @@ export const AI_LAYERS = [
   "Operational and advanced AI",
 ];
 
-export const STAGES = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown"];
+export const STAGES = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown"];
+
+// ---------- value domains: every number of form 1 is chosen from a short list ----------
+
+export interface DomainOption {
+  /** the value that is stored (the range's representative value) */
+  value: number;
+  label: string;
+}
+
+export type DomainField =
+  | "cases_per_year"
+  | "hours_saved_per_case"
+  | "error_rate_before"
+  | "errors_avoided"
+  | "cost_per_error"
+  | "risk_events_per_year"
+  | "events_avoided"
+  | "cost_per_event"
+  | "delay_events_per_year"
+  | "cost_of_delay_per_event"
+  | "lead_time_saved"
+  | "one_time_costs";
+
+const SHARES: DomainOption[] = [
+  { value: 0.1, label: "about 10 %" },
+  { value: 0.25, label: "about 25 %" },
+  { value: 0.5, label: "about 50 %" },
+  { value: 0.75, label: "about 75 %" },
+  { value: 0.9, label: "about 90 %" },
+];
+const EVENT_COSTS: DomainOption[] = [
+  { value: 5_000, label: "under 10k €" },
+  { value: 30_000, label: "10k–50k €" },
+  { value: 150_000, label: "50k–250k €" },
+  { value: 500_000, label: "over 250k €" },
+];
+
+/** Same as the backend (app/lifecycle.py, served in /api/form-options as value_domains); used until that has loaded. */
+export const VALUE_DOMAINS: Record<DomainField, DomainOption[]> = {
+  cases_per_year: [
+    { value: 50, label: "under 100" },
+    { value: 500, label: "100–1,000" },
+    { value: 5_000, label: "1,000–10,000" },
+    { value: 50_000, label: "10,000–100,000" },
+    { value: 150_000, label: "over 100,000" },
+  ],
+  hours_saved_per_case: [
+    { value: 0.1, label: "under 15 min" },
+    { value: 0.4, label: "15–30 min" },
+    { value: 0.75, label: "30–60 min" },
+    { value: 2.5, label: "1–4 h" },
+    { value: 6, label: "over 4 h" },
+  ],
+  error_rate_before: [
+    { value: 0.01, label: "under 2 %" },
+    { value: 0.035, label: "2–5 %" },
+    { value: 0.075, label: "5–10 %" },
+    { value: 0.15, label: "10–20 %" },
+    { value: 0.3, label: "over 20 %" },
+  ],
+  errors_avoided: SHARES,
+  cost_per_error: [
+    { value: 50, label: "under 100 €" },
+    { value: 500, label: "100–1k €" },
+    { value: 5_000, label: "1k–10k €" },
+    { value: 25_000, label: "over 10k €" },
+  ],
+  risk_events_per_year: [
+    { value: 0.5, label: "less than 1" },
+    { value: 3, label: "1–5" },
+    { value: 12, label: "5–20" },
+    { value: 40, label: "more than 20" },
+  ],
+  events_avoided: SHARES,
+  cost_per_event: EVENT_COSTS,
+  delay_events_per_year: [
+    { value: 3, label: "under 5" },
+    { value: 12, label: "5–20" },
+    { value: 60, label: "20–100" },
+    { value: 150, label: "over 100" },
+  ],
+  cost_of_delay_per_event: EVENT_COSTS,
+  lead_time_saved: SHARES,
+  one_time_costs: [
+    { value: 25_000, label: "under 50k €" },
+    { value: 75_000, label: "50k–100k €" },
+    { value: 175_000, label: "100k–250k €" },
+    { value: 500_000, label: "250k €–1M €" },
+    { value: 1_500_000, label: "over 1M €" },
+  ],
+};
+
+/** The option a value belongs to: the exact one, else the nearest (for values entered before the domains). */
+export function domainOption(domain: DomainOption[], value: number | null | undefined): DomainOption | undefined {
+  if (value === null || value === undefined || domain.length === 0) return undefined;
+  const exact = domain.find((o) => Math.abs(o.value - value) < 1e-9);
+  if (exact) return exact;
+  return domain.reduce((best, o) => (Math.abs(Math.log((o.value || 1e-9) / (value || 1e-9))) < Math.abs(Math.log((best.value || 1e-9) / (value || 1e-9))) ? o : best));
+}
+
+export const inDomain = (domain: DomainOption[], value: number | null) =>
+  value !== null && domain.some((o) => Math.abs(o.value - value) < 1e-9);
 
 export type LeverKey = "efficiency" | "quality" | "riskReduction" | "speed";
 
@@ -113,7 +216,7 @@ export function previewRiskLevel(r: Indicators): number {
 
 // ---------- form state ----------
 
-/** Number inputs are kept as typed text; percentages are entered in % and sent as fractions. */
+/** Numbers are chosen from their domain and kept as the option's value in text ("" = not chosen). */
 export interface FormState {
   name: string;
   description: string;
@@ -124,18 +227,20 @@ export interface FormState {
   stage: string;
   dateStart: string;
   dateDelivery: string;
+  /** stage gate dates as YYYY-MM-DD; asked depending on the stage */
+  gateDates: Record<"Needs" | "Scope" | "Deploy" | "Retire", string>;
   levers: Record<LeverKey, boolean>;
   casesPerYear: string;
   hoursSavedPerCase: string;
-  errorRatePct: string;
-  errorsAvoidedPct: string;
+  errorRateBefore: string;
+  errorsAvoided: string;
   costPerError: string;
   riskEventsPerYear: string;
-  eventsAvoidedPct: string;
+  eventsAvoided: string;
   costPerEvent: string;
   delayEventsPerYear: string;
   costOfDelayPerEvent: string;
-  leadTimeSavedPct: string;
+  leadTimeSaved: string;
   estimateBasis: InitiativeInput["estimate_basis"];
   deliveryLikelihood: InitiativeInput["delivery_likelihood"];
   complexity: string;
@@ -159,18 +264,19 @@ export const EMPTY_FORM: FormState = {
   stage: "",
   dateStart: "",
   dateDelivery: "",
+  gateDates: { Needs: "", Scope: "", Deploy: "", Retire: "" },
   levers: { efficiency: true, quality: false, riskReduction: false, speed: false },
   casesPerYear: "",
   hoursSavedPerCase: "",
-  errorRatePct: "",
-  errorsAvoidedPct: "",
+  errorRateBefore: "",
+  errorsAvoided: "",
   costPerError: "",
   riskEventsPerYear: "",
-  eventsAvoidedPct: "",
+  eventsAvoided: "",
   costPerEvent: "",
   delayEventsPerYear: "",
   costOfDelayPerEvent: "",
-  leadTimeSavedPct: "",
+  leadTimeSaved: "",
   estimateBasis: "rough",
   deliveryLikelihood: "medium",
   complexity: "",
@@ -191,11 +297,6 @@ export function parseNumber(text: string): number | null {
   return Number(t);
 }
 
-const pct = (text: string) => {
-  const n = parseNumber(text);
-  return n === null ? null : n / 100;
-};
-
 /** The preview's inputs: the body plus the amount counted for the running cost range. */
 export const previewInput = (body: InitiativeInput) => ({ ...body, operating_costs: runningCostAmount(body.running_cost_range) });
 
@@ -214,19 +315,23 @@ export function toInput(f: FormState): InitiativeInput {
     date_delivery: f.dateDelivery || null,
     cases_per_year: when(on.efficiency || on.quality, parseNumber(f.casesPerYear)),
     hours_saved_per_case: when(on.efficiency, parseNumber(f.hoursSavedPerCase)),
-    error_rate_before: when(on.quality, pct(f.errorRatePct)),
-    errors_avoided: when(on.quality, pct(f.errorsAvoidedPct)),
+    error_rate_before: when(on.quality, parseNumber(f.errorRateBefore)),
+    errors_avoided: when(on.quality, parseNumber(f.errorsAvoided)),
     cost_per_error: when(on.quality, parseNumber(f.costPerError)),
     risk_events_per_year: when(on.riskReduction, parseNumber(f.riskEventsPerYear)),
-    events_avoided: when(on.riskReduction, pct(f.eventsAvoidedPct)),
+    events_avoided: when(on.riskReduction, parseNumber(f.eventsAvoided)),
     cost_per_event: when(on.riskReduction, parseNumber(f.costPerEvent)),
     delay_events_per_year: when(on.speed, parseNumber(f.delayEventsPerYear)),
     cost_of_delay_per_event: when(on.speed, parseNumber(f.costOfDelayPerEvent)),
-    lead_time_saved: when(on.speed, pct(f.leadTimeSavedPct)),
+    lead_time_saved: when(on.speed, parseNumber(f.leadTimeSaved)),
     estimate_basis: f.estimateBasis,
     delivery_likelihood: f.deliveryLikelihood,
     solution_complexity_score: Number(f.complexity),
     one_time_costs: parseNumber(f.oneTimeCosts) ?? 0,
+    needs_gate_date: f.gateDates.Needs || null,
+    scope_gate_date: f.gateDates.Scope || null,
+    deploy_gate_date: f.gateDates.Deploy || null,
+    retire_gate_date: f.gateDates.Retire || null,
     running_cost_range: f.runningCostRange as RunningCostRange,
     employee_personal_data: f.employeePersonalData,
     performance_or_behaviour_control: f.performanceOrBehaviourControl,
@@ -237,19 +342,32 @@ export function toInput(f: FormState): InitiativeInput {
   };
 }
 
-const NUMBER_FIELDS: Record<string, keyof FormState> = {
+/** Form field of each number of form 1. */
+export const DOMAIN_FORM_FIELDS: Record<DomainField, keyof FormState> = {
   cases_per_year: "casesPerYear",
   hours_saved_per_case: "hoursSavedPerCase",
+  error_rate_before: "errorRateBefore",
+  errors_avoided: "errorsAvoided",
   cost_per_error: "costPerError",
   risk_events_per_year: "riskEventsPerYear",
+  events_avoided: "eventsAvoided",
   cost_per_event: "costPerEvent",
   delay_events_per_year: "delayEventsPerYear",
   cost_of_delay_per_event: "costOfDelayPerEvent",
+  lead_time_saved: "leadTimeSaved",
+  one_time_costs: "oneTimeCosts",
 };
 
+export type FormErrors = Partial<Record<keyof FormState | "levers" | `gate${"Needs" | "Scope" | "Deploy" | "Retire"}`, string>>;
+
 /** Field -> message; empty when the form can be submitted. Same rules as the API. */
-export function validate(f: FormState): Partial<Record<keyof FormState | "levers", string>> {
-  const errors: Partial<Record<keyof FormState | "levers", string>> = {};
+export function validate(
+  f: FormState,
+  domains: Record<DomainField, DomainOption[]> = VALUE_DOMAINS,
+  today: string = todayIso(),
+  rules: GateRules = STAGE_GATE_RULES,
+): FormErrors {
+  const errors: FormErrors = {};
   const required: [keyof FormState, string][] = [
     ["name", "Enter a name."],
     ["description", "Describe the idea."],
@@ -264,19 +382,16 @@ export function validate(f: FormState): Partial<Record<keyof FormState | "levers
   for (const [field, message] of required) if (!String(f[field]).trim()) errors[field] = message;
 
   const input = toInput(f);
-  for (const [field, key] of Object.entries(NUMBER_FIELDS)) {
-    if (String(f[key]).trim() && input[field as keyof InitiativeInput] === null && isLeverFieldOn(f, field)) {
-      errors[key] = "Enter a number ≥ 0.";
-    }
+  for (const [field, key] of Object.entries(DOMAIN_FORM_FIELDS) as [DomainField, keyof FormState][]) {
+    const value = input[field as keyof InitiativeInput] as number | null;
+    const used = field === "one_time_costs" || isLeverFieldOn(f, field);
+    if (used && String(f[key]).trim() && !inDomain(domains[field] ?? [], value)) errors[key] = "Choose one of the ranges.";
   }
-  for (const key of ["errorRatePct", "errorsAvoidedPct", "eventsAvoidedPct", "leadTimeSavedPct"] as const) {
-    const n = parseNumber(f[key]);
-    if (f[key].trim() && (n === null || n > 100)) errors[key] = "Enter a percentage between 0 and 100.";
-  }
-  if (!f.oneTimeCosts.trim()) errors.oneTimeCosts = "Enter an amount (0 if none).";
-  else if (parseNumber(f.oneTimeCosts) === null) errors.oneTimeCosts = "Enter an amount ≥ 0.";
+  if (!f.oneTimeCosts.trim()) errors.oneTimeCosts = "Choose a range.";
   const complete = LEVERS.some((l) => f.levers[l.key] && l.fields.every((field) => input[field] !== null));
   if (!complete) errors.levers = "Fill in all drivers of at least one value lever.";
+
+  for (const p of gateProblems(f.stage, f.gateDates, today, rules)) errors[`gate${p.gate}`] ??= p.message;
   return errors;
 }
 
@@ -332,14 +447,17 @@ const COST_DELAY: Record<string, number> = {
 
 export interface Typical {
   hoursSavedPerCase?: number;
-  errorRatePct: number;
-  errorsAvoidedPct?: number;
+  /** shares as fractions 0–1 */
+  errorRateBefore: number;
+  errorsAvoided?: number;
   costPerError: number;
-  eventsAvoidedPct?: number;
+  eventsAvoided?: number;
   costPerEvent: number;
   costOfDelayPerEvent: number;
-  leadTimeSavedPct?: number;
+  leadTimeSaved?: number;
 }
+
+const share = (pct: number | undefined) => (pct === undefined ? undefined : pct / 100);
 
 /** Typical values for the chosen solution type (or AI layer) and flagship, shown as hints (never filled in). */
 export function typicalValues(solutionTypeOrLayer: string | undefined, flagship: string | undefined): Typical {
@@ -349,12 +467,12 @@ export function typicalValues(solutionTypeOrLayer: string | undefined, flagship:
   const fl = flagship ?? "";
   return {
     hoursSavedPerCase: family && HOURS_SAVED[family],
-    errorRatePct: 8,
-    errorsAvoidedPct: family && ERROR_CUT[family],
+    errorRateBefore: 0.08,
+    errorsAvoided: share(family && ERROR_CUT[family]),
     costPerError: COST_ERROR[fl] ?? 500,
-    eventsAvoidedPct: family && P_EVENT_CUT[family],
+    eventsAvoided: share(family && P_EVENT_CUT[family]),
     costPerEvent: COST_EVENT[fl] ?? 20_000,
     costOfDelayPerEvent: COST_DELAY[fl] ?? 20_000,
-    leadTimeSavedPct: family && SPEEDUP[family],
+    leadTimeSaved: share(family && SPEEDUP[family]),
   };
 }

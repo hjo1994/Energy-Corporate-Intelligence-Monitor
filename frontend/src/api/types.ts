@@ -51,8 +51,13 @@ export interface Initiative {
   ai_layer?: string | null;
   /** null for use cases imported from the Excel sheet */
   approval_status?: ApprovalStatus | null;
-  stagegate?: Stagegate | null;
-  passed_at?: string | null;
+  /** one date per stage gate: up to today = passed, later = planned */
+  needs_gate_date?: string | null;
+  scope_gate_date?: string | null;
+  deploy_gate_date?: string | null;
+  retire_gate_date?: string | null;
+  /** the latest gate passed by today */
+  last_gate?: Stagegate | null;
   use_case_id?: number | null;
   version_id?: number | null;
   /**
@@ -114,6 +119,11 @@ export interface InitiativeInput {
   profiling_of_individuals: boolean;
   changes_employee_workflows: boolean;
   prohibited_practice: boolean;
+  /** YYYY-MM-DD; which ones are needed depends on the stage */
+  needs_gate_date?: string | null;
+  scope_gate_date?: string | null;
+  deploy_gate_date?: string | null;
+  retire_gate_date?: string | null;
 }
 
 export interface InitiativePage {
@@ -171,6 +181,8 @@ export interface UseCaseDetail extends Initiative {
   /** send back as base_revision when saving */
   revision: string;
   form2_progress: Form2Progress;
+  /** what does not fit between stage and gate dates */
+  stage_problems: string[];
   todos: Todo[];
   can_edit: boolean;
   can_decide: boolean;
@@ -181,8 +193,12 @@ export interface MyUseCase {
   name: string;
   approval_status: ApprovalStatus | null;
   stage: string | null;
-  stagegate: Stagegate | null;
-  passed_at: string | null;
+  needs_gate_date: string | null;
+  scope_gate_date: string | null;
+  deploy_gate_date: string | null;
+  retire_gate_date: string | null;
+  last_gate: Stagegate | null;
+  stage_problems?: string[];
   comment: string | null;
   potential_value_eur: number | null;
   risk_classification: RiskRef | null;
@@ -227,7 +243,6 @@ export type UseCasePatch = { base_revision: string; resubmit?: boolean } & Parti
 export interface DecisionInput {
   decision: "approve" | "reject";
   lead_id?: number;
-  needs_gate_passed_at?: string;
   comment?: string;
   base_revision?: string;
 }
@@ -239,6 +254,11 @@ export interface Option {
 
 /** GET /api/form-options */
 export interface FormOptions {
+  stages?: Option[];
+  /** stage -> gates that must be passed / must not be passed yet */
+  stage_gate_rules?: Record<string, { passed: Stagegate[]; not_passed: Stagegate[] }>;
+  /** form 1: the values each number can take */
+  value_domains?: Record<string, { value: number; label: string }[]>;
   ai_layers: Option[];
   running_cost_ranges: (Option & { amount: number })[];
   enabling_teams: Option[];

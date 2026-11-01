@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
@@ -179,10 +179,11 @@ describe("new initiative form", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: /^Flagship/ }), "1");
     await user.selectOptions(screen.getByRole("combobox", { name: /^AI layer/ }), "AI for productivity and efficiency");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "Idea");
-    await user.type(screen.getByRole("textbox", { name: /^Cases per year/ }), "3000");
-    await user.type(screen.getByRole("textbox", { name: /^Hours saved per case/ }), "0.5");
+    // every number is chosen from its range
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Cases per year/ }), "1,000–10,000");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Time saved per case/ }), "15–30 min");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Complexity/ }), "4");
-    await user.type(screen.getByRole("textbox", { name: /^One-time cost/ }), "200000");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^One-time cost/ }), "100k–250k €");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Running costs/ }), "50k_to_100k");
     await user.click(screen.getByRole("radio", { name: "Benchmark" }));
     return user;
@@ -198,9 +199,9 @@ describe("new initiative form", () => {
 
     await fillRequired();
     const preview = screen.getByRole("complementary", { name: "Estimate preview" });
-    // 3,000 x 0.5 h x 60 € = 90k; x 0.60 x 0.65 = 35k; cost 200k x 0.65 / 5 + 75k (50k–100k range) x 0.65 = 75k
-    expect(preview).toHaveTextContent("Potential per year35k €");
-    expect(preview).toHaveTextContent("Expected cost per year75k €");
+    // 5,000 x 0.4 h x 60 € = 120k; x 0.60 x 0.65 = 47k; cost 175k x 0.65 / 5 + 75k (50k–100k range) x 0.65 = 72k
+    expect(preview).toHaveTextContent("Potential per year47k €");
+    expect(preview).toHaveTextContent("Expected cost per year72k €");
     expect(preview).toHaveTextContent("1 · Very low risk");
     await user.click(screen.getByRole("radio", { name: "Prepares" }));
     expect(preview).toHaveTextContent("3 · Medium risk");
@@ -218,14 +219,37 @@ describe("new initiative form", () => {
     await user.click(screen.getByRole("button", { name: "Submit idea" }));
 
     expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
-      name: "Smart Invoice Check", owner_id: 1, cases_per_year: 3000, hours_saved_per_case: 0.5,
+      name: "Smart Invoice Check", owner_id: 1, cases_per_year: 5000, hours_saved_per_case: 0.4,
       error_rate_before: null, estimate_basis: "benchmark", solution_complexity_score: 4,
-      one_time_costs: 200000, decisions_on_employees: "none",
+      one_time_costs: 175000, decisions_on_employees: "none", scope_gate_date: null,
       ai_layer: "AI for productivity and efficiency", running_cost_range: "50k_to_100k",
     }));
     expect(post.mock.calls[0]![1]).not.toHaveProperty("solution_type_id");
     expect(await screen.findByRole("heading", { name: "My use cases" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("“Smart Invoice Check” was submitted.");
+  });
+
+  it("asks for the dates of the gates the chosen stage has passed", async () => {
+    mockWithReference();
+    post.mockReset();
+    post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
+      ...SAMPLE[0], id: -1, user_input_id: 1, status: "pending", business_transaction_id: null, name: body.name as string,
+    })) as never);
+    renderAt("/new");
+    const user = await fillRequired();
+    expect(screen.queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // Idea: no gate passed yet
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "PoC");
+    expect(screen.getByText(/In PoC the scope gate is already passed/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Deploy gate date")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
+    expect(screen.getByText("PoC needs the date the scope gate was passed.")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Scope gate date"), { target: { value: "2026-02-10" } });
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
+    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
+      stage: "PoC", scope_gate_date: "2026-02-10", needs_gate_date: null, deploy_gate_date: null,
+    }));
   });
 
   it("shows the server's message for a duplicate name", async () => {

@@ -33,7 +33,6 @@ function valueLine(d: UseCaseDetail): string | null {
 
 function Decision({ d, lists, onDone }: { d: UseCaseDetail; lists: ReferenceData; onDone: (name: string, approved: boolean) => void }) {
   const [leadId, setLeadId] = useState(d.owner?.id ? String(d.owner.id) : "");
-  const [date, setDate] = useState(todayIso());
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +48,7 @@ function Decision({ d, lists, onDone }: { d: UseCaseDetail; lists: ReferenceData
       await decideUseCase(d.id, {
         decision,
         base_revision: d.revision,
-        ...(decision === "approve" ? { lead_id: Number(leadId), needs_gate_passed_at: date || undefined } : {}),
+        ...(decision === "approve" ? { lead_id: Number(leadId) } : {}),
         ...(comment.trim() ? { comment: comment.trim() } : {}),
       });
       onDone(d.name, decision === "approve");
@@ -71,10 +70,11 @@ function Decision({ d, lists, onDone }: { d: UseCaseDetail; lists: ReferenceData
           </select>
           {tried === "approve" && !leadId ? <span className="nf-error">Required to approve.</span> : <span className="nf-hint">required to approve</span>}
         </label>
-        <label className="nf-field">
-          <span className="nf-label">Needs gate date</span>
-          <input type="date" className="nf-input" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} />
-        </label>
+        <p className="nf-hint lc-decision-note">
+          {d.needs_gate_date && d.needs_gate_date.slice(0, 10) <= todayIso()
+            ? `The submitter dated the needs gate ${shortDate(d.needs_gate_date)}; approving keeps that date.`
+            : "Approving passes the needs gate today."}
+        </p>
       </div>
       <label className="nf-field">
         <span className="nf-label">Comment to the submitter</span>

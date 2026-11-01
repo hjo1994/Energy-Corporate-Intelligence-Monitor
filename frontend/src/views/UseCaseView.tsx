@@ -2,26 +2,27 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { Link, useParams } from "react-router-dom";
 import { ApiError, fetchReferenceData, fetchUseCase, updateUseCase, type ReferenceData } from "../api/client";
 import type { Option, Stagegate, UseCaseDetail } from "../api/types";
+import { GateDatesEditor } from "../components/GateDates";
 import { PendingTag } from "../components/small";
 import { flagshipLabel } from "../domain/format";
 import {
+  FORM2_FIELDS,
   GATES,
-  GATE_GROUPS,
+  GATE_FIELD,
   PROCESSING_HINT,
+  STAGE_GATE_RULES,
   approvalLabel,
   fieldValue,
-  filledCount,
-  groupOpen,
-  isFilled,
+  gateProblems,
   keur,
-  nextGate,
+  savedGateDates,
   shortDate,
-  todayIso,
   type Form2Field,
-  type GateGroup,
+  type GateDates,
+  type GateRules,
 } from "../domain/lifecycle";
 import { riskLevelLabel } from "../domain/risk";
-import { parseNumber, runningCostLabel } from "../domain/userInput";
+import { RUNNING_COST_RANGES, STAGES, VALUE_DOMAINS, domainOption, parseNumber, runningCostLabel, type DomainOption } from "../domain/userInput";
 
 type Draft = Record<string, unknown>;
 
@@ -33,11 +34,6 @@ const initials = (name: string | null | undefined) =>
     .map((p) => p[0]!.toUpperCase())
     .join("");
 
-/** The last passed gate; use cases from the Excel sheet start with the scope group open. */
-function passedGate(d: UseCaseDetail): Stagegate | null {
-  return d.stagegate ?? (d.approval_status === null || d.approval_status === undefined ? "Needs" : null);
-}
-
 /** A draft value as shown in its input. */
 function shown(draft: Draft, d: UseCaseDetail, key: string): unknown {
   return key in draft ? draft[key] : fieldValue(d, key);
@@ -47,7 +43,7 @@ function shown(draft: Draft, d: UseCaseDetail, key: string): unknown {
 export function toPatch(draft: Draft, d: UseCaseDetail): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(draft)) {
-    const field = GATE_GROUPS.flatMap((g) => g.fields).find((f) => f.key === key);
+    const field = FORM2_FIELDS.find((f) => f.key === key);
     let value: unknown = raw;
     if (field && ["eur", "int"].includes(field.kind)) value = typeof raw === "string" ? parseNumber(raw) : raw;
     if (field?.kind === "multi") value = Array.isArray(raw) ? raw : [];
@@ -137,67 +133,17 @@ function FieldInput({ field, value, onChange, lists, disabled }: { field: Form2F
   }
 }
 
-function Group({ group, d, draft, setField, lists, open, editable, gateDate, setGateDate }: {
-  group: GateGroup; d: UseCaseDetail; draft: Draft; setField: (k: string, v: unknown) => void; lists: ReferenceData;
-  open: boolean; editable: boolean; gateDate: string; setGateDate: (v: string) => void;
-}) {
-  const done = filledCount(d, group);
-  const passed = passedGate(d);
-  const isNext = group.gate !== null && nextGate(passed) === group.gate;
+function Section({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <section className={`card lc-group${open ? " open" : ""}`} aria-labelledby={`g-${group.key}`}>
+    <section className="card lc-group open" aria-labelledby={id}>
       <header className="lc-group-head">
         <div>
-          <h2 id={`g-${group.key}`} className="lc-h2">{group.title}</h2>
-          <span className="muted">{group.subtitle}</span>
+          <h2 id={id} className="lc-h2">{title}</h2>
+          {subtitle && <span className="muted">{subtitle}</span>}
         </div>
-        <span className="mono lc-count">{done} / {group.fields.length}</span>
       </header>
-      {open && (
-        <>
-          <div className="lc-fields">
-            {group.fields.map((f) => (
-              <label key={f.key} className={`nf-field${["segmented", "multi", "bool"].includes(f.kind) ? " lc-wide" : ""}`}>
-                <span className="nf-label">{f.label}</span>
-                <FieldInput field={f} value={shown(draft, d, f.key)} onChange={(v) => setField(f.key, v)} lists={lists} disabled={!editable} />
-                {f.hint && <span className="nf-hint">{f.hint}</span>}
-              </label>
-            ))}
-          </div>
-          {isNext && group.gate && group.gate !== "Retire" && (
-            <label className="nf-field lc-gate">
-              <span className="nf-label">{group.gate} gate passed on</span>
-              <input type="date" className="nf-input" value={gateDate} max={todayIso()} disabled={!editable} onChange={(e) => setGateDate(e.target.value)} />
-              <span className="nf-hint">Setting this date moves the use case to the next phase and opens the next group.</span>
-            </label>
-          )}
-        </>
-      )}
-      {!open && <p className="muted lc-closed">Opens after the {group.opensAfter.toLowerCase()} gate.</p>}
+      {children}
     </section>
-  );
-}
-
-function Stepper({ d }: { d: UseCaseDetail }) {
-  const passed = passedGate(d);
-  const passedIndex = passed ? GATES.indexOf(passed) : -1;
-  return (
-    <ol className="lc-stepper" aria-label="Stage gates">
-      {GATES.map((g, i) => {
-        const state = i <= passedIndex ? "done" : i === passedIndex + 1 ? "now" : "later";
-        return (
-          <li key={g} className={`lc-step lc-step-${state}`} aria-current={state === "now" ? "step" : undefined}>
-            <span className="lc-step-dot">{state === "done" ? "✓" : i + 1}</span>
-            <span>
-              <b>{g} gate</b>
-              <span className="lc-step-sub">
-                {state === "done" ? (g === d.stagegate ? shortDate(d.passed_at) : "passed") : state === "now" ? "Now filling in" : `v${i + 1}.x`}
-              </span>
-            </span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -208,8 +154,6 @@ export function UseCaseView() {
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>({});
-  const [gateDate, setGateDate] = useState("");
-  const [description, setDescription] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
@@ -234,7 +178,6 @@ export function UseCaseView() {
   }, [d, load]);
 
   const patch = useMemo(() => (d ? toPatch(draft, d) : {}), [draft, d]);
-  const passed = d ? passedGate(d) : null;
 
   if (error) {
     return (
@@ -246,27 +189,32 @@ export function UseCaseView() {
   }
   if (!d || !ref) return <p className="state" role="status">Loading the use case …</p>;
 
-  const isIdea = d.approval_status === "pending" || d.approval_status === "rejected";
+  const rules: GateRules = ref.options?.stage_gate_rules ?? STAGE_GATE_RULES;
+  const stages = ref.options?.stages?.map((o) => o.value) ?? STAGES;
+  const oneTimeDomain: DomainOption[] = ref.options?.value_domains?.one_time_costs ?? VALUE_DOMAINS.one_time_costs;
+  const costRanges = ref.options?.running_cost_ranges ?? RUNNING_COST_RANGES;
   const stillProcessing = d.id < 0;
   const editable = d.can_edit && !stillProcessing && !saving;
-  const gate = nextGate(passed);
-  const dirty = Object.keys(patch).length > 0 || (gateDate !== "" && !!gate);
+  const setField = (k: string, v: unknown) => setDraft((x) => ({ ...x, [k]: v }));
+
+  const saved = savedGateDates(d);
+  const stage = String(shown(draft, d, "stage") ?? "");
+  const dates = Object.fromEntries(GATES.map((g) => [g, String(shown(draft, d, GATE_FIELD[g]) ?? "")])) as GateDates;
+  const touchesGates = "stage" in patch || GATES.some((g) => GATE_FIELD[g] in patch);
+  const problems = touchesGates ? gateProblems(stage, dates, undefined, rules) : [];
+  const dirty = Object.keys(patch).length > 0;
+  const oneTime = shown(draft, d, "one_time_costs") as number | null;
+  const oneTimeOption = domainOption(oneTimeDomain, oneTime);
+  const oneTimeExact = oneTimeOption !== undefined && oneTime === oneTimeOption.value;
 
   async function save(extra: Record<string, unknown> = {}) {
     if (!d) return;
     setSaving(true);
     setMessage(null);
-    const body: Record<string, unknown> = { ...patch, ...extra, base_revision: d.revision };
-    if (gateDate && gate && !extra.resubmit) {
-      body.stagegate = gate;
-      body.passed_at = gateDate;
-    }
     try {
-      const saved = await updateUseCase(d.id, body as never);
+      const saved = await updateUseCase(d.id, { ...patch, ...extra, base_revision: d.revision } as never);
       setD(saved);
       setDraft({});
-      setGateDate("");
-      setDescription(null);
       setMessage({ kind: "ok", text: extra.resubmit ? "Resubmitted – the approvers will check it again." : "Saved. The pipeline processes the changes within about a minute." });
     } catch (err) {
       const text = err instanceof ApiError || err instanceof Error ? err.message : "The changes could not be saved.";
@@ -277,9 +225,6 @@ export function UseCaseView() {
     }
   }
 
-  const currentGroup = GATE_GROUPS.find((g) => g.gate === gate);
-  const stillOpen = currentGroup ? currentGroup.fields.filter((f) => !isFilled(shown(draft, d, f.key))) : [];
-
   const side: ReactNode = (
     <aside className="lc-side" aria-label="Summary">
       <section className="card lc-side-card">
@@ -287,7 +232,7 @@ export function UseCaseView() {
         <div className="lc-side-rows">
           <div><span>Potential per year</span><span className="mono">{keur(d.potential_value_eur)}{d.provisional ? " *" : ""}</span></div>
           <div><span>Realised value</span><span className="mono">{keur(d.realized_value_eur)}</span></div>
-          <div><span>One-time costs</span><span className="mono">{keur(d.drivers?.one_time_costs as number | undefined ?? d.one_time_costs)}</span></div>
+          <div><span>One-time costs</span><span>{oneTimeExact ? oneTimeOption.label : keur(oneTime ?? d.one_time_costs)}</span></div>
           <div><span>Running costs</span><span>{runningCostLabel(d.running_cost_range) ?? keur(d.running_costs)}</span></div>
           <div>
             <span>Risk level</span>
@@ -295,17 +240,10 @@ export function UseCaseView() {
           </div>
           <div><span>Flagship</span><span>{d.value_type ? flagshipLabel(d.value_type.name) : "–"}</span></div>
           <div><span>AI layer</span><span>{d.ai_layer ?? "–"}</span></div>
+          <div><span>Submitted</span><span>{d.submitted_by ?? "–"} · {shortDate(d.submitted_at)}</span></div>
         </div>
         {d.provisional && <p className="nf-side-small">* Preview – not assessed by the pipeline yet.</p>}
       </section>
-      {!isIdea && currentGroup && (
-        <section className="card lc-side-card">
-          <h2 className="lc-h2">Still open for the {gate?.toLowerCase()} gate</h2>
-          {stillOpen.length === 0 ? <p className="muted">All filled in.</p> : (
-            <ul className="lc-open">{stillOpen.map((f) => <li key={f.key}>{f.label}</li>)}</ul>
-          )}
-        </section>
-      )}
       <section className="card lc-side-card">
         <h2 className="lc-h2">Team</h2>
         <ul className="lc-team">
@@ -327,71 +265,92 @@ export function UseCaseView() {
         <div>
           <span className="nf-crumb"><Link to="/my">My use cases</Link> / {d.id > 0 ? `AI-${String(d.id).padStart(4, "0")}` : "new idea"}</span>
           <h1>{d.name} <PendingTag initiative={d} /></h1>
-          <p className="muted">
-            {isIdea ? "Form 1 – the idea as submitted." : "Form 2 grows with your use case. Only what the next gate needs is open, the rest waits."}
-          </p>
+          <p className="muted">Stage, stage gate dates, estimated costs and the details can be updated at any time.</p>
         </div>
         <span className={`lc-status lc-status-${d.approval_status ?? "excel"}`}>{approvalLabel(d.approval_status ?? null)}</span>
       </header>
 
       {d.processing !== "assessed" && <p className="lc-banner lc-banner-soft" role="status">{PROCESSING_HINT[d.processing ?? "assessed"]}</p>}
       {message && <p className={`lc-banner${message.kind === "error" ? " lc-banner-error" : ""}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p>}
+      {stillProcessing && <p className="lc-banner lc-banner-soft">You can edit the idea once the pipeline has processed it.</p>}
 
       <div className="lc-layout">
         <div className="lc-main">
-          {isIdea ? (
-            <section className="card lc-group open" aria-labelledby="lc-idea">
-              <h2 id="lc-idea" className="lc-h2">Your idea</h2>
-              {d.approval_status === "rejected" && d.comment && (
-                <div className="lc-reject" role="note">
-                  <b>Sent back by the approvers:</b> “{d.comment}”
-                </div>
-              )}
+          {d.approval_status === "rejected" && d.comment && (
+            <div className="lc-reject" role="note">
+              <b>Sent back by the approvers:</b> “{d.comment}”
+            </div>
+          )}
+
+          <Section id="lc-stage" title="Stage and stage gates" subtitle="The stage decides which gates already lie in the past.">
+            <label className="nf-field lc-stage">
+              <span className="nf-label">Stage / maturity</span>
+              <select className="nf-input" value={stage} disabled={!editable} onChange={(e) => setField("stage", e.target.value)}>
+                {!stage && <option value="">Choose …</option>}
+                {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            {!touchesGates && d.stage_problems?.length > 0 && (
+              <p className="lc-banner lc-banner-soft" role="note">Stage and gate dates do not fit yet: {d.stage_problems.join(" ")}</p>
+            )}
+            <GateDatesEditor stage={stage} dates={dates} saved={saved} mode="edit" rules={rules} disabled={!editable}
+              showProblems={touchesGates || d.stage_problems?.length > 0}
+              onChange={(gate: Stagegate, date: string) => setField(GATE_FIELD[gate], date || saved[gate])} />
+          </Section>
+
+          <Section id="lc-idea" title="The idea" subtitle="Description and estimated costs">
+            <label className="nf-field">
+              <span className="nf-label">Description</span>
+              <textarea className="nf-input nf-textarea" rows={4} value={String(shown(draft, d, "description") ?? "")} disabled={!editable}
+                onChange={(e) => setField("description", e.target.value)} />
+            </label>
+            <div className="lc-fields">
               <label className="nf-field">
-                <span className="nf-label">Description</span>
-                <textarea className="nf-input nf-textarea" rows={4} value={description ?? d.description ?? ""} disabled={!editable}
-                  onChange={(e) => setDescription(e.target.value)} />
+                <span className="nf-label">One-time cost (estimate)</span>
+                <select className="nf-input" value={oneTimeExact ? String(oneTime) : ""} disabled={!editable}
+                  onChange={(e) => setField("one_time_costs", e.target.value ? Number(e.target.value) : "")}>
+                  <option value="">{oneTime !== null && !oneTimeExact ? `${keur(oneTime)} entered – choose a range` : "Choose …"}</option>
+                  {oneTimeDomain.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
+                </select>
               </label>
-              <div className="lc-side-rows">
-                <div><span>Owner</span><span>{d.owner?.name ?? "–"}</span></div>
-                <div><span>Stage</span><span>{d.stage ?? "–"}</span></div>
-                <div><span>Submitted</span><span>{d.submitted_by ?? "–"} · {shortDate(d.submitted_at)}</span></div>
-              </div>
-              {stillProcessing && <p className="muted">You can edit the idea once the pipeline has processed it.</p>}
-              {d.can_edit && !stillProcessing && (
-                <div className="lc-actions">
-                  {d.approval_status === "rejected" ? (
-                    <button type="button" className="lc-btn lc-primary" disabled={saving}
-                      onClick={() => void save(description !== null && description.trim() && description.trim() !== d.description ? { description: description.trim(), resubmit: true } : { resubmit: true })}>
-                      {saving ? "Submitting …" : "Resubmit idea"}
-                    </button>
-                  ) : (
-                    <button type="button" className="lc-btn lc-primary" disabled={saving || description === null || !description.trim() || description.trim() === d.description}
-                      onClick={() => void save({ description: description?.trim() })}>
-                      {saving ? "Saving …" : "Save changes"}
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-          ) : (
-            <>
-              <Stepper d={d} />
-              {GATE_GROUPS.map((g) => (
-                <Group key={g.key} group={g} d={d} draft={draft} lists={ref} open={groupOpen(g, passed)} editable={editable}
-                  setField={(k, v) => setDraft((x) => ({ ...x, [k]: v }))} gateDate={gateDate} setGateDate={setGateDate} />
+              <label className="nf-field">
+                <span className="nf-label">Running costs (estimate)</span>
+                <select className="nf-input" value={String(shown(draft, d, "running_cost_range") ?? "")} disabled={!editable}
+                  onChange={(e) => setField("running_cost_range", e.target.value)}>
+                  <option value="">Choose …</option>
+                  {costRanges.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </label>
+            </div>
+          </Section>
+
+          <Section id="lc-details" title="Details (form 2)" subtitle={`${d.form2_progress.filled} / ${d.form2_progress.total} filled · fill in what you know, update it any time`}>
+            <div className="lc-fields">
+              {FORM2_FIELDS.map((f) => (
+                <label key={f.key} className={`nf-field${["segmented", "multi", "bool"].includes(f.kind) ? " lc-wide" : ""}`}>
+                  <span className="nf-label">{f.label}</span>
+                  <FieldInput field={f} value={shown(draft, d, f.key)} onChange={(v) => setField(f.key, v)} lists={ref} disabled={!editable} />
+                  {f.hint && <span className="nf-hint">{f.hint}</span>}
+                </label>
               ))}
-              {d.can_edit && (
-                <div className="lc-actions lc-sticky">
-                  <span className="muted">{d.form2_progress.filled} / {d.form2_progress.total} details filled</span>
-                  <button type="button" className="lc-btn" disabled={!dirty || saving} onClick={() => { setDraft({}); setGateDate(""); }}>Discard</button>
-                  <button type="button" className="lc-btn lc-primary" disabled={!dirty || !editable} onClick={() => void save()}>
-                    {saving ? "Saving …" : gateDate && gate ? `Save and pass the ${gate.toLowerCase()} gate` : "Save"}
-                  </button>
-                </div>
+            </div>
+          </Section>
+
+          {d.can_edit ? (
+            <div className="lc-actions lc-sticky">
+              {problems.length > 0 && <span className="nf-error">Fix the stage gate dates first.</span>}
+              <button type="button" className="lc-btn" disabled={!dirty || saving} onClick={() => setDraft({})}>Discard</button>
+              {d.approval_status === "rejected" && (
+                <button type="button" className="lc-btn lc-primary" disabled={!editable || problems.length > 0} onClick={() => void save({ resubmit: true })}>
+                  {saving ? "Submitting …" : "Resubmit idea"}
+                </button>
               )}
-              {!d.can_edit && <p className="muted">Only the submitter, owner and lead can edit this use case.</p>}
-            </>
+              <button type="button" className={`lc-btn${d.approval_status === "rejected" ? "" : " lc-primary"}`} disabled={!dirty || !editable || problems.length > 0} onClick={() => void save()}>
+                {saving ? "Saving …" : "Save"}
+              </button>
+            </div>
+          ) : (
+            <p className="muted">Only the submitter, owner and lead can edit this use case.</p>
           )}
         </div>
         {side}

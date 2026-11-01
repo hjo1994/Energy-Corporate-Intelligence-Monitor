@@ -77,28 +77,48 @@ Initiativen wäre das neu zu überdenken.
 ## Lifecycle: Ideen, Freigabe, Formular 2
 
 Nach den abgenommenen Entwürfen (F1 = bisheriges Formular mit Anpassungen,
-F2 = Variante B „Checkliste je Stage Gate“, User-Ansicht A, Approver-Ansicht A):
+User-Ansicht A, Approver-Ansicht A). Formular 2 ist **nicht mehr nach Gates
+gegliedert**: Diese Zuordnung von Feldern zu Gates war nirgends dokumentiert und
+ist entfernt. Modelliert ist stattdessen die Zuordnung **Stage ↔ Stage Gate** aus
+der Form-2-Excel (Sheet1, Zeilen der Gate-Daten: „scope gate must be passed before
+PoC, deploy gate must be passed before production“), `src/domain/lifecycle.ts`,
+gleich wie im Backend (`app/lifecycle.py`, als `stage_gate_rules` in
+`/api/form-options`):
 
-- **+ New AI idea** (`/new`) — Formular 1. Statt Solution Type die **AI layer**
-  (der Solution Type folgt in Formular 2), laufende Kosten als **Spanne**
-  (`running_cost_range`; die Vorschau rechnet wie das Backend mit 5k / 30k / 75k / 150k €
-  je Spanne). Nach dem Absenden geht es zu „My use cases“.
+| Stage | Scope-Gate | Deploy-Gate |
+|---|---|---|
+| Idea, Exploration | noch nicht passiert (geplant oder leer) | noch nicht passiert |
+| PoC, MVP, Implementation | passiert (Datum bis heute) | noch nicht passiert |
+| Production, Retired | passiert | passiert |
+| On hold, Cancelled, Unknown | keine Regel | keine Regel |
+
+Jedes Gate hat ein Datum (bis heute = passiert, später = geplant); gesetzte Daten
+in Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel.
+
+- **+ New AI idea** (`/new`) — Formular 1. **Alle Zahlen aus Wertebereichen**
+  (Auswahllisten, `value_domains` aus `/api/form-options`, Fallback
+  `VALUE_DOMAINS` in `src/domain/userInput.ts`; gespeichert wird der Wert der Spanne),
+  laufende Kosten als Spanne, AI layer statt Solution Type. Je nach Stage fragt das
+  Formular per Kalender nach den Daten der schon passierten Gates (PoC → Scope-Gate,
+  Production → Scope und Deploy; Needs optional). Nach dem Absenden geht es zu „My use cases“.
 - **My use cases** (`/my`) — alles, was ich eingereicht habe, besitze oder leite
   (Filter nach Rolle), Kennzahlen, „Needs your attention“ aus den To-dos des
   Backends (`revise_and_resubmit`, `complete_details`), Tabelle mit Freigabe,
-  Stage, letztem Gate, Potenzial (Vorschau mit `*`), Risiko und dem nächsten
-  Schritt. Der Tab zeigt die Zahl der offenen To-dos.
-- **Use case** (`/use-cases/:id`) — Formular 2 als Checkliste je Gate: Scope
-  (Team, Solution Type, Lead, EU AI Act, Betriebsrat …), Deploy (Betriebsrat-Freigabe,
-  Safety, Nutzer) und „While live“ (gemessener Nutzen, Ist-Capex/-Opex). Offen ist
-  nur, was das nächste Gate braucht; das Datum „… gate passed on“ setzt das Gate und
-  öffnet die nächste Gruppe. Gespeichert werden nur geänderte Felder, mit
-  `base_revision` (409 bei zwischenzeitlicher Änderung → Meldung, neu laden).
-  Abgelehnte Ideen: Kommentar der Approver, Beschreibung anpassen, erneut einreichen.
+  Stage, letztem passierten Gate (`last_gate`, Hinweis „check dates“, wenn Stage und
+  Daten nicht passen), Potenzial (Vorschau mit `*`), Risiko und dem nächsten Schritt.
+- **Use case** (`/use-cases/:id`) — jederzeit änderbar, auch vor der Freigabe:
+  **Stage und Stage Gates** (Stage-Auswahl, vier Gates mit Status passed / planned /
+  no date; ein schon passiertes Gate bleibt fest, außer die Stage verlangt es wieder
+  in der Zukunft, z. B. beim Zurückstufen), **die Idee** (Beschreibung, geschätzte
+  einmalige und laufende Kosten als Spannen) und **Details (Formular 2)**. Passen
+  Stage und Daten nicht, zeigt das Gate die Meldung und Speichern ist gesperrt.
+  Gespeichert werden nur geänderte Felder, mit `base_revision` (409 → Meldung, neu
+  laden). Abgelehnte Ideen: Kommentar der Approver, anpassen, erneut einreichen.
 - **Approvals** (`/approvals`, nur mit `canApprove` aus `/api/auth/rights`) —
   Inbox der wartenden Ideen; rechts Value-, Risk- und Effort-Check, Re-use-Check
-  (`/similar`) und die Entscheidung: Lead zuweisen + Needs-Gate-Datum → freigeben,
-  oder mit Kommentar ablehnen.
+  (`/similar`) und die Entscheidung: Lead zuweisen → freigeben (passiert das
+  Needs-Gate heute, außer der Einreicher hat ein vergangenes Datum angegeben), oder
+  mit Kommentar ablehnen.
 
 **Noch nicht verarbeitet:** Alles, was in der UI gespeichert, aber noch nicht in
 Silber/Gold verarbeitet ist, bleibt sichtbar und ist markiert (`processing` vom

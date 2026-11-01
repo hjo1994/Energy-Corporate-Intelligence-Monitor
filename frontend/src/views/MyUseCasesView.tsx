@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { fetchMyUseCases } from "../api/client";
 import type { MyUseCase } from "../api/types";
 import { PendingTag } from "../components/small";
-import { ROLE_LABEL, approvalLabel, keur, nextGate, shortDate } from "../domain/lifecycle";
+import { GATE_FIELD, ROLE_LABEL, approvalLabel, keur, shortDate } from "../domain/lifecycle";
 import { useApp } from "../store";
 
 type Role = "all" | "owner" | "lead" | "submitter";
@@ -31,10 +31,9 @@ function attention(u: MyUseCase): { title: string; detail: string; button: strin
     return { title: "Rejected – revise and resubmit", detail: u.comment ? `“${u.comment}”` : u.name, button: "Revise" };
   }
   if (u.todos.includes("complete_details")) {
-    const gate = nextGate(u.stagegate);
     return {
       title: "Approved – add the details",
-      detail: `${u.form2_progress.filled} / ${u.form2_progress.total} details filled${gate ? ` · next: ${gate} gate` : ""}`,
+      detail: `${u.form2_progress.filled} / ${u.form2_progress.total} details filled`,
       button: "Fill in Form 2",
     };
   }
@@ -190,7 +189,10 @@ export function MyUseCasesView() {
                     <td>{u.roles.map((r) => ROLE_LABEL[r]).join(", ")}</td>
                     <td><span className={`lc-status lc-status-${u.approval_status ?? "excel"}`}>{approvalLabel(u.approval_status)}</span></td>
                     <td>{u.stage ?? "–"}</td>
-                    <td>{u.stagegate ? `${u.stagegate} · ${shortDate(u.passed_at)}` : "–"}</td>
+                    <td>
+                      {u.last_gate ? `${u.last_gate} · ${shortDate(u[GATE_FIELD[u.last_gate]])}` : "–"}
+                      {(u.stage_problems?.length ?? 0) > 0 && <span className="tag lc-tag-warn" title={u.stage_problems!.join(" ")}>check dates</span>}
+                    </td>
                     <td className="num mono">
                       {keur(u.potential_value_eur)}
                       {u.provisional && u.potential_value_eur !== null && <span className="lc-prov" title="Preview, not assessed yet">*</span>}
