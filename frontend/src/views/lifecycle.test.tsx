@@ -158,7 +158,10 @@ describe("use case page", () => {
     expect(within(gates).queryByLabelText("Needs gate date")).not.toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByRole("combobox", { name: "Stage / maturity" }), "PoC");
+    const track = screen.getByRole("radiogroup", { name: "Stage / maturity" });
+    expect(within(track).getAllByRole("radio").map((r) => (r as HTMLInputElement).value)).toEqual(
+      ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired"]);
+    await user.click(within(track).getByRole("radio", { name: "PoC" }));
     expect(within(gates).getByText("PoC needs the date the scope gate was passed.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
@@ -181,24 +184,35 @@ describe("use case page", () => {
     renderAt("/use-cases/7");
     const gates = await screen.findByRole("group", { name: "Stage gates" });
     expect(within(gates).queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // passed: fixed
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Stage / maturity" }), "Exploration");
+    await userEvent.click(screen.getByRole("radio", { name: "Exploration" }));
     expect(within(gates).getByText(/the scope gate is not passed yet: move the date to the future/)).toBeInTheDocument();
     expect(within(gates).getByLabelText("Scope gate date")).toHaveValue("2026-02-10");
   });
 
-  it("updates the estimated costs and form 2 before the approval", async () => {
-    mockApi({ "/use-cases/7": detail({ approval_status: "pending", drivers: { one_time_costs: 200000 }, todos: [] }) });
+  it("keeps the stage from form 1 as the lowest one", async () => {
+    mockApi({ "/use-cases/7": detail({ stage: "MVP", stage_floor: "MVP", scope_gate_date: "2026-02-10T00:00:00", last_gate: "Scope" }) });
+    renderAt("/use-cases/7");
+    const track = await screen.findByRole("radiogroup", { name: "Stage / maturity" });
+    expect(within(track).getByRole("radio", { name: /^PoC/ })).toBeDisabled();
+    expect(within(track).getByRole("radio", { name: /^Exploration/ })).toBeDisabled();
+    expect(within(track).getByRole("radio", { name: "Implementation" })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "On hold" })).toBeEnabled();
+    expect(screen.getByText(/Submitted in MVP/)).toBeInTheDocument();
+  });
+
+  it("fixes description and cost estimates after submitting, but fills in form 2 before the approval", async () => {
+    mockApi({ "/use-cases/7": detail({ approval_status: "pending", description: "Checks the grid", drivers: { one_time_costs: 175000 }, todos: [] }) });
     patch.mockReset();
     patch.mockImplementation((async () => detail({ approval_status: "pending" })) as never);
     renderAt("/use-cases/7");
-    const cost = await screen.findByRole("combobox", { name: "One-time cost (estimate)" });
-    expect(cost).toHaveDisplayValue("€ 200k entered – choose a range");
-    const user = userEvent.setup();
-    await user.selectOptions(cost, "250k €–1M €");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Running costs (estimate)" }), "up_to_10k"); // unchanged
-    await user.type(screen.getByRole("textbox", { name: "Value domain" }), "Grid");
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(patch).toHaveBeenCalledWith("/use-cases/7", { base_revision: "11-0", one_time_costs: 500000, value_domain: "Grid" });
+    const idea = await screen.findByRole("region", { name: "The idea" });
+    expect(within(idea).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(idea).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(within(idea).getByText("100k–250k €")).toBeInTheDocument();
+    expect(within(idea).getByText("Checks the grid")).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("textbox", { name: "Value domain" }), "Grid");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(patch).toHaveBeenCalledWith("/use-cases/7", { base_revision: "11-0", value_domain: "Grid" });
   });
 
   it("shows the server's message when someone else saved first", async () => {
@@ -213,14 +227,17 @@ describe("use case page", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("changed in the meantime");
   });
 
-  it("lets the submitter resubmit a rejected idea", async () => {
-    mockApi({ "/use-cases/8": detail({ id: 8, name: "Shift planner", approval_status: "rejected", comment: "Align with HR first.", revision: "12-4" }) });
+  it("lets the submitter revise and resubmit a rejected idea", async () => {
+    mockApi({ "/use-cases/8": detail({ id: 8, name: "Shift planner", approval_status: "rejected", comment: "Align with HR first.", revision: "12-4", drivers: { one_time_costs: 200000 } }) });
     patch.mockReset();
     patch.mockImplementation((async () => detail({ id: 8, approval_status: "pending" })) as never);
     renderAt("/use-cases/8");
     expect(await screen.findByRole("note")).toHaveTextContent("Align with HR first.");
+    const cost = screen.getByRole("combobox", { name: "One-time cost (estimate)" });
+    expect(cost).toHaveDisplayValue("€ 200k entered – choose a range");
+    await userEvent.selectOptions(cost, "250k €–1M €");
     await userEvent.click(screen.getByRole("button", { name: "Resubmit idea" }));
-    expect(patch).toHaveBeenCalledWith("/use-cases/8", { base_revision: "12-4", resubmit: true });
+    expect(patch).toHaveBeenCalledWith("/use-cases/8", { base_revision: "12-4", one_time_costs: 500000, resubmit: true });
   });
 });
 

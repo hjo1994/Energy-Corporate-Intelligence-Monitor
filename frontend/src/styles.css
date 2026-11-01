@@ -481,7 +481,28 @@ td { padding: 12px; vertical-align: middle; border-top: 1px solid var(--border);
 .lc-team { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .lc-team li { display: flex; align-items: center; gap: 10px; }
 .lc-avatar { width: 30px; height: 30px; font-size: 12px; }
-.lc-stage { max-width: 320px; }
+.lc-track-wrap { display: flex; flex-direction: column; gap: 10px; }
+.lc-track { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; }
+.lc-track-step { display: inline-flex; align-items: center; gap: 4px; }
+.lc-track-arrow { color: var(--ink-soft); font-size: 16px; padding: 0 2px; }
+.lc-track-gate { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.lc-track-diamond { width: 10px; height: 10px; transform: rotate(45deg); border: 2px solid var(--border); background: var(--surface); }
+.lc-track-gate-passed .lc-track-diamond { background: var(--accent); border-color: var(--accent); }
+.lc-track-gate-planned .lc-track-diamond { border-color: var(--ink); border-style: dashed; }
+.lc-track-gate-passed { color: var(--accent); }
+.lc-stage-opt { position: relative; display: inline-flex; flex-direction: column; align-items: center; padding: 8px 12px; border: 1px solid #c9cfd6; border-radius: 999px; font-size: 13px; cursor: pointer; background: #fff; line-height: 1.2; }
+.lc-stage-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.lc-stage-opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lc-stage-done { background: #e8f3f3; border-color: #b9dada; color: var(--accent); }
+.lc-stage-current { background: var(--hero); border-color: var(--hero); color: #fff; font-weight: 600; }
+.lc-stage-below { opacity: .45; cursor: not-allowed; background: var(--paper); }
+.lc-stage-saved { border-style: dashed; border-color: var(--ink); }
+.lc-stage-note { font-size: 10px; font-weight: 400; opacity: .8; }
+.lc-track-side { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.lc-track-hint { margin: 0; }
+.lc-readonly { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+.lc-readonly dt { font-size: 12px; color: var(--ink-soft); margin-bottom: 2px; }
+.lc-readonly dd { margin: 0; font-size: 14px; }
 .lc-gates { display: flex; flex-direction: column; gap: 8px; }
 .lc-gates-intro { margin: 4px 0 0; }
 .lc-gate-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }

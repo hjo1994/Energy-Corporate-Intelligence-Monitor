@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError, fetchReferenceData, fetchUseCase, updateUseCase, type ReferenceData } from "../api/client";
 import type { Option, Stagegate, UseCaseDetail } from "../api/types";
 import { GateDatesEditor } from "../components/GateDates";
+import { STAGE_ORDER, StageTrack } from "../components/StageTrack";
 import { PendingTag } from "../components/small";
 import { flagshipLabel } from "../domain/format";
 import {
@@ -22,7 +23,7 @@ import {
   type GateRules,
 } from "../domain/lifecycle";
 import { riskLevelLabel } from "../domain/risk";
-import { RUNNING_COST_RANGES, STAGES, VALUE_DOMAINS, domainOption, parseNumber, runningCostLabel, type DomainOption } from "../domain/userInput";
+import { RUNNING_COST_RANGES, VALUE_DOMAINS, domainOption, parseNumber, runningCostLabel, type DomainOption } from "../domain/userInput";
 
 type Draft = Record<string, unknown>;
 
@@ -190,12 +191,14 @@ export function UseCaseView() {
   if (!d || !ref) return <p className="state" role="status">Loading the use case …</p>;
 
   const rules: GateRules = ref.options?.stage_gate_rules ?? STAGE_GATE_RULES;
-  const stages = ref.options?.stages?.map((o) => o.value) ?? STAGES;
+  const order = ref.options?.stage_order ?? STAGE_ORDER;
   const oneTimeDomain: DomainOption[] = ref.options?.value_domains?.one_time_costs ?? VALUE_DOMAINS.one_time_costs;
   const costRanges = ref.options?.running_cost_ranges ?? RUNNING_COST_RANGES;
   const stillProcessing = d.id < 0;
   const editable = d.can_edit && !stillProcessing && !saving;
   const setField = (k: string, v: unknown) => setDraft((x) => ({ ...x, [k]: v }));
+  // description and cost estimates are fixed once submitted; open again only to revise a rejected idea
+  const revising = d.approval_status === "rejected";
 
   const saved = savedGateDates(d);
   const stage = String(shown(draft, d, "stage") ?? "");
@@ -265,7 +268,7 @@ export function UseCaseView() {
         <div>
           <span className="nf-crumb"><Link to="/my">My use cases</Link> / {d.id > 0 ? `AI-${String(d.id).padStart(4, "0")}` : "new idea"}</span>
           <h1>{d.name} <PendingTag initiative={d} /></h1>
-          <p className="muted">Stage, stage gate dates, estimated costs and the details can be updated at any time.</p>
+          <p className="muted">Stage, stage gate dates and the details can be updated at any time; name, description and cost estimates are fixed after submitting.</p>
         </div>
         <span className={`lc-status lc-status-${d.approval_status ?? "excel"}`}>{approvalLabel(d.approval_status ?? null)}</span>
       </header>
@@ -282,14 +285,12 @@ export function UseCaseView() {
             </div>
           )}
 
-          <Section id="lc-stage" title="Stage and stage gates" subtitle="The stage decides which gates already lie in the past.">
-            <label className="nf-field lc-stage">
-              <span className="nf-label">Stage / maturity</span>
-              <select className="nf-input" value={stage} disabled={!editable} onChange={(e) => setField("stage", e.target.value)}>
-                {!stage && <option value="">Choose …</option>}
-                {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
+          <Section id="lc-stage" title="Stage and stage gates" subtitle="Pick the stage in its order. The gates between the stages show which must already lie in the past.">
+            <StageTrack stage={stage} saved={d.stage} floor={d.stage_floor} dates={dates} order={order} disabled={!editable}
+              onChange={(v) => setField("stage", v)} />
+            {d.stage_floor && order.includes(d.stage_floor) && (
+              <p className="nf-hint lc-track-hint">Submitted in {d.stage_floor}: the stage can move on from there, not back below it.</p>
+            )}
             {!touchesGates && d.stage_problems?.length > 0 && (
               <p className="lc-banner lc-banner-soft" role="note">Stage and gate dates do not fit yet: {d.stage_problems.join(" ")}</p>
             )}
@@ -298,30 +299,40 @@ export function UseCaseView() {
               onChange={(gate: Stagegate, date: string) => setField(GATE_FIELD[gate], date || saved[gate])} />
           </Section>
 
-          <Section id="lc-idea" title="The idea" subtitle="Description and estimated costs">
-            <label className="nf-field">
-              <span className="nf-label">Description</span>
-              <textarea className="nf-input nf-textarea" rows={4} value={String(shown(draft, d, "description") ?? "")} disabled={!editable}
-                onChange={(e) => setField("description", e.target.value)} />
-            </label>
-            <div className="lc-fields">
-              <label className="nf-field">
-                <span className="nf-label">One-time cost (estimate)</span>
-                <select className="nf-input" value={oneTimeExact ? String(oneTime) : ""} disabled={!editable}
-                  onChange={(e) => setField("one_time_costs", e.target.value ? Number(e.target.value) : "")}>
-                  <option value="">{oneTime !== null && !oneTimeExact ? `${keur(oneTime)} entered – choose a range` : "Choose …"}</option>
-                  {oneTimeDomain.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
-                </select>
-              </label>
-              <label className="nf-field">
-                <span className="nf-label">Running costs (estimate)</span>
-                <select className="nf-input" value={String(shown(draft, d, "running_cost_range") ?? "")} disabled={!editable}
-                  onChange={(e) => setField("running_cost_range", e.target.value)}>
-                  <option value="">Choose …</option>
-                  {costRanges.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-              </label>
-            </div>
+          <Section id="lc-idea" title="The idea" subtitle={revising ? "Revise the idea, then resubmit it" : "As submitted in form 1 – fixed after submitting"}>
+            {revising ? (
+              <>
+                <label className="nf-field">
+                  <span className="nf-label">Description</span>
+                  <textarea className="nf-input nf-textarea" rows={4} value={String(shown(draft, d, "description") ?? "")} disabled={!editable}
+                    onChange={(e) => setField("description", e.target.value)} />
+                </label>
+                <div className="lc-fields">
+                  <label className="nf-field">
+                    <span className="nf-label">One-time cost (estimate)</span>
+                    <select className="nf-input" value={oneTimeExact ? String(oneTime) : ""} disabled={!editable}
+                      onChange={(e) => setField("one_time_costs", e.target.value ? Number(e.target.value) : "")}>
+                      <option value="">{oneTime !== null && !oneTimeExact ? `${keur(oneTime)} entered – choose a range` : "Choose …"}</option>
+                      {oneTimeDomain.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="nf-field">
+                    <span className="nf-label">Running costs (estimate)</span>
+                    <select className="nf-input" value={String(shown(draft, d, "running_cost_range") ?? "")} disabled={!editable}
+                      onChange={(e) => setField("running_cost_range", e.target.value)}>
+                      <option value="">Choose …</option>
+                      {costRanges.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </>
+            ) : (
+              <dl className="lc-readonly" aria-label="Idea as submitted">
+                <div className="lc-wide"><dt>Description</dt><dd>{d.description ?? "–"}</dd></div>
+                <div><dt>One-time cost (estimate)</dt><dd>{oneTimeExact ? oneTimeOption.label : keur(oneTime ?? d.one_time_costs)}</dd></div>
+                <div><dt>Running costs (estimate)</dt><dd>{runningCostLabel(d.running_cost_range) ?? keur(d.running_costs)}</dd></div>
+              </dl>
+            )}
           </Section>
 
           <Section id="lc-details" title="Details (form 2)" subtitle={`${d.form2_progress.filled} / ${d.form2_progress.total} filled · fill in what you know, update it any time`}>

@@ -106,14 +106,16 @@ in Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel.
   Backends (`revise_and_resubmit`, `complete_details`), Tabelle mit Freigabe,
   Stage, letztem passierten Gate (`last_gate`, Hinweis „check dates“, wenn Stage und
   Daten nicht passen), Potenzial (Vorschau mit `*`), Risiko und dem nächsten Schritt.
-- **Use case** (`/use-cases/:id`) — jederzeit änderbar, auch vor der Freigabe:
-  **Stage und Stage Gates** (Stage-Auswahl, vier Gates mit Status passed / planned /
-  no date; ein schon passiertes Gate bleibt fest, außer die Stage verlangt es wieder
-  in der Zukunft, z. B. beim Zurückstufen), **die Idee** (Beschreibung, geschätzte
-  einmalige und laufende Kosten als Spannen) und **Details (Formular 2)**. Passen
-  Stage und Daten nicht, zeigt das Gate die Meldung und Speichern ist gesperrt.
-  Gespeichert werden nur geänderte Felder, mit `base_revision` (409 → Meldung, neu
-  laden). Abgelehnte Ideen: Kommentar der Approver, anpassen, erneut einreichen.
+- **Use case** (`/use-cases/:id`) — **Stage und Stage Gates**: die Stages als
+  Abfolge (Idea › Exploration › Needs/Scope/Deploy/Retire-Gate dazwischen … Retired),
+  daneben „On hold“ und „Cancelled“; Stages unter der aus Formular 1
+  (`stage_floor`) sind gesperrt. Darunter die vier Gate-Daten mit Status passed /
+  planned / no date; ein passiertes Gate bleibt fest, außer die Stage verlangt es
+  wieder in der Zukunft. Passen Stage und Daten nicht, zeigt das Gate die Meldung
+  und Speichern ist gesperrt. **Die Idee** (Name, Beschreibung, Kostenschätzungen)
+  ist nach dem Einreichen nur lesbar, außer beim Überarbeiten einer abgelehnten Idee.
+  **Details (Formular 2)** jederzeit, auch vor der Freigabe. Gespeichert werden nur
+  geänderte Felder, mit `base_revision` (409 → Meldung, neu laden).
 - **Approvals** (`/approvals`, nur mit `canApprove` aus `/api/auth/rights`) —
   Inbox der wartenden Ideen; rechts Value-, Risk- und Effort-Check, Re-use-Check
   (`/similar`) und die Entscheidung: Lead zuweisen → freigeben (passiert das

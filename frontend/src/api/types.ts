@@ -183,6 +183,8 @@ export interface UseCaseDetail extends Initiative {
   form2_progress: Form2Progress;
   /** what does not fit between stage and gate dates */
   stage_problems: string[];
+  /** the stage given in form 1; the stage cannot go below it */
+  stage_floor?: string | null;
   todos: Todo[];
   can_edit: boolean;
   can_decide: boolean;
@@ -255,6 +257,8 @@ export interface Option {
 /** GET /api/form-options */
 export interface FormOptions {
   stages?: Option[];
+  /** maturity order of the stages; On hold, Cancelled and Unknown stand outside it */
+  stage_order?: string[];
   /** stage -> gates that must be passed / must not be passed yet */
   stage_gate_rules?: Record<string, { passed: Stagegate[]; not_passed: Stagegate[] }>;
   /** form 1: the values each number can take */
