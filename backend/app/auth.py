@@ -13,7 +13,7 @@ from typing import Annotated, Any, List
 
 from eg_auth import BaseRights, BooleanRightClaim
 from eg_auth.fastapi import FastAPIResourceProtector, UserInfo
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 
 AUTH_TAG = "auth"
 
@@ -49,10 +49,11 @@ authorizer = FastAPIResourceProtector(groups_to_rights=map_groups_to_rights)
 # ---------- demo presenters ----------
 # For demos with one SSO account: the accounts in AI_COCKPIT_DEMO_PRESENTERS (comma-separated
 # e-mail addresses or AD groups; empty = nobody, the default) may switch their session to
-# admin rights with the header "X-Demo-Role: admin". The identity stays the SSO identity; what
-# they do as demo admin is recorded under "<name> (demo admin)". Everyone else's header is ignored.
+# approver rights with the header "X-Demo-Role: approver". The identity stays the SSO identity;
+# what they do as demo approver is recorded under "<name> (demo approver)". Everyone else's
+# header is ignored.
 DEMO_ROLE_HEADER = "x-demo-role"
-DEMO_ADMIN_SUFFIX = " (demo admin)"
+DEMO_APPROVER_SUFFIX = " (demo approver)"
 
 
 def is_demo_presenter(user: Any) -> bool:
@@ -66,7 +67,7 @@ def is_demo_presenter(user: Any) -> bool:
 
 @dataclass
 class ActingUser:
-    """The signed-in user as the API sees them (a presenter switched to demo admin)."""
+    """The signed-in user as the API sees them (a presenter switched to demo approver)."""
 
     name: str
     email: str
@@ -75,11 +76,11 @@ class ActingUser:
 
 
 def acting_user(request: Request, user: Annotated[UserInfo, authorizer()]) -> UserInfo:
-    if request.headers.get(DEMO_ROLE_HEADER, "").strip().lower() != "admin" or not is_demo_presenter(user):
+    if request.headers.get(DEMO_ROLE_HEADER, "").strip().lower() != "approver" or not is_demo_presenter(user):
         return user
-    rights = user.rights.model_copy(update={"canApprove": True, "canAdmin": True})
+    rights = user.rights.model_copy(update={"canApprove": True})
     return ActingUser(  # type: ignore[return-value]
-        name=f"{user.name}{DEMO_ADMIN_SUFFIX}", email=getattr(user, "email", ""),
+        name=f"{user.name}{DEMO_APPROVER_SUFFIX}", email=getattr(user, "email", ""),
         groups=list(getattr(user, "groups", None) or []), rights=rights,
     )
 
@@ -89,31 +90,13 @@ CurrentUser = Annotated[UserInfo, Depends(acting_user)]
 auth_router = APIRouter(prefix="/api", tags=[AUTH_TAG])
 
 
-def _role(rights: Rights) -> str:
-    return "Admin" if rights.canAdmin else "Approver" if rights.canApprove else "Submitter"
-
-
-@auth_router.get("/auth/dev-users", include_in_schema=False)
-def get_dev_users():
-    """Local demo only: the personas of the eg-auth stub (EG_AUTH_DEV_USERS) for the frontend's
-    user switch. 404 unless EG_AUTH_DEV_MODE=True, so never in the cluster."""
-    if os.getenv("EG_AUTH_DEV_MODE", "").lower() != "true":
-        raise HTTPException(status_code=404)
-    from eg_auth.fastapi import _AuthDevSettings  # the stub; only loaded in dev mode
-
-    return [
-        {"name": u["name"], "email": u["email"], "role": _role(map_groups_to_rights(list(u.get("groups", []))))}
-        for u in _AuthDevSettings().dev_users
-    ]
-
-
 @auth_router.get("/auth/rights")
 def get_user_rights(request: Request, user_info: Annotated[UserInfo, authorizer()]):
     acting = acting_user(request, user_info)
     return {
         "user": acting.name,
         "rights": acting.rights,
-        # may switch to demo admin (AI_COCKPIT_DEMO_PRESENTERS), and whether this request did
+        # may switch to demo approver (AI_COCKPIT_DEMO_PRESENTERS), and whether this request did
         "demo_presenter": is_demo_presenter(user_info),
-        "demo_admin": acting is not user_info,
+        "demo_approver": acting is not user_info,
     }

@@ -97,22 +97,19 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   ist nur informativ (TODO in `app/auth.py`).
 - **Demo-Presenter (auch in Produktion):** `AI_COCKPIT_DEMO_PRESENTERS`
   (kommagetrennt, E-Mail-Adressen oder AD-Gruppen; leer = niemand, Default)
-  nennt die Konten, die ihre Sitzung für eine Demo auf Admin-Rechte schalten
-  dürfen. Sie melden sich normal per SSO an und arbeiten als normaler Nutzer;
-  mit dem Header `X-Demo-Role: admin` (Schalter im Frontend) bekommen sie
-  `canApprove` und `canAdmin`. Die Identität bleibt die SSO-Identität, Aktionen
-  als Demo-Admin stehen unter „<Name> (demo admin)“ in den Daten. Für alle
-  anderen wird der Header ignoriert (`app/auth.py`, `acting_user`).
-  `/api/auth/rights` meldet zusätzlich `demo_presenter` und `demo_admin`.
-- **Demo mit mehreren Personen (nur lokal):** `EG_AUTH_DEV_USERS` gibt dem
-  Stub Personas, z. B.
-  `[{"name": "Jonas", "email": "jonas@demo.local", "groups": []}, {"name": "Demo Approver", "email": "approver@demo.local", "groups": ["ai_cockpit_admins"]}]`.
-  Der Stub nimmt die Persona aus dem Token `Bearer dev:<email>`, ohne Token die
-  erste. `GET /api/auth/dev-users` listet sie für die Auswahl im Frontend und
-  antwortet ohne `EG_AUTH_DEV_MODE=True` mit 404. Im Cluster prüft das echte
-  `eg-auth` jedes Token, ein `dev:`-Token wird dort abgelehnt. Für eine Demo
-  mit SSO braucht der Approver ein echtes Konto in einer der Gruppen aus
-  `AI_COCKPIT_APPROVER_GROUPS` oder `AI_COCKPIT_ADMIN_GROUPS`.
+  nennt die Konten, die ihre Sitzung für eine Demo in den Approver-Modus
+  schalten dürfen. Sie melden sich normal per SSO an und arbeiten als normaler
+  Nutzer; mit dem Header `X-Demo-Role: approver` (Schalter im Frontend)
+  bekommen sie `canApprove`. Die Identität bleibt die SSO-Identität, Aktionen
+  im Approver-Modus stehen unter „<Name> (demo approver)“ in den Daten. Für
+  alle anderen wird der Header ignoriert (`app/auth.py`, `acting_user`).
+  `/api/auth/rights` meldet zusätzlich `demo_presenter` und `demo_approver`.
+- **Lokaler Nutzer:** Der Stub meldet „Dev User“ mit `EG_AUTH_DEV_GROUPS` an.
+  Mit `EG_AUTH_DEV_USERS` (JSON-Liste mit `name`, `email`, `groups`) bekommt er
+  einen anderen Namen und eine E-Mail, z. B.
+  `[{"name": "Jonas", "email": "jonas@demo.local", "groups": []}]`; nötig, um
+  `AI_COCKPIT_DEMO_PRESENTERS` lokal per E-Mail zu testen. Mehrere Einträge
+  nutzen nur die Tests (Token `Bearer dev:<email>`), ohne Token gilt der erste.
 - **Frontend:** meldet per OIDC an (`eg-auth-react`) und schickt den Token als
   Bearer-Header; lokal läuft alles im Dev-Modus (Bypass im Frontend, siehe
   `frontend/README.md`).
