@@ -317,10 +317,6 @@ APPROVER = {"Authorization": "Bearer dev:Approver@demo.local"}
 
 def test_demo_one_user_submits_another_approves(client, db_path, monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
-    assert client.get("/api/auth/dev-users").json() == [
-        {"name": "Jonas", "email": "jonas@demo.local", "role": "Submitter"},
-        {"name": "Demo Approver", "email": "approver@demo.local", "role": "Admin"},
-    ]
     assert client.get("/api/auth/rights").json()["user"] == "Jonas"  # no token: the first persona
     created = client.post("/api/initiatives", json=form1(), headers=JONAS)
     assert created.status_code == 201, created.text
@@ -338,12 +334,12 @@ def test_demo_one_user_submits_another_approves(client, db_path, monkeypatch):
     assert client.get("/api/me/use-cases", headers=APPROVER).json() == []  # not the approver's own
 
 
-def test_demo_presenter_switches_to_admin(client, db_path, monkeypatch):
+def test_demo_presenter_switches_to_approver(client, db_path, monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
     monkeypatch.setenv("AI_COCKPIT_DEMO_PRESENTERS", "JONAS@demo.local")
-    demo_admin = {**JONAS, "X-Demo-Role": "admin"}
+    demo = {**JONAS, "X-Demo-Role": "approver"}
     rights = client.get("/api/auth/rights", headers=JONAS).json()
-    assert (rights["rights"]["canApprove"], rights["demo_presenter"], rights["demo_admin"]) == (False, True, False)
+    assert (rights["rights"]["canApprove"], rights["demo_presenter"], rights["demo_approver"]) == (False, True, False)
 
     # as a normal user: submit, no inbox
     created = client.post("/api/initiatives", json=form1(), headers=JONAS)
@@ -351,13 +347,14 @@ def test_demo_presenter_switches_to_admin(client, db_path, monkeypatch):
     assert client.get("/api/approvals", headers=JONAS).status_code == 403
     process(db_path, created.json()["user_input_id"], 6)
 
-    # switched to demo admin: the idea is in the inbox and can be approved
-    rights = client.get("/api/auth/rights", headers=demo_admin).json()
-    assert (rights["user"], rights["rights"]["canAdmin"], rights["demo_admin"]) == ("Jonas (demo admin)", True, True)
-    assert [i["id"] for i in client.get("/api/approvals", headers=demo_admin).json()] == [6]
-    resp = client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3}, headers=demo_admin)
+    # switched to demo approver: the idea is in the inbox and can be approved (approver rights only)
+    rights = client.get("/api/auth/rights", headers=demo).json()
+    assert (rights["user"], rights["rights"]["canApprove"], rights["rights"]["canAdmin"], rights["demo_approver"]) == (
+        "Jonas (demo approver)", True, False, True)
+    assert [i["id"] for i in client.get("/api/approvals", headers=demo).json()] == [6]
+    resp = client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3}, headers=demo)
     assert resp.status_code == 200, resp.text
-    assert resp.json()["changed_by"] == "Jonas (demo admin)"  # recorded with the marker
+    assert resp.json()["changed_by"] == "Jonas (demo approver)"  # recorded with the marker
 
     # back as the normal user: approved, linked to Jonas, with the form 2 to-do
     mine = client.get("/api/me/use-cases", headers=JONAS).json()
@@ -367,11 +364,11 @@ def test_demo_presenter_switches_to_admin(client, db_path, monkeypatch):
 
 def test_demo_role_header_is_ignored_for_everyone_else(client, idea, monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
-    sneaky = {"Authorization": "Bearer dev:jonas@demo.local", "X-Demo-Role": "admin"}
+    sneaky = {"Authorization": "Bearer dev:jonas@demo.local", "X-Demo-Role": "approver"}
     # no presenters configured (the default)
     assert client.get("/api/approvals", headers=sneaky).status_code == 403
     rights = client.get("/api/auth/rights", headers=sneaky).json()
-    assert (rights["rights"]["canAdmin"], rights["demo_presenter"], rights["demo_admin"]) == (False, False, False)
+    assert (rights["rights"]["canApprove"], rights["demo_presenter"], rights["demo_approver"]) == (False, False, False)
     # someone else is the presenter
     monkeypatch.setenv("AI_COCKPIT_DEMO_PRESENTERS", "approver@demo.local")
     assert client.get("/api/approvals", headers=sneaky).status_code == 403

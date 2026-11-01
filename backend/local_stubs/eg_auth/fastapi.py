@@ -20,8 +20,8 @@ class _AuthDevSettings(BaseSettings):
 
     dev_mode: bool = False
     dev_groups: List[str] = []
-    # demo personas, e.g. [{"name": "Jonas", "email": "jonas@demo.local", "groups": []}]; the
-    # frontend's dev bypass picks one by sending "Authorization: Bearer dev:<email>"
+    # the dev user's name, e-mail and groups, e.g. [{"name": "Jonas", "email": "jonas@demo.local",
+    # "groups": []}]; with several entries (tests) "Authorization: Bearer dev:<email>" picks one
     dev_users: List[dict] = []
 
 
