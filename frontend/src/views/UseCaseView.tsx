@@ -23,17 +23,9 @@ import {
   type GateRules,
 } from "../domain/lifecycle";
 import { riskLevelLabel } from "../domain/risk";
-import { RUNNING_COST_RANGES, VALUE_DOMAINS, domainOption, parseNumber, runningCostLabel, type DomainOption } from "../domain/userInput";
+import { RUNNING_COST_RANGES, VALUE_DOMAINS, domainOption, parseNumber, type DomainOption } from "../domain/userInput";
 
 type Draft = Record<string, unknown>;
-
-const initials = (name: string | null | undefined) =>
-  (name ?? "?")
-    .split(/[\s.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
 
 /** A draft value as shown in its input. */
 function shown(draft: Draft, d: UseCaseDetail, key: string): unknown {
@@ -231,33 +223,23 @@ export function UseCaseView() {
   const side: ReactNode = (
     <aside className="lc-side" aria-label="Summary">
       <section className="card lc-side-card">
-        <h2 className="lc-h2">From your idea</h2>
+        <h2 className="lc-h2">Summary</h2>
+        {d.description && <p className="lc-summary-text">{d.description}</p>}
         <div className="lc-side-rows">
+          <div><span>Stage</span><span>{d.stage ?? "–"}{d.last_gate ? ` · ${d.last_gate} gate passed` : ""}</span></div>
           <div><span>Potential per year</span><span className="mono">{keur(d.potential_value_eur)}{d.provisional ? " *" : ""}</span></div>
+          <div><span>Expected cost per year</span><span className="mono">{keur(d.annual_cost_eur)}</span></div>
           <div><span>Realised value</span><span className="mono">{keur(d.realized_value_eur)}</span></div>
-          <div><span>One-time costs</span><span>{oneTimeExact ? oneTimeOption.label : keur(oneTime ?? d.one_time_costs)}</span></div>
-          <div><span>Running costs</span><span>{runningCostLabel(d.running_cost_range) ?? keur(d.running_costs)}</span></div>
           <div>
             <span>Risk level</span>
             <span>{d.risk_classification ? `${d.risk_classification.id} · ${riskLevelLabel(d.risk_classification.id)}` : "–"}</span>
           </div>
-          <div><span>Flagship</span><span>{d.value_type ? flagshipLabel(d.value_type.name) : "–"}</span></div>
           <div><span>AI layer</span><span>{d.ai_layer ?? "–"}</span></div>
+          <div><span>Owner</span><span>{d.owner?.name ?? "–"}</span></div>
+          <div><span>Use case lead</span><span>{d.lead?.name ?? "–"}</span></div>
           <div><span>Submitted</span><span>{d.submitted_by ?? "–"} · {shortDate(d.submitted_at)}</span></div>
         </div>
         {d.provisional && <p className="nf-side-small">* Preview – not assessed by the pipeline yet.</p>}
-      </section>
-      <section className="card lc-side-card">
-        <h2 className="lc-h2">Team</h2>
-        <ul className="lc-team">
-          {[["owner", d.owner], ["use case lead", d.lead]].map(([role, o]) => (
-            <li key={role as string}>
-              <span className="avatar lc-avatar" aria-hidden="true">{initials((o as { name?: string } | null)?.name)}</span>
-              <span>{(o as { name?: string } | null)?.name ?? "–"} <span className="muted">· {role as string}</span></span>
-            </li>
-          ))}
-        </ul>
-        <p className="nf-side-small">Submitter, owner and lead can edit.</p>
       </section>
     </aside>
   );
@@ -268,7 +250,7 @@ export function UseCaseView() {
         <div>
           <span className="nf-crumb"><Link to="/my">My use cases</Link> / {d.id > 0 ? `AI-${String(d.id).padStart(4, "0")}` : "new idea"}</span>
           <h1>{d.name} <PendingTag initiative={d} /></h1>
-          <p className="muted">Stage, stage gate dates and the details can be updated at any time; name, description and cost estimates are fixed after submitting.</p>
+          <p className="muted">{d.owner?.category ?? "–"} · {d.value_type ? flagshipLabel(d.value_type.name) : "–"}</p>
         </div>
         <span className={`lc-status lc-status-${d.approval_status ?? "excel"}`}>{approvalLabel(d.approval_status ?? null)}</span>
       </header>
@@ -288,9 +270,6 @@ export function UseCaseView() {
           <Section id="lc-stage" title="Stage and stage gates" subtitle="Pick the stage in its order. The gates between the stages show which must already lie in the past.">
             <StageTrack stage={stage} saved={d.stage} floor={d.stage_floor} dates={dates} order={order} disabled={!editable}
               onChange={(v) => setField("stage", v)} />
-            {d.stage_floor && order.includes(d.stage_floor) && (
-              <p className="nf-hint lc-track-hint">Submitted in {d.stage_floor}: the stage can move on from there, not back below it.</p>
-            )}
             {!touchesGates && d.stage_problems?.length > 0 && (
               <p className="lc-banner lc-banner-soft" role="note">Stage and gate dates do not fit yet: {d.stage_problems.join(" ")}</p>
             )}
@@ -299,8 +278,9 @@ export function UseCaseView() {
               onChange={(gate: Stagegate, date: string) => setField(GATE_FIELD[gate], date || saved[gate])} />
           </Section>
 
-          <Section id="lc-idea" title="The idea" subtitle={revising ? "Revise the idea, then resubmit it" : "As submitted in form 1 – fixed after submitting"}>
-            {revising ? (
+          {revising && (
+          <Section id="lc-idea" title="Revise the idea" subtitle="Adjust it to the approvers' comment, then resubmit">
+            {(
               <>
                 <label className="nf-field">
                   <span className="nf-label">Description</span>
@@ -326,14 +306,9 @@ export function UseCaseView() {
                   </label>
                 </div>
               </>
-            ) : (
-              <dl className="lc-readonly" aria-label="Idea as submitted">
-                <div className="lc-wide"><dt>Description</dt><dd>{d.description ?? "–"}</dd></div>
-                <div><dt>One-time cost (estimate)</dt><dd>{oneTimeExact ? oneTimeOption.label : keur(oneTime ?? d.one_time_costs)}</dd></div>
-                <div><dt>Running costs (estimate)</dt><dd>{runningCostLabel(d.running_cost_range) ?? keur(d.running_costs)}</dd></div>
-              </dl>
             )}
           </Section>
+          )}
 
           <Section id="lc-details" title="Details (form 2)" subtitle={`${d.form2_progress.filled} / ${d.form2_progress.total} filled · fill in what you know, update it any time`}>
             <div className="lc-fields">

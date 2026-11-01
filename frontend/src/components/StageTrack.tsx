@@ -48,7 +48,6 @@ export function StageTrack({
         <input type="radio" name="stage" value={s} checked={s === stage} disabled={disabled || below} onChange={() => onChange(s)} />
         <span className="lc-stage-name">{s}</span>
         {s === saved && s !== stage && <span className="lc-stage-note">saved</span>}
-        {below && <span className="lc-stage-note">before form 1</span>}
       </label>
     );
   };

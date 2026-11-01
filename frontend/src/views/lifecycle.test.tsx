@@ -197,19 +197,18 @@ describe("use case page", () => {
     expect(within(track).getByRole("radio", { name: /^Exploration/ })).toBeDisabled();
     expect(within(track).getByRole("radio", { name: "Implementation" })).toBeEnabled();
     expect(screen.getByRole("radio", { name: "On hold" })).toBeEnabled();
-    expect(screen.getByText(/Submitted in MVP/)).toBeInTheDocument();
   });
 
-  it("fixes description and cost estimates after submitting, but fills in form 2 before the approval", async () => {
+  it("shows a summary instead of editable idea fields, and fills in form 2 before the approval", async () => {
     mockApi({ "/use-cases/7": detail({ approval_status: "pending", description: "Checks the grid", drivers: { one_time_costs: 175000 }, todos: [] }) });
     patch.mockReset();
     patch.mockImplementation((async () => detail({ approval_status: "pending" })) as never);
     renderAt("/use-cases/7");
-    const idea = await screen.findByRole("region", { name: "The idea" });
-    expect(within(idea).queryByRole("textbox")).not.toBeInTheDocument();
-    expect(within(idea).queryByRole("combobox")).not.toBeInTheDocument();
-    expect(within(idea).getByText("100k–250k €")).toBeInTheDocument();
-    expect(within(idea).getByText("Checks the grid")).toBeInTheDocument();
+    const summary = await screen.findByRole("complementary", { name: "Summary" });
+    expect(summary).toHaveTextContent("Checks the grid");
+    expect(summary).toHaveTextContent("Potential per year");
+    expect(screen.queryByRole("region", { name: /idea/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Description" })).not.toBeInTheDocument();
     await userEvent.type(screen.getByRole("textbox", { name: "Value domain" }), "Grid");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(patch).toHaveBeenCalledWith("/use-cases/7", { base_revision: "11-0", value_domain: "Grid" });

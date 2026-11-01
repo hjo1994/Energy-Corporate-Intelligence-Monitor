@@ -490,13 +490,14 @@ td { padding: 12px; vertical-align: middle; border-top: 1px solid var(--border);
 .lc-track-gate-passed .lc-track-diamond { background: var(--accent); border-color: var(--accent); }
 .lc-track-gate-planned .lc-track-diamond { border-color: var(--ink); border-style: dashed; }
 .lc-track-gate-passed { color: var(--accent); }
-.lc-stage-opt { position: relative; display: inline-flex; flex-direction: column; align-items: center; padding: 8px 12px; border: 1px solid #c9cfd6; border-radius: 999px; font-size: 13px; cursor: pointer; background: #fff; line-height: 1.2; }
+.lc-stage-opt { position: relative; display: inline-flex; flex-direction: column; align-items: center; padding: 8px 12px; border: 1px solid #b7c0ca; border-radius: 999px; font-size: 13px; cursor: pointer; background: #ffffff; color: #1c1b1a; line-height: 1.2; }
+.lc-stage-done { background: #dcebea; border-color: #0f6e6e; color: #0b4f4f; }
+.lc-stage-current { background: #0f6e6e; border-color: #0f6e6e; color: #ffffff; font-weight: 600; }
+.lc-stage-below { background: #f1efeb; border-style: dashed; color: #6b665e; cursor: not-allowed; }
+.lc-stage-saved { border-style: dashed; border-color: #1c1b1a; }
+.lc-summary-text { margin: 0; font-size: 13px; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .lc-stage-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .lc-stage-opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
-.lc-stage-done { background: #e8f3f3; border-color: #b9dada; color: var(--accent); }
-.lc-stage-current { background: var(--hero); border-color: var(--hero); color: #fff; font-weight: 600; }
-.lc-stage-below { opacity: .45; cursor: not-allowed; background: var(--paper); }
-.lc-stage-saved { border-style: dashed; border-color: var(--ink); }
 .lc-stage-note { font-size: 10px; font-weight: 400; opacity: .8; }
 .lc-track-side { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
 .lc-track-hint { margin: 0; }
