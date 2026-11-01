@@ -284,38 +284,38 @@ describe("feature switch", () => {
   });
 });
 
-describe("view as submitter", () => {
-  beforeEach(() => window.sessionStorage.clear());
-
-  it("lets an admin look at the app as a normal user and back", async () => {
+describe("demo role switch", () => {
+  const answer = (rights: Record<string, unknown>) =>
     mockApi((async (path: string) => {
-      if (path === "/auth/rights") return { user: "Jonas", rights: { canApprove: true, canAdmin: true } };
+      if (path === "/auth/rights") return { user: "Jonas", ...rights };
       if (path === "/me/use-cases" || path === "/approvals") return [];
       if (path === "/features") return { initiative_input: true };
       return ok();
     }) as never);
-    renderAt("/approvals");
-    const views = within(screen.getByRole("navigation", { name: "Views" }));
-    expect(await views.findByRole("link", { name: /Approvals/ })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("radio", { name: "Submitter" }));
-    expect(views.queryByRole("link", { name: /Approvals/ })).not.toBeInTheDocument();
-    expect(window.sessionStorage.getItem("ai-cockpit.view-as-submitter")).toBe("true");
-    expect(await screen.findByText("Submitter", { selector: ".kpi-value" })).toBeInTheDocument(); // sent to My use cases
+  beforeEach(() => window.sessionStorage.clear());
 
-    await userEvent.click(screen.getByRole("radio", { name: "Admin" }));
-    expect(views.getByRole("link", { name: /Approvals/ })).toBeInTheDocument();
+  it("lets a demo presenter switch from normal user to demo admin", async () => {
+    answer({ rights: { canApprove: false, canAdmin: false }, demo_presenter: true, demo_admin: false });
+    renderAt("/my");
+    const normal = await screen.findByRole("radio", { name: "Normal user" });
+    expect(normal).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("navigation", { name: "Views" })).queryByRole("link", { name: /Approvals/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Admin (demo)" }));
+    expect(window.sessionStorage.getItem("ai-cockpit.demo-admin")).toBe("true");
   });
 
-  it("is not offered to normal users", async () => {
-    mockApi((async (path: string) => {
-      if (path === "/auth/rights") return { user: "Jonas", rights: { canApprove: false, canAdmin: false } };
-      if (path === "/me/use-cases") return [];
-      if (path === "/features") return { initiative_input: true };
-      return ok();
-    }) as never);
+  it("shows the approvals while the presenter is demo admin", async () => {
+    answer({ rights: { canApprove: true, canAdmin: true }, demo_presenter: true, demo_admin: true, user: "Jonas (demo admin)" });
     renderAt("/my");
-    await screen.findByText("Submitter", { selector: ".kpi-value" });
-    expect(screen.queryByRole("radiogroup", { name: "View as" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: "Admin (demo)" })).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("navigation", { name: "Views" })).getByRole("link", { name: /Approvals/ })).toBeInTheDocument();
+  });
+
+  it("is not offered to anyone else, approvers included", async () => {
+    answer({ rights: { canApprove: true, canAdmin: false } });
+    renderAt("/my");
+    await within(screen.getByRole("navigation", { name: "Views" })).findByRole("link", { name: /Approvals/ });
+    expect(screen.queryByRole("radiogroup", { name: "Demo role" })).not.toBeInTheDocument();
   });
 });

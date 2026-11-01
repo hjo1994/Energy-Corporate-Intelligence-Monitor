@@ -19,24 +19,8 @@ interface AppState {
   visible: Initiative[];
   /** show an initiative just created through the input form right away (it is "pending") */
   addInitiative: (initiative: Initiative) => void;
-  /** what the signed-in user may do (approver inbox, admin), as the current view shows it */
+  /** what the signed-in user may do (approver inbox, admin) */
   rights: Rights;
-  /** what the signed-in user may really do, whatever the view */
-  realRights: Rights;
-  /** approvers and admins can look at the app as a normal user (a view only, kept per tab) */
-  viewAsSubmitter: boolean;
-  setViewAsSubmitter: (on: boolean) => void;
-}
-
-const NO_RIGHTS: Rights = { canApprove: false, canAdmin: false };
-const VIEW_KEY = "ai-cockpit.view-as-submitter";
-
-function storedView(): boolean {
-  try {
-    return window.sessionStorage.getItem(VIEW_KEY) === "true";
-  } catch {
-    return false;
-  }
 }
 
 // While initiatives entered through the form are pending, the list is re-read this often until
@@ -49,17 +33,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
-  const [realRights, setRights] = useState<Rights>(NO_RIGHTS);
-  const [viewAsSubmitter, setView] = useState<boolean>(storedView);
-  const setViewAsSubmitter = useCallback((on: boolean) => {
-    setView(on);
-    try {
-      window.sessionStorage.setItem(VIEW_KEY, String(on));
-    } catch {
-      // no storage: the view lasts until the page is reloaded
-    }
-  }, []);
-  const rights = viewAsSubmitter ? NO_RIGHTS : realRights;
+  const [rights, setRights] = useState<Rights>({ canApprove: false, canAdmin: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -118,8 +92,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const visible = useMemo(() => applyFilters(all, filters), [all, filters]);
 
   const value = useMemo(
-    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights, realRights, viewAsSubmitter, setViewAsSubmitter }),
-    [load, reload, filters, setFilters, all, visible, addInitiative, rights, realRights, viewAsSubmitter, setViewAsSubmitter],
+    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights }),
+    [load, reload, filters, setFilters, all, visible, addInitiative, rights],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -277,4 +277,8 @@ export interface FormOptions {
 export interface Rights {
   canApprove: boolean;
   canAdmin: boolean;
+  /** may switch to admin rights for a demo (AI_COCKPIT_DEMO_PRESENTERS) */
+  demoPresenter?: boolean;
+  /** this session runs with the demo admin rights */
+  demoAdmin?: boolean;
 }

@@ -188,12 +188,12 @@ Backend muss mit `EG_AUTH_DEV_MODE=True` laufen. Der Bypass gilt nur im
 Dev-Server (`import.meta.env.DEV`) — ein Produktions-Build ignoriert ihn, auch
 wenn die Variable in der Build-Umgebung steht (getestet).
 
-**Ansicht als Submitter (auch in Produktion):** Approver und Admins sehen oben
-den Schalter **View as** (Approver bzw. Admin / Submitter). „Submitter“ blendet
-Approvals und die Rolle aus, so wie ein normaler Nutzer die App sieht; gilt je
-Browser-Tab. Das ändert nur die Ansicht, das Backend prüft die Rechte
-unverändert. So lassen sich mit einem SSO-Konto beide Seiten zeigen; für zwei
-echte Personen braucht der Approver ein eigenes Konto in der Approver-Gruppe.
+**Demo-Rolle (auch in Produktion):** Konten aus `AI_COCKPIT_DEMO_PRESENTERS`
+(Backend) sehen oben den Schalter **Normal user / Admin (demo)**. Sie arbeiten
+als normaler Nutzer und wechseln für eine Demo zu Admin-Rechten: das Frontend
+sendet dann `X-Demo-Role: admin` (je Browser-Tab gemerkt), das Backend wertet
+den Header nur für diese Konten aus. Allen anderen wird der Schalter nicht
+angezeigt.
 
 **Demo mit zwei Personen (Dev-Bypass):** Kennt das Backend Personas
 (`EG_AUTH_DEV_USERS`, siehe `backend/README.md`), erscheint oben statt
