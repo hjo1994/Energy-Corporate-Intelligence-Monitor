@@ -142,7 +142,8 @@ def test_lifecycle_approve_then_form2(client, idea, as_approver, monkeypatch):
     # approving passes the needs gate today
     assert (approved["approval_status"], approved["needs_gate_date"], approved["last_gate"]) == (
         "approved", f"{today}T00:00:00", "Needs")
-    assert approved["lead"]["name"] == "Lead C" and approved["todos"] == ["complete_details"]
+    # form 2 was saved before the approval, so no to-do: empty fields only show in the progress
+    assert approved["lead"]["name"] == "Lead C" and approved["todos"] == []
     assert client.get("/api/approvals").json() == []
     assert client.post("/api/use-cases/6/decision",
                        json={"decision": "reject", "comment": "late"}).status_code == 409  # not pending any more
@@ -166,6 +167,19 @@ def test_lifecycle_approve_then_form2(client, idea, as_approver, monkeypatch):
     assert uc["efficiency_score_eur"] == 750000 and uc["quality_score_eur"] == 93750
     assert uc["drivers"]["hours_saved_per_case"] == 2.5 and uc["drivers"]["cases_per_year"] == 5000
     assert uc["form2_progress"]["filled"] == 7
+
+
+def test_complete_details_until_form2_saved(client, idea, as_approver):
+    resp = client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3})
+    assert resp.status_code == 200 and resp.json()["todos"] == ["complete_details"]
+    mine = {u["id"]: u for u in client.get("/api/me/use-cases").json()}
+    assert mine[6]["todos"] == ["complete_details"]
+    # a stage change alone does not complete the details
+    assert patch(client, 6, stage="On hold").json()["todos"] == ["complete_details"]
+    uc = patch(client, 6, enabling_team="EL.AI").json()
+    assert uc["todos"] == [] and uc["form2_progress"]["filled"] < uc["form2_progress"]["total"]
+    mine = {u["id"]: u for u in client.get("/api/me/use-cases").json()}
+    assert mine[6]["todos"] == []
 
 
 def patch(client, id, **fields):
