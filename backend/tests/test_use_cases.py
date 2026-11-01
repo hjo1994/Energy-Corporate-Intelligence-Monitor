@@ -423,3 +423,13 @@ def test_a_presenter_who_is_an_approver_can_show_the_normal_view(client, idea, m
     switched = {**JONAS, "X-Demo-Role": "approver"}
     rights = client.get("/api/auth/rights", headers=switched).json()
     assert (rights["user"], rights["rights"]["canApprove"]) == ("Jonas", True)  # no marker: a real approver
+
+
+def test_parallel_first_requests_create_one_user(client, monkeypatch):
+    """The UI's first page load sends several requests at once; all of them see the same new user."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setenv("EG_AUTH_DEV_USERS", DEMO_USERS)
+    with ThreadPoolExecutor(8) as pool:
+        codes = list(pool.map(lambda _: client.get("/api/me/use-cases", headers=JONAS).status_code, range(16)))
+    assert set(codes) == {200}
