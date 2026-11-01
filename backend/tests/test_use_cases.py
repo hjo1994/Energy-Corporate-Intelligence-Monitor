@@ -67,6 +67,7 @@ def test_form_options(client):
     assert "Operational and advanced AI" in [o["value"] for o in options["ai_layers"]]
     assert {"enabling_teams", "eu_ai_act_classes", "stagegates", "applicable_to"} <= set(options)
     assert options["stage_gate_rules"]["PoC"] == {"passed": ["Scope"], "not_passed": ["Deploy"]}
+    assert options["stage_order"][:3] == ["Idea", "Exploration", "PoC"] and options["stage_order"][-1] == "Retired"
     assert "Retired" in [o["value"] for o in options["stages"]]
     assert options["value_domains"]["one_time_costs"][0] == {"value": 25000, "label": "under 50k €"}
     assert set(options["value_domains"]) >= {"cases_per_year", "hours_saved_per_case", "lead_time_saved"}
@@ -83,7 +84,7 @@ def test_sheet_use_case_detail(client):
 
 
 def test_only_submitter_owner_lead_or_admin_may_edit(client, monkeypatch):
-    patch = {"base_revision": "2-0", "description": "New"}
+    patch = {"base_revision": "2-0", "value_domain": "New"}
     assert client.patch("/api/use-cases/1", json=patch).status_code == 403
     monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["ai_cockpit_admins"]')
     assert detail(client, 1)["can_edit"] is True
@@ -91,7 +92,7 @@ def test_only_submitter_owner_lead_or_admin_may_edit(client, monkeypatch):
     assert resp.status_code == 200, resp.text
     alpha = resp.json()
     # the change shows at once, marked as not processed yet; the sheet use case is now maintained in the UI
-    assert (alpha["description"], alpha["processing"], alpha["provisional"]) == ("New", "changes_pending", True)
+    assert (alpha["value_domain"], alpha["processing"], alpha["provisional"]) == ("New", "changes_pending", True)
     assert alpha["revision"] != "2-0" and len(alpha["pending_action_ids"]) == 1
     # buckets estimated from the sheet are kept: no value inputs entered
     assert alpha["potential_value_eur"] == pytest.approx(54000)
@@ -207,8 +208,35 @@ def test_old_mismatch_is_shown_but_does_not_block_other_edits(client, db_path):
     conn.close()
     uc = detail(client, 2)
     assert uc["last_gate"] is None and len(uc["stage_problems"]) == 2
-    assert patch(client, 2, description="Still fine").status_code == 200
+    assert patch(client, 2, enabling_team="DiY").status_code == 200
     assert patch(client, 2, scope_gate_date="2026-03-01").status_code == 422  # the deploy gate is still missing
+
+
+def test_description_and_cost_estimates_are_fixed_after_submitting(client, idea, as_approver):
+    for field, value in (("description", "Changed"), ("one_time_costs", 500000), ("running_cost_range", "over_100k")):
+        resp = patch(client, 6, **{field: value})
+        assert resp.status_code == 422 and "cannot be changed after the idea was submitted" in resp.json()["detail"]
+    # open again while a rejected idea is revised
+    rejected = client.post("/api/use-cases/6/decision", json={"decision": "reject", "comment": "Too vague"}).json()
+    resp = client.patch("/api/use-cases/6", json={"base_revision": rejected["revision"], "description": "Clearer",
+                                                  "one_time_costs": 500000, "resubmit": True})
+    assert resp.status_code == 200 and resp.json()["description"] == "Clearer"
+
+
+def test_stage_cannot_go_below_the_one_given_in_form_1(client, submit, db_path):
+    created = submit(name="Started late", stage="MVP", scope_gate_date="2026-02-10")
+    process(db_path, created["user_input_id"], 7)
+    conn = sqlite3.connect(db_path)  # what the DAG takes over from the create record
+    conn.execute('UPDATE "Initiative" SET "Stage" = \'MVP\', "ScopeGateDate" = \'2026-02-10 00:00:00\' WHERE "UseCaseID" = 7')
+    conn.commit()
+    conn.close()
+    uc = detail(client, 7)
+    assert uc["stage_floor"] == "MVP"
+    resp = patch(client, 7, stage="PoC")
+    assert resp.status_code == 422 and "cannot go below MVP" in resp.json()["detail"]
+    assert patch(client, 7, stage="Implementation").status_code == 200
+    assert patch(client, 7, stage="MVP").status_code == 200  # back to the floor is fine
+    assert patch(client, 7, stage="On hold").status_code == 200  # outside the order
 
 
 def test_new_idea_in_a_later_stage_needs_its_gate_dates(submit, client):

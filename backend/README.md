@@ -27,7 +27,7 @@ aber noch nicht änder- oder entscheidbar (`409`).
 | `POST /api/initiatives` | **Formular 1**: neue AI-Idee → User-Action `create`. `ai_layer` statt Solution Type, `running_cost_range` (`up_to_10k`, `10k_to_50k`, `50k_to_100k`, `over_100k`; gespeichert als 5k/30k/75k/150k €/Jahr) statt Betriebskosten. Alle Zahlen nur aus ihrem Wertebereich (`value_domains`, sonst `422`); Gate-Daten passend zur Stage (siehe unten). `201` als `pending`, `409` bei gleichem Namen in derselben Business Unit | angemeldet |
 | `GET /api/me/use-cases` | **Meine Use Cases**: eingereicht, Owner oder Lead (Abgleich über `Owner.Email`, sonst Name), mit `roles`, `todos` (`complete_details`, `revise_and_resubmit`), `form2_progress` | angemeldet |
 | `GET /api/use-cases/{id}` | alle Felder aus Formular 1 und 2, Gold-Werte, eingegebene Treiber (`drivers`), `revision`, `can_edit`, `can_decide`, `todos` | angemeldet |
-| `PATCH /api/use-cases/{id}` | Teilupdate → User-Action `update`. `base_revision` Pflicht (`409`, wenn inzwischen geändert); `name`/Business Unit `422`; alles andere jederzeit änderbar, auch Formular 2 vor der Genehmigung. Wird `stage` oder ein Gate-Datum geschickt, müssen Stage und Gate-Daten zusammen passen (`422`); `resubmit: true` schickt eine abgelehnte Idee zurück in `pending` | Einreicher, Owner, Lead, Admin |
+| `PATCH /api/use-cases/{id}` | Teilupdate → User-Action `update`. `base_revision` Pflicht (`409`, wenn inzwischen geändert); `name`/Business Unit `422`; Beschreibung und Kostenschätzungen (`one_time_costs`, `running_cost_range`) nach dem Einreichen `422`, außer beim Überarbeiten einer abgelehnten Idee; die Stage nie unter die aus Formular 1 (`stage_floor`, `422`); Formular 2, Stage und Gate-Daten sonst jederzeit, auch vor der Genehmigung. Wird `stage` oder ein Gate-Datum geschickt, müssen Stage und Gate-Daten zusammen passen (`422`); `resubmit: true` schickt eine abgelehnte Idee zurück in `pending` | Einreicher, Owner, Lead, Admin |
 | `GET /api/approvals` | **Approver-Inbox**: offene Ideen, älteste zuerst | `canApprove` |
 | `POST /api/use-cases/{id}/decision` | `approve` (mit `lead_id`; setzt das Needs-Gate-Datum auf heute, außer der Einreicher hat schon ein vergangenes angegeben, und nie nach einem später passierten Gate) oder `reject` (mit `comment`) → User-Action `approve`/`reject`; nur aus `pending` | `canApprove` |
 | `GET /api/use-cases/{id}/similar` | Re-use-Check: aktive Use Cases mit der größten Wortüberschneidung in Name und Beschreibung | `canApprove` |
@@ -55,7 +55,7 @@ passed before PoC, deploy gate must be passed before production“):
 Idea/Exploration – Scope und Deploy noch nicht passiert; PoC/MVP/Implementation –
 Scope passiert, Deploy noch nicht; Production/Retired – Scope und Deploy
 passiert; On hold/Cancelled/Unknown – keine Regel. Gesetzte Daten in
-Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel. Passt ein
+Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel. Reihenfolge der Stages: Idea → Exploration → PoC → MVP → Implementation → Production → Retired (`stage_order` in `/api/form-options`); On hold, Cancelled und Unknown stehen außerhalb. Passt ein
 Stand nicht (etwa ein Use Case aus dem Blatt in Production ohne Daten), steht
 das in `stage_problems`; andere Änderungen blockiert das nicht.
 
