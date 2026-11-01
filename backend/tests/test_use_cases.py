@@ -188,3 +188,25 @@ def test_similar_use_cases(client, submit, db_path, as_approver):
     process(db_path, created["user_input_id"], 6)
     similar = client.get("/api/use-cases/1/similar").json()  # Alpha: "100% automation"
     assert [s["name"] for s in similar] == ["Invoice automation"] and 0 < similar[0]["score"] < 1
+
+
+def test_stage_needs_its_gate(client, submit, idea, as_approver):
+    # a new idea has passed no gate: PoC and later are refused
+    resp = client.post("/api/initiatives", json=form1(name="Too early", stage="PoC"))
+    assert resp.status_code == 422 and "scope gate" in resp.text
+
+    approved = client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3}).json()
+    resp = client.patch("/api/use-cases/6", json={"base_revision": approved["revision"], "stage": "PoC"})
+    assert resp.status_code == 422 and resp.json()["detail"] == "Stage PoC needs the scope gate to be passed first."
+
+    # the gate passed in the same save counts; production still needs the deploy gate
+    resp = client.patch("/api/use-cases/6", json={"base_revision": approved["revision"], "stage": "MVP",
+                                                  "stagegate": "Scope", "passed_at": "2026-12-01"})
+    assert resp.status_code == 200, resp.text
+    scoped = resp.json()
+    assert (scoped["stage"], scoped["stagegate"]) == ("MVP", "Scope")
+    resp = client.patch("/api/use-cases/6", json={"base_revision": scoped["revision"], "stage": "Production"})
+    assert resp.status_code == 422 and "deploy gate" in resp.json()["detail"]
+    resp = client.patch("/api/use-cases/6", json={"base_revision": scoped["revision"], "stage": "Production",
+                                                  "stagegate": "Deploy", "passed_at": "2027-03-01"})
+    assert resp.status_code == 200 and resp.json()["stage"] == "Production"

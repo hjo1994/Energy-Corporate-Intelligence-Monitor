@@ -16,12 +16,13 @@ import {
   keur,
   nextGate,
   shortDate,
+  stageGateError,
   todayIso,
   type Form2Field,
   type GateGroup,
 } from "../domain/lifecycle";
 import { riskLevelLabel } from "../domain/risk";
-import { parseNumber, runningCostLabel } from "../domain/userInput";
+import { STAGES, parseNumber, runningCostLabel } from "../domain/userInput";
 
 type Draft = Record<string, unknown>;
 
@@ -201,6 +202,30 @@ function Stepper({ d }: { d: UseCaseDetail }) {
   );
 }
 
+/** The stage, checked against the gates: PoC and later need the scope gate, production the deploy gate. */
+function StageCard({ d, value, onChange, gatePassed, editable, error }: {
+  d: UseCaseDetail; value: string; onChange: (v: string) => void; gatePassed: Stagegate | null; editable: boolean; error: string | null;
+}) {
+  const savedError = stageGateError(d.stage, d.stagegate);
+  return (
+    <section className="card lc-group open lc-stage" aria-labelledby="lc-stage">
+      <label className="nf-field">
+        <span id="lc-stage" className="nf-label">Stage</span>
+        <select className="nf-input" value={value} disabled={!editable} onChange={(e) => onChange(e.target.value)}>
+          {!value && <option value="">–</option>}
+          {STAGES.map((s) => {
+            const blocked = stageGateError(s, gatePassed) !== null;
+            return <option key={s} value={s} disabled={blocked && s !== d.stage}>{blocked ? `${s} – needs a later gate` : s}</option>;
+          })}
+        </select>
+        {error ? <span className="nf-error">{error}</span>
+          : savedError && value === d.stage ? <span className="nf-error">{savedError}</span>
+          : <span className="nf-hint">PoC and later need the scope gate, production the deploy gate.</span>}
+      </label>
+    </section>
+  );
+}
+
 export function UseCaseView() {
   const { id } = useParams();
   const useCaseId = Number(id);
@@ -251,6 +276,9 @@ export function UseCaseView() {
   const editable = d.can_edit && !stillProcessing && !saving;
   const gate = nextGate(passed);
   const dirty = Object.keys(patch).length > 0 || (gateDate !== "" && !!gate);
+  // a gate passed in the same save counts for the stage
+  const gateOnSave = gateDate && gate ? gate : d.stagegate ?? null;
+  const stageError = "stage" in patch ? stageGateError(patch.stage as string, gateOnSave) : null;
 
   async function save(extra: Record<string, unknown> = {}) {
     if (!d) return;
@@ -377,6 +405,8 @@ export function UseCaseView() {
           ) : (
             <>
               <Stepper d={d} />
+              <StageCard d={d} value={String(shown(draft, d, "stage") ?? "")} onChange={(v) => setDraft((x) => ({ ...x, stage: v }))}
+                gatePassed={gateOnSave} editable={editable} error={stageError} />
               {GATE_GROUPS.map((g) => (
                 <Group key={g.key} group={g} d={d} draft={draft} lists={ref} open={groupOpen(g, passed)} editable={editable}
                   setField={(k, v) => setDraft((x) => ({ ...x, [k]: v }))} gateDate={gateDate} setGateDate={setGateDate} />
@@ -385,7 +415,7 @@ export function UseCaseView() {
                 <div className="lc-actions lc-sticky">
                   <span className="muted">{d.form2_progress.filled} / {d.form2_progress.total} details filled</span>
                   <button type="button" className="lc-btn" disabled={!dirty || saving} onClick={() => { setDraft({}); setGateDate(""); }}>Discard</button>
-                  <button type="button" className="lc-btn lc-primary" disabled={!dirty || !editable} onClick={() => void save()}>
+                  <button type="button" className="lc-btn lc-primary" disabled={!dirty || !editable || !!stageError} onClick={() => void save()}>
                     {saving ? "Saving …" : gateDate && gate ? `Save and pass the ${gate.toLowerCase()} gate` : "Save"}
                   </button>
                 </div>

@@ -1,4 +1,5 @@
 import type { InitiativeInput, RunningCostRange } from "../api/types";
+import { STAGE_REQUIRES_GATE, stageGateError } from "./lifecycle";
 
 // The input form's live preview. Binding are the values the pipeline computes
 // (input orchestration, transforms/user_input_heuristic.py); these formulas mirror it and are
@@ -28,6 +29,8 @@ export const AI_LAYERS = [
 ];
 
 export const STAGES = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown"];
+/** Stages a new idea can start in: the later ones need a gate passed first. */
+export const NEW_IDEA_STAGES = STAGES.filter((s) => !STAGE_REQUIRES_GATE[s]);
 
 export type LeverKey = "efficiency" | "quality" | "riskReduction" | "speed";
 
@@ -262,6 +265,9 @@ export function validate(f: FormState): Partial<Record<keyof FormState | "levers
     ["complexity", "Choose the complexity."],
   ];
   for (const [field, message] of required) if (!String(f[field]).trim()) errors[field] = message;
+  // a new idea has passed no gate yet
+  const stageError = f.stage ? stageGateError(f.stage, null) : null;
+  if (stageError) errors.stage = stageError;
 
   const input = toInput(f);
   for (const [field, key] of Object.entries(NUMBER_FIELDS)) {

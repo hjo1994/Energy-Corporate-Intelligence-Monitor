@@ -8,7 +8,7 @@ import {
   EMPTY_FORM,
   LEVERS,
   RUNNING_COST_RANGES,
-  STAGES,
+  NEW_IDEA_STAGES,
   previewInput,
   previewRiskLevel,
   previewValue,
@@ -269,10 +269,10 @@ export function NewInitiativeView() {
                   {aiLayers.map((l) => <option key={l} value={l}>{l}</option>)}
                 </select>
               </Field>
-              <Field label="Stage" required error={errors.stage}>
+              <Field label="Stage" required error={errors.stage} hint="PoC and later follow once the scope gate is passed.">
                 <select className="nf-input" value={form.stage} onChange={(e) => set("stage", e.target.value)}>
                   <option value="">Choose …</option>
-                  {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {NEW_IDEA_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
               <div className="nf-grid2 nf-dates">

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { InitiativeInput } from "../api/types";
+import { stageGateError } from "./lifecycle";
 import { EMPTY_FORM, parseNumber, previewInput, previewRiskLevel, previewValue, toInput, validate, type FormState } from "./userInput";
 
 // Same cases as the pipeline (binding) and the backend's pending values — one file in this repo.
@@ -100,5 +101,21 @@ describe("form", () => {
     );
     expect(validate({ ...filled, hoursSavedPerCase: "", levers: { ...filled.levers, quality: false } }).levers).toBeDefined();
     expect(validate({ ...filled, errorRatePct: "120" }).errorRatePct).toMatch(/percentage/);
+  });
+});
+
+describe("stage vs. stage gate", () => {
+  it("lets a new idea start only before PoC", () => {
+    expect(validate({ ...EMPTY_FORM, stage: "Exploration" }).stage).toBeUndefined();
+    expect(validate({ ...EMPTY_FORM, stage: "PoC" }).stage).toBe("Stage PoC needs the scope gate to be passed first.");
+  });
+
+  it("needs the scope gate before PoC and the deploy gate before production", () => {
+    expect(stageGateError("Idea", null)).toBeNull();
+    expect(stageGateError("MVP", "Needs")).toMatch("scope gate");
+    expect(stageGateError("Implementation", "Scope")).toBeNull();
+    expect(stageGateError("Production", "Scope")).toMatch("deploy gate");
+    expect(stageGateError("Production", "Deploy")).toBeNull();
+    expect(stageGateError("Production", "Retire")).toBeNull();
   });
 });

@@ -40,6 +40,19 @@ class RiskClassificationOut(RiskClassificationRef):
 
 STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown")
 STAGEGATES = ("Needs", "Scope", "Deploy", "Retire")
+# Stage vs. stage gate (form 2 data fields, "date passed … gate"): the scope gate must be
+# passed before PoC, the deploy gate before production. Stages not listed need no gate.
+STAGE_REQUIRES_GATE = {"PoC": "Scope", "MVP": "Scope", "Implementation": "Scope", "Production": "Deploy"}
+
+
+def stage_gate_error(stage: str | None, passed_gate: str | None) -> str | None:
+    """Why `stage` is not allowed with `passed_gate` (the last gate passed), or None."""
+    required = STAGE_REQUIRES_GATE.get(stage or "")
+    if required is None:
+        return None
+    if passed_gate in STAGEGATES and STAGEGATES.index(passed_gate) >= STAGEGATES.index(required):
+        return None
+    return f"Stage {stage} needs the {required.lower()} gate to be passed first."
 APPROVAL_STATUSES = ("pending", "approved", "rejected")
 ESTIMATE_BASES = ("rough", "benchmark", "measured")
 DELIVERY_LIKELIHOODS = ("low", "medium", "high")
@@ -335,6 +348,14 @@ class InitiativeIn(_Form1Values):
     def _one_complete_lever(self) -> "InitiativeIn":
         if not any(all(getattr(self, f) is not None for f in fields) for fields in LEVERS.values()):
             raise ValueError("At least one value lever needs all of its drivers")
+        return self
+
+    @model_validator(mode="after")
+    def _stage_before_gates(self) -> "InitiativeIn":
+        # a new idea has passed no gate yet
+        error = stage_gate_error(self.stage, None)
+        if error:
+            raise ValueError(error)
         return self
 
 

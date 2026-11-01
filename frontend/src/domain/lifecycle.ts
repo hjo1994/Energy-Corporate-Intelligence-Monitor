@@ -12,6 +12,23 @@ export function nextGate(passed: Stagegate | null | undefined): Stagegate | null
   return i < 0 || i === GATES.length - 1 ? null : GATES[i + 1];
 }
 
+// Stage vs. stage gate (form 2 data fields, "date passed … gate"): the scope gate must be
+// passed before PoC, the deploy gate before production. Same rule as the API.
+export const STAGE_REQUIRES_GATE: Partial<Record<string, Stagegate>> = {
+  PoC: "Scope",
+  MVP: "Scope",
+  Implementation: "Scope",
+  Production: "Deploy",
+};
+
+/** Why `stage` is not allowed with `passed` (the last gate passed), or null. */
+export function stageGateError(stage: string | null | undefined, passed: Stagegate | null | undefined): string | null {
+  const required = STAGE_REQUIRES_GATE[stage ?? ""];
+  if (!required) return null;
+  if (passed && GATES.indexOf(passed) >= GATES.indexOf(required)) return null;
+  return `Stage ${stage} needs the ${required.toLowerCase()} gate to be passed first.`;
+}
+
 export type FieldKind = "text" | "select" | "segmented" | "multi" | "bool" | "date" | "int" | "eur" | "owner" | "solutionType";
 
 export interface Form2Field {

@@ -29,6 +29,7 @@ from app.schemas import (
     SimilarUseCase,
     UseCaseDetail,
     UseCasePatch,
+    stage_gate_error,
 )
 from app.use_cases import (
     Lookups,
@@ -196,6 +197,12 @@ def update_use_case(
         if state["status"] != "rejected":
             raise HTTPException(status_code=409, detail="Only a rejected idea can be resubmitted.")
         fields["status"] = "pending"
+
+    if "stage" in fields:
+        # checked when the stage changes; a gate passed in the same save counts
+        error = stage_gate_error(fields["stage"], fields.get("stagegate", state["stagegate"]))
+        if error:
+            raise HTTPException(status_code=422, detail=error)
 
     if "owner_id" in fields:
         owner = lookups.owners.get(fields["owner_id"])
