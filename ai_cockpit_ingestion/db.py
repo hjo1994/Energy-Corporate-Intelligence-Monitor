@@ -14,6 +14,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 
+from ai_cockpit_ingestion.migrations import lifecycle_2026_11
 from ai_cockpit_ingestion.models import Base
 
 BUSY_TIMEOUT_SECONDS = 120
@@ -33,6 +34,8 @@ def get_engine(db_path: str | Path) -> Engine:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    # Idempotent: creates whatever tables of the data model are missing.
+    # Idempotent: migrates an older database (rebuilds silver, see the
+    # migration), then creates whatever tables of the data model are missing.
+    lifecycle_2026_11.upgrade(engine)
     Base.metadata.create_all(engine)
     return engine

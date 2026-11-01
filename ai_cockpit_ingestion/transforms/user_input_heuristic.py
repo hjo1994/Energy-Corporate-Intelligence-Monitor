@@ -1,5 +1,5 @@
-"""Value, costs and risk level of an initiative entered through the input form
-(UserInput_Initiatives_Extract).
+"""Value, costs and risk level of a use case entered through the UI
+(UserActionExtracts; for updates the merged drivers of all its actions).
 
 Unlike the sheet initiatives (transforms.value_heuristic / risk_heuristic),
 nothing is guessed from free text here: the form asks for the drivers the

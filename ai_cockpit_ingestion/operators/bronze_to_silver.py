@@ -1,6 +1,6 @@
 """Bronze-to-Silver operator: upserts one extract table's latest load into the
-silver Initiative rows of its business unit. The input form's table has its
-own mode, see operators.user_input_to_silver. Every run is logged in
+silver Initiative versions of its business unit. The UI's user-action table
+has its own mode, see operators.user_input_to_silver. Every run is logged in
 TransformationRun (detection.start_run / finish_run).
 
 Per row: normalizes status/timing/complexity (transforms.normalize), links
@@ -13,23 +13,32 @@ flagship that is not in the config is left NULL and logged, so it can be
 added to the config deliberately. Every initiative gets a risk level (1-4
 are always estimable, 5 is never estimated).
 
+Silver is append-only and versioned (models.Initiative): a change never
+updates a row, it adds a new version of the use case (same UseCaseID).
 Upsert of the latest bronze load (see transforms.upsert_keys):
 
-- key_hash unknown                          -> insert (new ID)
-- key_hash known, row_hash differs or row inactive -> update in place (ID kept)
+- key_hash unknown                          -> new use case (UseCaseID = max + 1), first version
+- key_hash known, row_hash differs or use case inactive -> new version
 - key_hash known, row_hash equal            -> unchanged, nothing written
-- force=True                                -> every known key is updated
+- force=True                                -> every known key is recomputed; a new
+  version only where the result differs
+- use case maintained in the UI (any version built from a user action)
+                                            -> skipped (ui_owned): no new version,
+                                               no soft delete
 - the same key twice in one load: same row_hash -> taken once (warning);
-  different row_hash -> conflict, neither row is taken, the existing silver
-  row (if any) stays as it is
-- active row of this extract whose key is missing from the load -> is_active = False
+  different row_hash -> conflict, neither row is taken, the use case (if any)
+  stays as it is
+- active use case of this extract whose key is missing from the load
+                                            -> new version with IsActive = False
 
-Every inserted or updated initiative gets a new BusinessTransaction row
-pointing to the bronze record it was built from (BronzeTableName + BronzeID)
-and references it; deactivated rows keep theirs. "Rows of this extract" are
-those whose BusinessTransaction points into the same extract table, so the
-generated DAGs never touch each other's rows. Run counts go to the log and
-the task's return value (XCom).
+Every new version from a bronze row gets a new BusinessTransaction pointing
+to that record (BronzeTableName + BronzeID); a soft-delete version keeps the
+previous one. "Use cases of this extract" are those whose current version's
+BusinessTransaction points into the same extract table, so the generated
+DAGs never touch each other's use cases. Silver stores the six risk answers;
+for sheet rows they are the canonical answers of the estimated level
+(transforms.risk_heuristic.risk_answers_for_level). Run counts go to the log
+and the task's return value (XCom).
 """
 from __future__ import annotations
 
@@ -50,8 +59,9 @@ from ai_cockpit_ingestion.models import (
     Owner,
     SolutionType,
     ValueType,
+    current_versions,
 )
-from ai_cockpit_ingestion.operators.user_input_to_silver import upsert_user_input
+from ai_cockpit_ingestion.operators.user_input_to_silver import RISK_ANSWER_ATTRIBUTES, apply_user_actions
 from ai_cockpit_ingestion.sources import SOURCES_BY_KEY, USER_INPUT
 from ai_cockpit_ingestion.transforms.normalize import (
     build_match_key_index,
@@ -61,9 +71,16 @@ from ai_cockpit_ingestion.transforms.normalize import (
     match_catalog_name,
     normalize_stage,
 )
-from ai_cockpit_ingestion.transforms.risk_heuristic import estimate_risk_level
+from ai_cockpit_ingestion.transforms.risk_heuristic import estimate_risk_level, risk_answers_for_level
 from ai_cockpit_ingestion.transforms.upsert_keys import key_hash, row_hash, row_hash_columns
 from ai_cockpit_ingestion.transforms.value_heuristic import estimate_value
+from ai_cockpit_ingestion.versions import (
+    UseCaseIds,
+    content_of,
+    current_by_key,
+    same_content,
+    ui_owned_use_cases,
+)
 
 
 class BronzeToSilverOperator(BaseOperator):
@@ -84,7 +101,7 @@ class BronzeToSilverOperator(BaseOperator):
             try:
                 with Session(engine) as session, session.begin():
                     if source.mode == USER_INPUT:
-                        counts = upsert_user_input(session, force, self.log)
+                        counts = apply_user_actions(session, force, self.log)
                         rows_read = counts["read"]
                     else:
                         counts, rows_read = self._transform_sheet(session, source, force)
@@ -116,7 +133,7 @@ class BronzeToSilverOperator(BaseOperator):
         return counts, len(bronze_rows)
 
     def _upsert(self, session: Session, source, bronze_rows: list[dict], force: bool) -> dict:
-        counts = {"inserted": 0, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0}
+        counts = {"inserted": 0, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0, "ui_owned": 0}
         now = utcnow()
         hash_columns = row_hash_columns(source.columns)
 
@@ -139,57 +156,63 @@ class BronzeToSilverOperator(BaseOperator):
                 counts["conflicts"] += 1
                 self.log.error(
                     "Conflict: %r occurs %d times with different content (%s) — not taken, "
-                    "existing silver row left unchanged", entries[0][1].get("Name"), len(entries), rows_txt,
+                    "existing silver version left unchanged", entries[0][1].get("Name"), len(entries), rows_txt,
                 )
 
-        existing = {
-            i.key_hash: i
-            for i in session.scalars(select(Initiative).where(Initiative.key_hash.in_(list(by_key))))
-        }
+        existing = current_by_key(session, by_key)
+        ui_owned = ui_owned_use_cases(session)
+        use_case_ids = UseCaseIds(session)
         lookups = _Lookups(session, source.business_unit)
         unmatched: Counter[str] = Counter()
 
         for key, (digest, row) in to_apply.items():
             current = existing.get(key)
+            if current is not None and current.use_case_id in ui_owned:
+                counts["ui_owned"] += 1  # maintained in the UI now, the sheet no longer counts
+                continue
             if current is not None and current.is_active and current.row_hash == digest and not force:
                 counts["unchanged"] += 1
                 continue
             fields = _silver_fields(row, lookups, unmatched)
+            if current is not None and current.is_active and current.row_hash == digest and same_content(current, fields):
+                counts["unchanged"] += 1  # force, but the recomputation changed nothing
+                continue
             transaction = BusinessTransaction(bronze_id=row["ID"], bronze_table_name=source.extract_table)
-            if current is None:
-                session.add(
-                    Initiative(
-                        **fields, key_hash=key, row_hash=digest, is_active=True,
-                        business_transaction=transaction, timestamp=now,
-                    )
+            session.add(
+                Initiative(
+                    **fields, use_case_id=use_case_ids.next() if current is None else current.use_case_id,
+                    key_hash=key, row_hash=digest, business_transaction=transaction, timestamp=now,
                 )
-                counts["inserted"] += 1
-            else:
-                for name, value in fields.items():
-                    setattr(current, name, value)
-                current.row_hash = digest
-                current.is_active = True
-                current.business_transaction = transaction
-                current.timestamp = now
-                counts["updated"] += 1
+            )
+            counts["inserted" if current is None else "updated"] += 1
 
-        # Soft delete: active rows of this extract that the load no longer has.
-        # Conflicting keys are still present in the source, so they are kept.
-        previous_transactions = select(BusinessTransaction.id).where(
+        # Soft delete: active use cases whose current version comes from this
+        # extract and that the load no longer has -> a copy with IsActive = False.
+        # Conflicting keys are still present in the source, so they are kept;
+        # use cases owned by the UI never have a current version from a sheet.
+        this_extract = select(BusinessTransaction.id).where(
             BusinessTransaction.bronze_table_name == source.extract_table
         )
         for row in session.scalars(
-            select(Initiative).where(
-                Initiative.is_active.is_(True), Initiative.business_transaction_id.in_(previous_transactions)
+            current_versions().where(
+                Initiative.is_active.is_(True), Initiative.business_transaction_id.in_(this_extract)
             )
         ):
             if row.key_hash not in by_key:
-                row.is_active = False  # keeps its BusinessTransaction: no bronze record behind this change
-                row.timestamp = now
+                # keeps its BusinessTransaction: no bronze record behind this change
+                session.add(
+                    Initiative(
+                        **{**content_of(row), "is_active": False}, use_case_id=row.use_case_id,
+                        key_hash=row.key_hash, row_hash=row.row_hash,
+                        business_transaction_id=row.business_transaction_id, timestamp=now,
+                    )
+                )
                 counts["deactivated"] += 1
 
         if unmatched:
             self.log.warning("Not matched to config / unknown values (left NULL or 'Unknown'): %s", dict(unmatched))
+        if counts["ui_owned"]:
+            self.log.info("%d rows skipped: their use cases are maintained in the UI", counts["ui_owned"])
         return counts
 
 
@@ -282,10 +305,11 @@ def _silver_fields(row: dict, lookups: _Lookups, unmatched: Counter) -> dict:
         confidence_score=value.confidence_score,
         delivery_score=value.delivery_score,
         one_time_costs=value.one_time_costs,
-        operating_costs=value.operating_costs,
+        running_costs=value.operating_costs,
         depreciation_years=value.depreciation_years,
         owner_id=owner_id,
         solution_type_id=lookups.solution_types[solution_type_name] if solution_type_name else None,
         value_type_id=lookups.value_types[value_type_name] if value_type_name else None,
-        risk_classification_id=risk.level,
+        **{RISK_ANSWER_ATTRIBUTES[c]: v for c, v in risk_answers_for_level(risk.level).items()},
+        is_active=True,
     )

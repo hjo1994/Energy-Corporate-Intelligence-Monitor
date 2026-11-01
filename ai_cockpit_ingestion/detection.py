@@ -19,12 +19,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.lineage import utcnow
-from ai_cockpit_ingestion.models import EXTRACT_TABLES, USER_INPUT_TABLE, TransformationRun
+from ai_cockpit_ingestion.models import EXTRACT_TABLES, USER_ACTION_TABLE, TransformationRun
 from ai_cockpit_ingestion.sources import USER_INPUT, SourceConfig
 
 
 def bronze_table(source: SourceConfig) -> Table:
-    return USER_INPUT_TABLE if source.mode == USER_INPUT else EXTRACT_TABLES[source.extract_table]
+    return USER_ACTION_TABLE if source.mode == USER_INPUT else EXTRACT_TABLES[source.extract_table]
 
 
 def as_naive_utc(moment: datetime.datetime) -> datetime.datetime:
@@ -80,6 +80,8 @@ def finish_run(
         run.rows_read = rows_read
         run.rows_inserted = counts.get("inserted")
         run.rows_updated = counts.get("updated")
-        run.rows_unchanged = counts.get("unchanged")  # the input form's mode has none
-        run.rows_deactivated = counts.get("deactivated")  # the input form's mode never deactivates
-        run.rows_conflict = counts.get("conflicts")
+        run.rows_unchanged = counts.get("unchanged")
+        run.rows_deactivated = counts.get("deactivated")  # the user-action mode never deactivates
+        # conflicts plus the sheet rows skipped because the UI owns their use case
+        conflicts = [counts[k] for k in ("conflicts", "ui_owned") if counts.get(k) is not None]
+        run.rows_conflict = sum(conflicts) if conflicts else None

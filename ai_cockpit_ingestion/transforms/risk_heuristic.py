@@ -144,6 +144,28 @@ class RiskEstimate:
     rule: str
 
 
+# Silver stores the six risk answers of the UI form, not a level, and Gold
+# derives the level from them (transforms.user_input_heuristic.user_input_risk_level).
+# For a sheet initiative the estimated level is turned into the canonical
+# answers of that level: the smallest set of answers that yields exactly it.
+_NO_IMPACT = {
+    "EmployeePersonalData": "no", "PerformanceOrBehaviourControl": False, "DecisionsOnEmployees": "none",
+    "ProfilingOfIndividuals": False, "ChangesEmployeeWorkflows": False, "ProhibitedPractice": False,
+}
+_ANSWERS_BY_LEVEL = {
+    1: {},
+    2: {"ChangesEmployeeWorkflows": True},
+    3: {"EmployeePersonalData": "yes"},
+    4: {"DecisionsOnEmployees": "automated"},
+    5: {"ProhibitedPractice": True},
+}
+
+
+def risk_answers_for_level(level: int) -> dict:
+    """Canonical risk answers (UI column names) for a risk level 1-5."""
+    return {**_NO_IMPACT, **_ANSWERS_BY_LEVEL[level]}
+
+
 def estimate_risk_level(
     *,
     name: str | None,

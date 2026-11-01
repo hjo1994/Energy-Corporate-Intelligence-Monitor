@@ -1,4 +1,4 @@
-# Input Orchestration — Airflow DAGs (Bronze → Silber)
+# Input Orchestration — Airflow DAGs (Bronze → Silber → Gold)
 
 Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 `solution documentation/Architecture.drawio` und `Logical Data Model.drawio`:
@@ -7,7 +7,7 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 | --- | --- | --- | --- |
 | `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
 | `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
-| `bronze_to_silver_<quelle>` (5×: 4 Extracts + `user_input`) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | `@continuous`; eigener Sensor `wait_for_new_bronze` prüft jede Minute die eigene Bronze-Tabelle | Initiative (Silber) |
+| `bronze_to_silver_<quelle>` (5×: 4 Extracts + `user_input`) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | `@continuous`; eigener Sensor `wait_for_new_bronze` prüft jede Minute die eigene Bronze-Tabelle | Initiative (Silber, versioniert) |
 
 1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
    `2026?AI?Initiatives*.xlsx` (passt auf `2026_AI_Initiatives_Elia_Group.xlsx` in
@@ -31,7 +31,7 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
    neue Owner oder Katalogeinträge dazukommen (Silber legt keine an).
 3. **BronzeToSilver (Meta-DAG)** — `build_bronze_to_silver_dag()` erzeugt aus
    einem Template je Eintrag in `ai_cockpit_ingestion/sources.py` einen DAG
-   `bronze_to_silver_<key>` (auch für `UserInput_Initiatives_Extract`). Jeder
+   `bronze_to_silver_<key>` (auch für `UserActionExtracts`). Jeder
    läuft `@continuous` (max. ein offener Lauf) mit eigenem Sensor
    `wait_for_new_bronze` (`operators/new_bronze_sensor.py`, Modus reschedule,
    alle 60 s, `AI_COCKPIT_BRONZE_POKE_SECONDS`): Er prüft nur die eigene
@@ -74,15 +74,28 @@ NBSP zusammenfassen, Zero-Width-Zeichen entfernen, NULL → "", Teile mit
   vorhanden, Added Value, Value, Complexity, Timing start, Timing delivery.
   Nicht: Number, Strategic Link (ETB), Impediments, 2026, Kolom1, Lade-/ID-Spalten.
 
+Silber ist **append-only und versioniert** (seit 11/2026): jede Änderung
+hängt eine neue Version an (neue `ID`, gleiche `UseCaseID`), nichts wird
+überschrieben. Die aktuelle Version eines Use Cases ist die mit der höchsten
+`ID` (`models.current_versions()`); jede Version ist ein vollständiger Stand.
+
 | Fall | Ergebnis |
 | --- | --- |
-| KeyHash neu | Insert (neue ID) |
-| KeyHash bekannt, RowHash anders (oder Zeile inaktiv) | Update in place: ID bleibt, alle Werte inkl. Heuristiken neu, neue BusinessTransactionID |
-| KeyHash bekannt, RowHash gleich | unchanged, nichts geschrieben (BusinessTransactionID bleibt) |
+| KeyHash neu | neuer Use Case (`UseCaseID` = max + 1), erste Version |
+| KeyHash bekannt, RowHash anders (oder Use Case inaktiv) | neue Version: alle Werte inkl. Heuristiken neu, neue BusinessTransactionID |
+| KeyHash bekannt, RowHash gleich | unchanged, nichts geschrieben |
+| Use Case wird in der UI gepflegt (eine Version stammt aus einer User-Action) | `ui_owned`: übersprungen, weder neue Version noch Soft-Delete (zählt in `RowsConflict`) |
 | Key im Load doppelt, gleicher RowHash | einmal übernommen, Warnung (heute ETB „AC_012 check reporting“) |
-| Key im Load doppelt, unterschiedlicher RowHash | Konflikt: nicht übernommen, beide Zeilen geloggt, bestehende Silber-Zeile bleibt |
-| aktive Initiative fehlt im neuen Load | Soft-Delete `IsActive = false` (Backend blendet sie aus); taucht sie wieder auf, wird sie mit alter ID reaktiviert |
-| DAG-Parameter `force = true` | jede bekannte Initiative wird neu berechnet (z. B. nach Heuristik- oder Config-Änderung) |
+| Key im Load doppelt, unterschiedlicher RowHash | Konflikt: nicht übernommen, beide Zeilen geloggt, Use Case bleibt |
+| aktiver Use Case fehlt im neuen Load | Soft-Delete: neue Version mit `IsActive = false` (Kopie, behält die BusinessTransaction); taucht er wieder auf, neue aktive Version desselben Use Cases |
+| DAG-Parameter `force = true` | jeder bekannte Use Case wird neu berechnet, neue Version nur, wo sich das Ergebnis ändert |
+
+Silber speichert statt der Risikostufe die **sechs Risiko-Antworten**; Gold
+leitet daraus die Stufe ab. Für Blatt-Initiativen sind es die kanonischen
+Antworten der geschätzten Stufe (`risk_heuristic.risk_answers_for_level`:
+1 alles nein, 2 `ChangesEmployeeWorkflows`, 3 `EmployeePersonalData = yes`,
+4 `DecisionsOnEmployees = automated`). `OperatingCosts` heißt in Silber
+`RunningCosts`.
 
 Eine Umbenennung ist damit „alte Initiative deaktiviert, neue angelegt“.
 Weil der RowHash die Quelle hasht, wirkt ein später ergänzter Owner
@@ -90,37 +103,56 @@ Weil der RowHash die Quelle hasht, wirkt ein später ergänzter Owner
 
 **BusinessTransaction** (`BusinessTransaction`: `ID`, `BronzeID`,
 `BronzeTableName`): ein Eintrag je
-Bronze-Zeile, aus der eine Initiative angelegt oder geändert wurde. Die
-Initiative zeigt per `BusinessTransactionID` darauf: Initiative →
+Bronze-Zeile, aus der eine Version entstand, und je verarbeiteter User-Action
+(auch unveränderte und abgelehnte, damit keine doppelt gelesen wird). Die
+Version zeigt per `BusinessTransactionID` darauf: Initiative →
 BusinessTransaction → Bronze-Zeile (`BronzeTableName`, `BronzeID`) →
-`Timestamp`, `SourceFileID`. Unveränderte Initiativen bekommen keinen neuen
-Eintrag, deaktivierte behalten ihren. RawToBronze schreibt keine
+`Timestamp`, `SourceFileID`. Unveränderte Blatt-Zeilen bekommen keinen
+Eintrag, Soft-Delete-Versionen behalten den vorigen. RawToBronze schreibt keine
 BusinessTransaction. Laufzähler (inserted, updated, unchanged, deactivated,
 conflicts) stehen im Task-Log und als Rückgabewert (XCom).
 
-**User-Input (Bronze)** (`UserInput_Initiatives_Extract`): eine Zeile je
-Initiative, die über die Eingabemaske der UI angelegt wird (schreibt das
-Backend). `bronze_to_silver_user_input` (eigener Modus, `sources.USER_INPUT_SOURCE`,
-`operators/user_input_to_silver.py`) liest nur Datensätze ohne
-BusinessTransaction, legt daraus Initiativen an (kein Soft-Delete), nimmt die
-Business Unit aus dem Owner (KeyHash = BU + Name; Kollision mit einer Initiative
-anderer Herkunft → Konflikt, nichts überschrieben) und rechnet Value, Kosten und
-Risikostufe direkt aus den Eingaben (`transforms/user_input_heuristic.py`,
-Testfälle in `tests/fixtures/user_input_cases.json`, die Backend und UI teilen). Wie die Extract-Tabellen nur anhängend, aber
-typisiert und per CHECK/FK abgesichert: Stammdaten als IDs der Config-Tabellen
-(`OwnerID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (9 Werte), `DateStart`/
-`DateDelivery` als Quartal („Q2 2027“), die Value-Treiber je Hebel
-(`CasesPerYear`, `HoursSavedPerCase`, `ErrorRateBefore`, `ErrorsAvoided`,
-`CostPerError`, `RiskEventsPerYear`, `EventsAvoided`, `CostPerEvent`,
-`DelayEventsPerYear`, `CostOfDelayPerEvent`, `LeadTimeSaved`; Anteile 0–1,
-leerer Hebel = 0), `EstimateBasis`, `DeliveryLikelihood`,
-`SolutionComplexityScore` (1–9), `OneTimeCosts`, `OperatingCosts` und die
-Risiko-Indikatoren nach Rahmenbetriebsvereinbarung KI
-(`EmployeePersonalData`, `PerformanceOrBehaviourControl`,
-`DecisionsOnEmployees`, `ProfilingOfIndividuals`,
-`ChangesEmployeeWorkflows`, `ProhibitedPractice`). `SourceFileID` ist immer
-`user-input`, `SubmittedBy` der angemeldete Nutzer. Angelegt wird sie wie alle
-Tabellen idempotent über `create_all` (`db.get_engine`).
+**User-Actions (Bronze)** (`UserActionExtracts`, ersetzt
+`UserInput_Initiatives_Extract`): eine Zeile je Aktion in der UI (schreibt das
+Backend), `ActionType`:
+
+- `create` (Formular 1, neue AI-Idee): `UseCaseID` leer, Pflichtfelder wie
+  bisher; wird ein neuer Use Case mit Status `pending`. KeyHash = Business Unit
+  des Owners + Name; schon vergeben → Konflikt.
+- `update` (Formular 1 bearbeiten, Formular 2, Stage-Gate): nur die gesetzten
+  Felder zählen, sie werden auf die aktuelle Version gelegt. Name und Business
+  Unit sind unveränderlich (wird ignoriert, Warnung). `Stagegate` + `PassedAt`
+  = zuletzt passiertes Gate.
+- `approve` (nur aus `pending`): `LeadID` Pflicht, Needs-Gate passiert.
+- `reject` (nur aus `pending`): `Comment` Pflicht.
+
+`bronze_to_silver_user_input` (`operators/user_input_to_silver.py`) liest nur
+Datensätze ohne BusinessTransaction, in ID-Reihenfolge, und gibt jedem eine
+(neue Version, unchanged oder Konflikt). Value-Buckets, Faktoren und Kosten
+werden aus den Treibern **aller Aktionen des Use Cases zusammengeführt**
+berechnet (spätere Werte gewinnen, `transforms/user_input_heuristic.py`,
+Testfälle in `tests/fixtures/user_input_cases.json`, die Backend und UI teilen);
+ein Update muss also nur geänderte Treiber mitschicken. `ActualCosts` =
+`ActualCapex` + `ActualOpex`. Die erste User-Action auf einem Blatt-Use-Case
+macht ihn „UI-owned“; der Blatt-Import lässt ihn danach in Ruhe. `force`
+rechnet zusätzlich alle Use Cases mit User-Actions neu.
+
+Typisiert und per CHECK/FK abgesichert: Stammdaten als IDs der Config-Tabellen
+(`OwnerID`, `LeadID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (9 Werte),
+`DateStart`/`DateDelivery` als Quartal („Q2 2027“), die Value-Treiber je Hebel
+(Anteile 0–1, leerer Hebel = 0), `EstimateBasis`, `DeliveryLikelihood`,
+`SolutionComplexityScore` (1–9), `OneTimeCosts`, `OperatingCosts`, die
+Risiko-Indikatoren nach Rahmenbetriebsvereinbarung KI und die Felder aus
+Formular 2 (`AILayer`, `EnablingTeam`, `EUAIActClass`, `EUAIActRole`,
+`WorksCouncilRiskClass`, `CapabilityDirection` mit festen Werten; KPIs,
+Value Domain, Autonomy Level, Zielgruppen als Text; `SafetyComponent`,
+`WorksCouncilApprovedAt`, `ExpectedUsers`, `MeasuredBenefits`, `ActualCapex`,
+`ActualOpex`). `SourceFileID` ist immer `user-input`, `SubmittedBy` der
+angemeldete Nutzer (in Silber `ChangedBy`).
+
+**Gold** (`AssessedInitiatives`): eine Zeile je Use Case mit `PotentialValue`,
+`RealizedValue`, `RiskClassificationID` und den Feldern fürs Dashboard; die
+Tabelle ist angelegt, befüllt wird sie vom SilverToGold-DAG (nächster Schritt).
 
 Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
 oder in der UI „Trigger DAG w/ config“. Der Sensor wartet dann nicht auf neue
@@ -221,6 +253,20 @@ Jede DAG-Datei importiert zuerst `dependency_loader` (wie bisher). Airflow
 2.10 bringt **SQLAlchemy 1.4** mit; der Code ist darauf getestet (der
 DELETE im Silber-Operator läuft deshalb ohne Autoflush, siehe Kommentar dort).
 Pfade im Cluster: `SOURCE_DIR=/data/source`, `AI_COCKPIT_DB_PATH=/data/db/ai_cockpit.db`.
+
+## Deploy-Hinweise Lifecycle-Datenmodell (Stand 01.11.2026)
+
+- **Nur zusammen mit dem angepassten Backend deployen**: das Backend liest
+  heute `Initiative.RiskClassificationID`/`OperatingCosts` und schreibt in
+  `UserInput_Initiatives_Extract`; beides ändert sich hier.
+- **Migration automatisch** (`migrations/lifecycle_2026_11.py`, läuft in
+  `db.get_engine`): erkennt das alte `Initiative` (ohne `UseCaseID`), kopiert
+  `UserInput_Initiatives_Extract` als `create` nach `UserActionExtracts` (alte
+  Tabelle bleibt), löscht Silber, leert `BusinessTransaction` und
+  `TransformationRun` und legt die neuen Tabellen an. Die
+  `bronze_to_silver_*`-DAGs bauen Silber danach aus Bronze neu auf; die
+  Use Cases bekommen dabei neue `UseCaseID`s. Lokal verifiziert gegen die
+  Excel: 164 Use Cases, zweiter Lauf und `force` nur „unchanged“.
 
 ## Deploy-Hinweise (Stand 25.10.2026)
 

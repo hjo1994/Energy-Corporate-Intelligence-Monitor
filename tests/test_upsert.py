@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ai_cockpit_ingestion.db import get_engine
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
+    current_versions,
     BusinessTransaction,
     Initiative,
     Owner,
@@ -19,7 +20,9 @@ from ai_cockpit_ingestion.models import (
 )
 from ai_cockpit_ingestion.operators.bronze_to_silver import BronzeToSilverOperator
 from ai_cockpit_ingestion.sources import SOURCES_BY_KEY
-from ai_cockpit_ingestion.transforms.risk_heuristic import RISK_LEVELS
+from ai_cockpit_ingestion.operators.user_input_to_silver import RISK_ANSWER_ATTRIBUTES
+from ai_cockpit_ingestion.transforms.risk_heuristic import RISK_LEVELS, estimate_risk_level, risk_answers_for_level
+from ai_cockpit_ingestion.transforms.user_input_heuristic import user_input_risk_level
 from ai_cockpit_ingestion.transforms.upsert_keys import key_hash, row_hash, row_hash_columns
 
 IT = SOURCES_BY_KEY["it"]
@@ -83,26 +86,38 @@ def _load(engine, rows):
 
 
 def _silver(engine, force=False):
+    """Runs the IT DAG; returns its counts and the current version per name
+    as (UseCaseID, IsActive, BusinessTransactionID)."""
     op = BronzeToSilverOperator(task_id="t", source_key="it", db_path=str(engine.url.database))
     counts = op.execute({"params": {"force": force}})
     with Session(engine) as s:
-        rows = {i.name: (i.id, i.is_active, i.business_transaction_id) for i in s.scalars(select(Initiative))}
+        rows = {i.name: (i.use_case_id, i.is_active, i.business_transaction_id) for i in s.scalars(current_versions())}
         return counts, rows
 
 
-def test_insert_unchanged_update_deactivate_and_force(engine):
+def _versions(engine, name):
+    with Session(engine) as s:
+        return s.scalars(select(Initiative).where(Initiative.name == name).order_by(Initiative.id)).all()
+
+
+def _counts(**over):
+    return {"inserted": 0, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0, "ui_owned": 0, **over}
+
+
+def test_insert_unchanged_new_version_deactivate_and_force(engine):
     _load(engine, [_row("Alpha"), _row("Beta"), _row("Gamma")])
     counts, first = _silver(engine)
-    assert counts == {"inserted": 3, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 0}
+    assert counts == _counts(inserted=3)
+    assert sorted(uc for uc, _, _ in first.values()) == [1, 2, 3]  # one new use case each
 
     # same content again (bronze grows, silver untouched)
     _load(engine, [_row("Alpha"), _row("Beta"), _row("Gamma")])
     counts, second = _silver(engine)
-    assert counts == {"inserted": 0, "updated": 0, "unchanged": 3, "deactivated": 0, "conflicts": 0}
-    assert second == first  # same IDs, still pointing to the first transaction
+    assert counts == _counts(unchanged=3)
+    assert second == first  # still the first versions, pointing to the first transaction
     with Session(engine) as s:
         assert len(s.execute(select(EXTRACT_TABLES[IT.extract_table])).all()) == 6
-        # one BusinessTransaction per inserted initiative, pointing to its bronze record
+        # one BusinessTransaction per version, pointing to its bronze record
         bts = s.scalars(select(BusinessTransaction)).all()
         assert len(bts) == 3 and {b.bronze_table_name for b in bts} == {IT.extract_table}
         assert sorted(b.bronze_id for b in bts) == [1, 2, 3]
@@ -110,28 +125,53 @@ def test_insert_unchanged_update_deactivate_and_force(engine):
     # change Alpha, drop Beta, add Delta; Number/Impediments changes alone are no delta
     _load(engine, [_row("Alpha", Status="PoC"), _row("Gamma", Number="7", Impediments="x"), _row("Delta")])
     counts, third = _silver(engine)
-    assert counts == {"inserted": 1, "updated": 1, "unchanged": 1, "deactivated": 1, "conflicts": 0}
-    assert third["Alpha"][:2] == (first["Alpha"][0], True)  # updated in place ...
-    assert third["Alpha"][2] != first["Alpha"][2]  # ... with a new BusinessTransaction
-    assert third["Beta"] == (first["Beta"][0], False, first["Beta"][2])  # soft-deleted, keeps its BT
+    assert counts == _counts(inserted=1, updated=1, unchanged=1, deactivated=1)
+    alpha = _versions(engine, "Alpha")
+    assert [(v.use_case_id, v.stage) for v in alpha] == [(1, "Idea"), (1, "PoC")]  # appended, first kept
+    assert third["Alpha"][2] != first["Alpha"][2]  # the new version has a new BusinessTransaction
+    assert third["Beta"] == (first["Beta"][0], False, first["Beta"][2])  # soft delete = copy, keeps its BT
+    assert [v.is_active for v in _versions(engine, "Beta")] == [True, False]
     assert third["Gamma"] == first["Gamma"]
-    assert third["Delta"][1] is True
+    assert third["Delta"][:2] == (4, True)
 
-    # Beta comes back -> reactivated with its old ID
+    # Beta comes back -> a new active version of the same use case
     _load(engine, [_row("Alpha", Status="PoC"), _row("Beta"), _row("Gamma"), _row("Delta")])
     counts, fourth = _silver(engine)
-    assert counts["updated"] == 1 and fourth["Beta"][:2] == (first["Beta"][0], True)
+    assert counts == _counts(updated=1, unchanged=3) and fourth["Beta"][:2] == (first["Beta"][0], True)
 
-    # force recomputes everything
+    # force recomputes everything, but only a changed result is a new version
+    with Session(engine) as s:
+        before = s.query(Initiative).count()
     counts, _ = _silver(engine, force=True)
-    assert counts == {"inserted": 0, "updated": 4, "unchanged": 0, "deactivated": 0, "conflicts": 0}
+    assert counts == _counts(unchanged=4)
+    with Session(engine) as s:
+        assert s.query(Initiative).count() == before
+
+
+def test_sheet_rows_get_the_canonical_risk_answers_of_their_estimated_level(engine):
+    _load(engine, [_row("Alpha"), _row("HR", Description="Recruiting: applicant screening")])
+    _silver(engine)
+    alpha, hr = _versions(engine, "Alpha")[0], _versions(engine, "HR")[0]
+    assert user_input_risk_level(_answers(alpha)).level == estimate_risk_level(
+        name="Alpha", description="About Alpha", solution_type="Copilot").level
+    assert (hr.decisions_on_employees, user_input_risk_level(_answers(hr)).level) == ("automated", 4)
+    assert (alpha.status, alpha.running_costs is not None) == (None, True)
+
+
+def _answers(version):
+    return {c: getattr(version, a) for c, a in RISK_ANSWER_ATTRIBUTES.items()}
+
+
+@pytest.mark.parametrize("level", [1, 2, 3, 4, 5])
+def test_risk_answers_for_level_yield_that_level(level):
+    assert user_input_risk_level(risk_answers_for_level(level)).level == level
 
 
 def test_duplicate_keys_in_one_load(engine):
     _load(engine, [_row("Alpha"), _row("Alpha "), _row("Beta", Status="Idea"), _row("Beta", Status="PoC")])
     counts, rows = _silver(engine)
     # identical content -> taken once; different content -> conflict, not taken
-    assert counts == {"inserted": 1, "updated": 0, "unchanged": 0, "deactivated": 0, "conflicts": 1}
+    assert counts == _counts(inserted=1, conflicts=1)
     assert list(rows) == ["Alpha"]
 
 

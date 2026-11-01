@@ -8,7 +8,7 @@ from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.models import USER_INPUT_TABLE, USER_INPUT_TABLE_NAME, Owner, SolutionType, ValueType
+from ai_cockpit_ingestion.models import USER_ACTION_TABLE, USER_ACTION_TABLE_NAME, Owner, SolutionType, ValueType
 
 
 @pytest.fixture()
@@ -28,6 +28,7 @@ def record(**over):
     return {
         "Timestamp": datetime.datetime(2026, 10, 25, 13, 0),
         "SubmittedBy": "jonas",
+        "ActionType": "create",
         "Name": "Smart Invoice Check",
         "Description": "Checks incoming invoices against the order",
         "OwnerID": 1,
@@ -58,26 +59,29 @@ def record(**over):
 
 def add(engine, **over):
     with engine.begin() as conn:
-        return conn.execute(insert(USER_INPUT_TABLE).values(record(**over))).inserted_primary_key[0]
+        return conn.execute(insert(USER_ACTION_TABLE).values(record(**over))).inserted_primary_key[0]
 
 
 def test_table_is_created_with_the_data_model(engine):
     inspector = inspect(engine)
-    assert USER_INPUT_TABLE_NAME in inspector.get_table_names()
-    columns = [c["name"] for c in inspector.get_columns(USER_INPUT_TABLE_NAME)]
+    assert USER_ACTION_TABLE_NAME in inspector.get_table_names()
+    columns = [c["name"] for c in inspector.get_columns(USER_ACTION_TABLE_NAME)]
     assert columns[:4] == ["ID", "Timestamp", "SourceFileID", "SubmittedBy"]
-    assert {"CasesPerYear", "LeadTimeSaved", "EstimateBasis", "ProhibitedPractice"} <= set(columns)
-    assert len(columns) == 34
-    assert {fk["referred_table"] for fk in inspector.get_foreign_keys(USER_INPUT_TABLE_NAME)} == {
+    assert {"ActionType", "UseCaseID", "Stagegate", "LeadID", "CasesPerYear", "LeadTimeSaved", "EstimateBasis",
+            "ProhibitedPractice", "AILayer", "MeasuredBenefits", "ActualCapex", "ActualOpex"} <= set(columns)
+    assert len(columns) == 60
+    assert {fk["referred_table"] for fk in inspector.get_foreign_keys(USER_ACTION_TABLE_NAME)} == {
         "Owner", "ValueType", "SolutionType",
     }
-    assert [i["column_names"] for i in inspector.get_indexes(USER_INPUT_TABLE_NAME)] == [["Timestamp"]]
+    assert sorted(i["column_names"] for i in inspector.get_indexes(USER_ACTION_TABLE_NAME)) == [
+        ["Timestamp"], ["UseCaseID"],
+    ]
 
 
 def test_valid_record_is_stored_with_empty_levers_left_null(engine):
     assert add(engine) == 1
     with engine.connect() as conn:
-        row = conn.execute(USER_INPUT_TABLE.select()).one()._mapping
+        row = conn.execute(USER_ACTION_TABLE.select()).one()._mapping
     assert row["SourceFileID"] == "user-input"
     assert row["RiskEventsPerYear"] is None and row["LeadTimeSaved"] is None
 
@@ -103,9 +107,33 @@ def test_valid_record_is_stored_with_empty_levers_left_null(engine):
         {"OneTimeCosts": None},
         {"OwnerID": 99},  # not in the config
         {"ValueTypeID": 99},
+        {"ActionType": "delete"},
+        {"Status": "done"},
+        {"AILayer": "Some AI"},
+        {"EUAIActClass": "medium"},
+        {"Stagegate": "Needs"},  # without PassedAt
+        {"PassedAt": datetime.datetime(2026, 11, 1)},  # without Stagegate
+        {"ActionType": "update"},  # without UseCaseID
+        {"ActionType": "approve", "UseCaseID": 1},  # without LeadID
+        {"ActionType": "reject", "UseCaseID": 1},  # without Comment
+        {"ExpectedUsers": -1},
+        {"ActualOpex": -1},
     ],
 )
 def test_constraints_reject_invalid_input(engine, over):
     # IntegrityError from the database, or StatementError where SQLAlchemy refuses first (Boolean)
     with pytest.raises(StatementError):
         add(engine, **over)
+
+
+def test_update_needs_only_the_use_case_and_what_changes(engine):
+    add(engine)
+    update = {c: None for c in record()} | {
+        "Timestamp": datetime.datetime(2026, 11, 1), "SubmittedBy": "sara", "ActionType": "update", "UseCaseID": 1,
+        "AILayer": "Operational and advanced AI", "Stagegate": "Scope", "PassedAt": datetime.datetime(2026, 11, 1),
+    }
+    with engine.begin() as conn:
+        conn.execute(insert(USER_ACTION_TABLE).values(update))
+        conn.execute(insert(USER_ACTION_TABLE).values(
+            {k: None for k in update} | {"Timestamp": update["Timestamp"], "SubmittedBy": "lena", "ActionType": "approve",
+                                         "UseCaseID": 1, "LeadID": 1}))

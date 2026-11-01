@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 
 SHEET = "sheet"  # a raw sheet: snapshot loads, one business unit, soft delete
-USER_INPUT = "user_input"  # the input form: one record per new initiative, see USER_INPUT_SOURCE
+USER_INPUT = "user_input"  # the UI: one record per user action, see USER_INPUT_SOURCE
 
 
 @dataclass(frozen=True)
@@ -86,16 +86,18 @@ SOURCES: tuple[SourceConfig, ...] = (
     ),
 )
 
-# The input form's bronze table (models.USER_INPUT_TABLE). Not a sheet, so it is
-# not in SOURCES (RawToBronze, seed_config and the extract tables are sheet-only);
-# the BronzeToSilver meta DAG renders a DAG for it too, in its own mode:
-# incremental (only records without a BusinessTransaction yet), no soft delete,
-# the business unit per record (from its owner), typed drivers instead of the
-# sheet heuristic (transforms.user_input_heuristic).
+# The UI's bronze table (models.USER_ACTION_TABLE, user actions create/update/
+# approve/reject). Not a sheet, so it is not in SOURCES (RawToBronze, seed_config
+# and the extract tables are sheet-only); the BronzeToSilver meta DAG renders a
+# DAG for it too, in its own mode (operators.user_input_to_silver): incremental
+# (only records without a BusinessTransaction yet), no soft delete, the business
+# unit per use case (from its owner), typed drivers instead of the sheet
+# heuristic (transforms.user_input_heuristic). Key and mode keep their names so
+# the DAG ID (bronze_to_silver_user_input) stays the same.
 USER_INPUT_SOURCE = SourceConfig(
     key="user_input",
     sheet_name="",
-    extract_table="UserInput_Initiatives_Extract",
+    extract_table="UserActionExtracts",
     business_unit="",
     columns=(),
     mode=USER_INPUT,

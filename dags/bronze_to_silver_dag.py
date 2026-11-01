@@ -1,7 +1,7 @@
 """BronzeToSilver meta DAG: a factory that renders one DAG per bronze table.
 
 For every entry in sources.BRONZE_TO_SILVER_SOURCES (the four sheet extracts
-and the input form's UserInput_Initiatives_Extract) `build_bronze_to_silver_dag`
+and the UI's UserActionExtracts) `build_bronze_to_silver_dag`
 renders a DAG `bronze_to_silver_<key>`. Each of them checks only its own table:
 
 - schedule "@continuous" with max_active_runs=1: one run is always open and
@@ -9,13 +9,13 @@ renders a DAG `bronze_to_silver_<key>`. Each of them checks only its own table:
 - wait_for_new_bronze, the DAG's own sensor (operators/new_bronze_sensor.py),
   checks every POKE_SECONDS whether its table has unprocessed data
   (detection.py): a sheet whose newest load is later than its
-  BronzeLoadWatermark, input-form records without a BusinessTransaction.
+  BronzeLoadWatermark, user-action records without a BusinessTransaction.
   Reschedule mode, so it holds no worker slot between checks. After
   SENSOR_TIMEOUT without new data it is skipped (soft fail), the run ends
   green and the next one starts — no red runs, one empty run per day at most;
 - bronze_to_silver then runs the BronzeToSilverOperator in the table's mode (sheet:
   snapshot upsert with soft delete, advancing the watermark in the same
-  transaction; input form: incremental).
+  transaction; user actions: incremental), each change a new silver version.
 
 Trigger with {"force": true} to skip the check and recompute every
 initiative of that table. A new bronze table only needs a SourceConfig entry,
@@ -53,7 +53,7 @@ def build_bronze_to_silver_dag(source: SourceConfig) -> DAG:
     with DAG(
         dag_id=f"bronze_to_silver_{source.key}",
         description=(
-            f"{source.extract_table} -> Initiative (new initiatives from the input form)"
+            f"{source.extract_table} -> Initiative (user actions from the UI: create, update, approve, reject)"
             if source.mode == USER_INPUT
             else f"{source.extract_table} -> Initiative (business unit {source.business_unit})"
         ),

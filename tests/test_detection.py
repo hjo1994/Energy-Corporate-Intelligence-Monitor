@@ -10,7 +10,7 @@ from ai_cockpit_ingestion.db import get_engine
 from ai_cockpit_ingestion.detection import is_new
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
-    USER_INPUT_TABLE,
+    USER_ACTION_TABLE,
     Initiative,
     Owner,
     RiskClassification,
@@ -81,8 +81,8 @@ def _load_it(engine, at, names=("Alpha",)):
 
 def _submit(engine, at, name="New"):
     with engine.begin() as conn:
-        conn.execute(insert(USER_INPUT_TABLE).values(
-            Timestamp=at, SubmittedBy="t", Name=name, Description="d",
+        conn.execute(insert(USER_ACTION_TABLE).values(
+            Timestamp=at, SubmittedBy="t", ActionType="create", Name=name, Description="d",
             OwnerID=1, ValueTypeID=1, SolutionTypeID=1, Stage="Idea", CasesPerYear=10, HoursSavedPerCase=1,
             EstimateBasis="rough", DeliveryLikelihood="low", SolutionComplexityScore=3, OneTimeCosts=0,
             OperatingCosts=0, EmployeePersonalData="no", PerformanceOrBehaviourControl=False,
@@ -125,7 +125,7 @@ def test_first_run_on_existing_data_changes_nothing_in_silver(engine):
         before = {(i.id, i.business_transaction_id, i.timestamp, i.row_hash) for i in s.scalars(select(Initiative))}
     assert _poke(engine, "it") is True
     counts = _transform(engine, "it")
-    assert counts == {"inserted": 0, "updated": 0, "unchanged": 2, "deactivated": 0, "conflicts": 0}
+    assert counts == {"inserted": 0, "updated": 0, "unchanged": 2, "deactivated": 0, "conflicts": 0, "ui_owned": 0}
     with Session(engine) as s:
         assert {(i.id, i.business_transaction_id, i.timestamp, i.row_hash) for i in s.scalars(select(Initiative))} == before
     assert _poke(engine, "it") is False
@@ -168,7 +168,7 @@ def test_user_input_submission_is_new_until_transformed(engine):
     assert _poke(engine, "user_input") is True
     _transform(engine, "user_input")
     run = _runs(engine)[-1]
-    assert (run.status, run.rows_read, run.rows_inserted, run.rows_unchanged) == ("success", 1, 1, None)
+    assert (run.status, run.rows_read, run.rows_inserted, run.rows_unchanged) == ("success", 1, 1, 0)
     assert _poke(engine, "user_input") is False
     _submit(engine, T0 + datetime.timedelta(minutes=1), name="Another")
     assert _poke(engine, "user_input") is True

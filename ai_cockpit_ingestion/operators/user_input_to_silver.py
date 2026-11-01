@@ -1,117 +1,285 @@
-"""BronzeToSilver for the input form (sources.USER_INPUT_SOURCE): turns
-UserInput_Initiatives_Extract records into silver initiatives.
+"""BronzeToSilver for the UI (sources.USER_INPUT_SOURCE): applies the user
+actions in UserActionExtracts to the versioned silver table.
 
 Differences to the sheet mode (operators.bronze_to_silver):
 
-- Incremental: only records without a BusinessTransaction yet are read, and
-  each of them is applied (force=True reads all of them again and recomputes
-  their initiatives).
-- No soft delete: a submission is not a snapshot, an initiative entered
-  once stays until it is changed elsewhere.
-- Business unit per record, from its owner (Owner.Category); KeyHash is
-  built like for the sheets (business unit + name), so the same initiative
-  cannot exist twice in one business unit. The Backend rejects such input
-  (409); should one get here anyway, the record is skipped as a conflict
-  and the existing initiative, e.g. one from a sheet, is left untouched.
-- Value, costs and risk level come from the entered drivers and
-  indicators (transforms.user_input_heuristic), not from free text.
-
-Every inserted or updated initiative gets a BusinessTransaction pointing to
-its record, exactly like the sheet mode.
+- Incremental: only records without a BusinessTransaction yet are read, in
+  ID order. Every record read gets one, whatever its outcome (new version,
+  unchanged, conflict), so no record is applied twice and a stale update is
+  never applied again later.
+- No soft delete: a user action is not a snapshot.
+- Each change is merged onto the use case's current version and written as a
+  new version (full snapshot, same UseCaseID):
+  - create: a new use case (UseCaseID = max + 1), status pending. KeyHash =
+    business unit of the owner (Owner.Category) + name, like for the sheets.
+    A key that already belongs to a use case is a conflict (the Backend
+    rejects such input with 409); the record is not taken.
+  - update: the fields that are set replace those of the current version.
+    Name and business unit cannot change: a different name, or an owner from
+    another business unit, is ignored (warning). A stage gate (Stagegate +
+    PassedAt) becomes the use case's last passed gate.
+  - approve: only from pending -> approved, with the use case lead (LeadID)
+    and the Needs gate (or the gate given) passed at PassedAt (default: the
+    record's Timestamp).
+  - reject: only from pending -> rejected, with the comment.
+  - unknown use case, or a decision on a use case that is not pending ->
+    conflict, nothing written.
+  - the result equals the current version -> unchanged, nothing written.
+- Value buckets, factors and costs come from the entered drivers
+  (transforms.user_input_heuristic), merged over all actions of the use case
+  in order (a later value wins), so an update may carry only the drivers that
+  changed. They are recomputed whenever the merged actions contain the base
+  inputs (EstimateBasis, DeliveryLikelihood, OneTimeCosts, OperatingCosts),
+  which every create does; a sheet use case edited in the UI keeps its
+  estimated buckets until those are entered. ActualCosts = ActualCapex +
+  ActualOpex, merged the same way.
+- RowHash of a UI version is the hash of its content (versions.content_hash).
+- The first user action on a sheet use case makes it UI-owned: the sheet
+  import leaves it alone from then on.
+- force=True additionally recomputes the current version of every use case
+  that has user actions (e.g. after a formula change); a new version only
+  where the result differs.
 """
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.lineage import utcnow
-from ai_cockpit_ingestion.models import USER_INPUT_TABLE, USER_INPUT_TABLE_NAME, BusinessTransaction, Initiative, Owner
-from ai_cockpit_ingestion.transforms.upsert_keys import key_hash, row_hash
-from ai_cockpit_ingestion.transforms.user_input_heuristic import (
-    estimate_user_input_value,
-    quarter_start,
-    user_input_risk_level,
+from ai_cockpit_ingestion.models import (
+    USER_ACTION_TABLE,
+    USER_ACTION_TABLE_NAME,
+    BusinessTransaction,
+    Initiative,
+    Owner,
+)
+from ai_cockpit_ingestion.transforms.normalize import clean_text
+from ai_cockpit_ingestion.transforms.upsert_keys import key_hash, normalize
+from ai_cockpit_ingestion.transforms.user_input_heuristic import estimate_user_input_value, quarter_start
+from ai_cockpit_ingestion.versions import (
+    UseCaseIds,
+    content_hash,
+    content_of,
+    current_by_key,
+    current_version,
+    same_content,
+    ui_owned_use_cases,
 )
 
-# Everything the user entered; the technical columns are no content.
-HASH_COLUMNS = tuple(
-    c.name for c in USER_INPUT_TABLE.columns if c.name not in ("ID", "Timestamp", "SourceFileID", "SubmittedBy")
-)
+RISK_ANSWER_ATTRIBUTES = {
+    "EmployeePersonalData": "employee_personal_data",
+    "PerformanceOrBehaviourControl": "performance_or_behaviour_control",
+    "DecisionsOnEmployees": "decisions_on_employees",
+    "ProfilingOfIndividuals": "profiling_of_individuals",
+    "ChangesEmployeeWorkflows": "changes_employee_workflows",
+    "ProhibitedPractice": "prohibited_practice",
+}
+
+# User-action columns copied 1:1 onto the version when they are set.
+FIELD_ATTRIBUTES = {
+    "Description": "description",
+    "OwnerID": "owner_id",
+    "LeadID": "lead_id",
+    "ValueTypeID": "value_type_id",
+    "SolutionTypeID": "solution_type_id",
+    "Stage": "stage",
+    "Status": "status",
+    "Comment": "comment",
+    **RISK_ANSWER_ATTRIBUTES,
+    "AILayer": "ai_layer",
+    "EnablingTeam": "enabling_team",
+    "ComplexitySolidity": "complexity_solidity",
+    "StrategicKPIs": "strategic_kpis",
+    "TacticalKPIs": "tactical_kpis",
+    "ValueDomain": "value_domain",
+    "AutonomyLevel": "autonomy_level",
+    "EUAIActClass": "eu_ai_act_class",
+    "EUAIActRole": "eu_ai_act_role",
+    "WorksCouncilRiskClass": "works_council_risk_class",
+    "TargetUserGroups": "target_user_groups",
+    "ApplicableTo": "applicable_to",
+    "CapabilityDirection": "capability_direction",
+    "SafetyComponent": "safety_component",
+    "WorksCouncilApprovedAt": "works_council_approved_at",
+    "ExpectedUsers": "expected_users",
+    "MeasuredBenefits": "measured_benefits",
+}
+_TEXT_COLUMNS = ("Description", "Comment", "StrategicKPIs", "TacticalKPIs", "ValueDomain", "AutonomyLevel", "TargetUserGroups")
+BASE_INPUTS = ("EstimateBasis", "DeliveryLikelihood", "OneTimeCosts", "OperatingCosts")
 
 
-def upsert_user_input(session: Session, force: bool, log: logging.Logger) -> dict:
-    counts = {"read": 0, "inserted": 0, "updated": 0, "conflicts": 0}
-    now = utcnow()
+def apply_user_actions(session: Session, force: bool, log: logging.Logger) -> dict:
+    counts = {"read": 0, "inserted": 0, "updated": 0, "unchanged": 0, "conflicts": 0}
     processed = select(BusinessTransaction.bronze_id).where(
-        BusinessTransaction.bronze_table_name == USER_INPUT_TABLE_NAME
+        BusinessTransaction.bronze_table_name == USER_ACTION_TABLE_NAME
     )
-    query = select(USER_INPUT_TABLE).order_by(USER_INPUT_TABLE.c.ID)
-    if not force:
-        query = query.where(USER_INPUT_TABLE.c.ID.not_in(processed))
-    records = [dict(r._mapping) for r in session.execute(query)]
+    records = [
+        dict(r._mapping)
+        for r in session.execute(
+            select(USER_ACTION_TABLE).where(USER_ACTION_TABLE.c.ID.not_in(processed)).order_by(USER_ACTION_TABLE.c.ID)
+        )
+    ]
     counts["read"] = len(records)
-    if not records:
-        return counts
-
-    business_units = {o.id: o.category or "" for o in session.scalars(select(Owner))}
-    user_input_transactions = set(session.scalars(processed.with_only_columns(BusinessTransaction.id)))
-
-    for record in records:
-        key = key_hash(business_units.get(record["OwnerID"], ""), record["Name"])
-        digest = row_hash(record, HASH_COLUMNS)
-        current = session.scalars(select(Initiative).where(Initiative.key_hash == key)).one_or_none()
-        if current is not None and current.business_transaction_id not in user_input_transactions:
-            counts["conflicts"] += 1
-            log.error(
-                "Conflict: user input %r (record %d) has the key of initiative %d from another source — "
-                "not taken, the existing initiative is left unchanged", record["Name"], record["ID"], current.id,
-            )
-            continue
-        transaction = BusinessTransaction(bronze_id=record["ID"], bronze_table_name=USER_INPUT_TABLE_NAME)
-        fields = _silver_fields(record)
-        if current is None:
-            session.add(
-                Initiative(
-                    **fields, key_hash=key, row_hash=digest, is_active=True,
-                    business_transaction=transaction, timestamp=now,
-                )
-            )
-            counts["inserted"] += 1
-        else:
-            for name, value in fields.items():
-                setattr(current, name, value)
-            current.row_hash = digest
-            current.is_active = True
-            current.business_transaction = transaction
-            current.timestamp = now
-            counts["updated"] += 1
-        session.flush()  # the next record may have the same key
-        user_input_transactions.add(transaction.id)
+    if records:
+        context = _Context(session, log)
+        for record in records:
+            transaction = BusinessTransaction(bronze_id=record["ID"], bronze_table_name=USER_ACTION_TABLE_NAME)
+            session.add(transaction)
+            counts[context.apply(record, transaction)] += 1
+            session.flush()  # the next record may concern the same use case
+    if force:
+        context = _Context(session, log)
+        for use_case_id in sorted(ui_owned_use_cases(session)):
+            counts[context.recompute(use_case_id)] += 1
     return counts
 
 
-def _silver_fields(record: dict) -> dict:
-    value = estimate_user_input_value(record)
-    return dict(
-        name=record["Name"].strip(),
-        description=record["Description"].strip(),
-        stage=record["Stage"],
-        date_start=quarter_start(record["DateStart"]),
-        date_delivery=quarter_start(record["DateDelivery"]),
-        efficiency_score_eur=value.efficiency_eur,
-        quality_score_eur=value.quality_eur,
-        risk_reduction_score_eur=value.risk_reduction_eur,
-        strategic_value_score_eur=value.strategic_eur,
-        solution_complexity_score=float(record["SolutionComplexityScore"]),
-        confidence_score=value.confidence_score,
-        delivery_score=value.delivery_score,
-        one_time_costs=value.one_time_costs,
-        operating_costs=value.operating_costs,
-        depreciation_years=value.depreciation_years,
-        owner_id=record["OwnerID"],
-        value_type_id=record["ValueTypeID"],
-        solution_type_id=record["SolutionTypeID"],
-        risk_classification_id=user_input_risk_level(record).level,
-    )
+class _Context:
+    def __init__(self, session: Session, log: logging.Logger):
+        self.session = session
+        self.log = log
+        self.now = utcnow()
+        self.business_units = {o.id: o.category or "" for o in session.scalars(select(Owner))}
+        self.use_case_ids = UseCaseIds(session)
+
+    # --- one record -----------------------------------------------------------
+
+    def apply(self, record: dict, transaction: BusinessTransaction) -> str:
+        if record["ActionType"] == "create":
+            return self._create(record, transaction)
+        current = current_version(self.session, record["UseCaseID"])
+        if current is None:
+            return self._conflict(record, f"use case {record['UseCaseID']} does not exist")
+        if record["ActionType"] in ("approve", "reject") and current.status != "pending":
+            return self._conflict(record, f"use case {current.use_case_id} is {current.status or 'not in review'}, not pending")
+
+        content = self._merge(current, record, self._actions_of(current.use_case_id, up_to=record["ID"]))
+        if record["ActionType"] == "approve":
+            content.update(
+                status="approved", lead_id=record["LeadID"], stagegate=record["Stagegate"] or "Needs",
+                passed_at=record["PassedAt"] or record["Timestamp"],
+            )
+        elif record["ActionType"] == "reject":
+            content["status"] = "rejected"
+        if same_content(current, content):
+            return "unchanged"
+        self._add_version(current.use_case_id, current.key_hash, content, transaction, record["SubmittedBy"])
+        return "updated"
+
+    def _create(self, record: dict, transaction: BusinessTransaction) -> str:
+        key = key_hash(self.business_units.get(record["OwnerID"], ""), record["Name"])
+        existing = current_by_key(self.session, [key]).get(key)
+        if existing is not None:
+            return self._conflict(record, f"the name is already used by use case {existing.use_case_id} in this business unit")
+        content = self._merge(None, record, [record])
+        self._add_version(self.use_case_ids.next(), key, content, transaction, record["SubmittedBy"])
+        return "inserted"
+
+    def recompute(self, use_case_id: int) -> str:
+        """force: recompute the current version from all actions of the use case."""
+        current = current_version(self.session, use_case_id)
+        content = self._merge(current, {}, self._actions_of(use_case_id))
+        if same_content(current, content):
+            return "unchanged"
+        self.session.add(
+            Initiative(
+                **content, use_case_id=use_case_id, key_hash=current.key_hash, row_hash=content_hash(content),
+                business_transaction_id=current.business_transaction_id, changed_by=current.changed_by,
+                timestamp=self.now,
+            )
+        )
+        return "updated"
+
+    # --- helpers --------------------------------------------------------------
+
+    def _conflict(self, record: dict, reason: str) -> str:
+        self.log.error(
+            "Conflict: %s record %d (use case %s) not taken — %s",
+            record["ActionType"], record["ID"], record["UseCaseID"], reason,
+        )
+        return "conflicts"
+
+    def _add_version(self, use_case_id, key, content, transaction, changed_by) -> None:
+        self.session.add(
+            Initiative(
+                **content, use_case_id=use_case_id, key_hash=key, row_hash=content_hash(content),
+                business_transaction=transaction, changed_by=changed_by, timestamp=self.now,
+            )
+        )
+
+    def _actions_of(self, use_case_id: int, up_to: int | None = None) -> list[dict]:
+        """All user actions of a use case in order: its create record (found
+        through the BusinessTransaction of its first version) and every record
+        carrying its UseCaseID, up to and including record `up_to`."""
+        table = USER_ACTION_TABLE
+        first_version = select(func.min(Initiative.id)).where(Initiative.use_case_id == use_case_id).scalar_subquery()
+        create_record = (
+            select(BusinessTransaction.bronze_id)
+            .join(Initiative, Initiative.business_transaction_id == BusinessTransaction.id)
+            .where(Initiative.id == first_version, BusinessTransaction.bronze_table_name == USER_ACTION_TABLE_NAME)
+        )
+        query = select(table).where((table.c.UseCaseID == use_case_id) | table.c.ID.in_(create_record))
+        if up_to is not None:
+            query = query.where(table.c.ID <= up_to)
+        return [dict(r._mapping) for r in self.session.execute(query.order_by(table.c.ID))]
+
+    def _merge(self, current: Initiative | None, record: dict, actions: list[dict]) -> dict:
+        content = content_of(current) if current is not None else {}
+        if current is None:
+            content.update(name=clean_text(record["Name"]), status="pending")
+        elif record.get("Name") and normalize(record["Name"]).casefold() != normalize(current.name).casefold():
+            self.log.warning(
+                "Record %d: the name of use case %d cannot change (%r) — ignored",
+                record["ID"], current.use_case_id, record["Name"],
+            )
+
+        for column, attribute in FIELD_ATTRIBUTES.items():
+            value = record.get(column)
+            if value is None:
+                continue
+            if column == "OwnerID" and current is not None and current.owner_id is not None and (
+                self.business_units.get(value, "") != self.business_units.get(current.owner_id, "")
+            ):
+                self.log.warning(
+                    "Record %d: owner %d is in another business unit than use case %d — ignored",
+                    record["ID"], value, current.use_case_id,
+                )
+                continue
+            content[attribute] = clean_text(value) if column in _TEXT_COLUMNS else value
+        for column in ("DateStart", "DateDelivery"):
+            if record.get(column) is not None:
+                content["date_start" if column == "DateStart" else "date_delivery"] = quarter_start(record[column])
+        if record.get("SolutionComplexityScore") is not None:
+            content["solution_complexity_score"] = float(record["SolutionComplexityScore"])
+        if record.get("Stagegate") is not None:
+            content.update(stagegate=record["Stagegate"], passed_at=record["PassedAt"])
+
+        merged = _merged(actions)
+        if all(merged.get(c) is not None for c in BASE_INPUTS):
+            value = estimate_user_input_value(merged)
+            content.update(
+                efficiency_score_eur=value.efficiency_eur,
+                quality_score_eur=value.quality_eur,
+                risk_reduction_score_eur=value.risk_reduction_eur,
+                strategic_value_score_eur=value.strategic_eur,
+                confidence_score=value.confidence_score,
+                delivery_score=value.delivery_score,
+                one_time_costs=value.one_time_costs,
+                running_costs=value.operating_costs,
+                depreciation_years=value.depreciation_years,
+            )
+        actuals = [merged[c] for c in ("ActualCapex", "ActualOpex") if merged.get(c) is not None]
+        if actuals:
+            content["actual_costs"] = float(sum(actuals))
+        content["is_active"] = True
+        return content
+
+
+def _merged(actions: list[dict]) -> dict:
+    """The actions' values in order, a later non-empty value wins."""
+    merged: dict = {}
+    for action in actions:
+        merged.update({k: v for k, v in action.items() if v is not None})
+    return merged
