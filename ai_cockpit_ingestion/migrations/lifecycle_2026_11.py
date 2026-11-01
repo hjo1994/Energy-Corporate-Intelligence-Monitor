@@ -15,6 +15,8 @@ would stay as it is. This migration:
    UserActionExtracts as ActionType 'create' (same IDs; the old table is
    kept untouched, so nothing in bronze is lost).
 
+Independently of that, Owner gets the new nullable column Email (ALTER TABLE).
+
 Idempotent: does nothing when Initiative already has a UseCaseID column, or
 when there is no Initiative table yet (fresh database). Runs automatically
 from db.get_engine, so the DAGs migrate the shared database on first use.
@@ -38,10 +40,20 @@ def needs_migration(engine: Engine) -> bool:
     return "UseCaseID" not in {c["name"] for c in inspector.get_columns("Initiative")}
 
 
+def _add_owner_email(engine: Engine) -> None:
+    """Owner.Email (new nullable column): ALTER TABLE, since create_all leaves existing tables alone."""
+    inspector = inspect(engine)
+    if "Owner" in inspector.get_table_names() and "Email" not in {c["name"] for c in inspector.get_columns("Owner")}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE "Owner" ADD COLUMN "Email" VARCHAR'))
+        log.info("Added Owner.Email")
+
+
 def upgrade(engine: Engine) -> bool:
-    """Migrate if needed; True when it did."""
+    """Migrate if needed; True when silver was rebuilt."""
     from ai_cockpit_ingestion.models import USER_ACTION_TABLE, USER_ACTION_TABLE_NAME, Base
 
+    _add_owner_email(engine)
     if not needs_migration(engine):
         return False
     with engine.begin() as conn:

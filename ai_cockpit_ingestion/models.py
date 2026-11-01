@@ -256,6 +256,9 @@ class Owner(Base):
     category = Column("Category", String, nullable=True)
     name = Column("Name", String, nullable=False)
     department = Column("Department", String, nullable=True)
+    # Sign-in e-mail, to match the signed-in user to an owner or lead (UI);
+    # the sheets have none, so it is filled in the config by hand.
+    email = Column("Email", String, nullable=True)
 
     initiatives = relationship("Initiative", back_populates="owner", foreign_keys="Initiative.owner_id")
 

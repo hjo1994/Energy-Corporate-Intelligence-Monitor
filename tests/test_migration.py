@@ -55,6 +55,7 @@ def test_old_database_is_migrated_and_silver_rebuilt(tmp_path):
         assert {"UseCaseID", "RunningCosts", "EmployeePersonalData"} <= {
             c["name"] for c in inspector.get_columns("Initiative")}
         assert "RiskClassificationID" not in {c["name"] for c in inspector.get_columns("Initiative")}
+        assert "Email" in {c["name"] for c in inspector.get_columns("Owner")}
         assert {"AssessedInitiatives", USER_ACTION_TABLE_NAME, "UserInput_Initiatives_Extract"} <= set(
             inspector.get_table_names())
         with engine.connect() as conn:
