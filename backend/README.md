@@ -95,6 +95,15 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   `AI_COCKPIT_ADMIN_GROUPS` (kommagetrennt; leer = niemand).
   `canViewInitiatives` wird weiter von einer Platzhaltergruppe abgeleitet und
   ist nur informativ (TODO in `app/auth.py`).
+- **Demo-Presenter (auch in Produktion):** `AI_COCKPIT_DEMO_PRESENTERS`
+  (kommagetrennt, E-Mail-Adressen oder AD-Gruppen; leer = niemand, Default)
+  nennt die Konten, die ihre Sitzung für eine Demo auf Admin-Rechte schalten
+  dürfen. Sie melden sich normal per SSO an und arbeiten als normaler Nutzer;
+  mit dem Header `X-Demo-Role: admin` (Schalter im Frontend) bekommen sie
+  `canApprove` und `canAdmin`. Die Identität bleibt die SSO-Identität, Aktionen
+  als Demo-Admin stehen unter „<Name> (demo admin)“ in den Daten. Für alle
+  anderen wird der Header ignoriert (`app/auth.py`, `acting_user`).
+  `/api/auth/rights` meldet zusätzlich `demo_presenter` und `demo_admin`.
 - **Demo mit mehreren Personen (nur lokal):** `EG_AUTH_DEV_USERS` gibt dem
   Stub Personas, z. B.
   `[{"name": "Jonas", "email": "jonas@demo.local", "groups": []}, {"name": "Demo Approver", "email": "approver@demo.local", "groups": ["ai_cockpit_admins"]}]`.

@@ -12,13 +12,12 @@ from __future__ import annotations
 import datetime
 from typing import Annotated, Literal
 
-from eg_auth.fastapi import UserInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.auth import authorizer
+from app.auth import CurrentUser, authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
 from app.derived import annual_cost_sql, hypothetical_value_sql
@@ -223,7 +222,7 @@ def as_datetimes(fields: dict, names) -> None:
 @router.post("", response_model=InitiativeOut, status_code=201)
 def create_initiative(
     body: InitiativeIn,
-    user: Annotated[UserInfo, authorizer()],
+    user: CurrentUser,
     session: Annotated[Session, Depends(get_write_session)],
 ) -> InitiativeOut:
     """Form 1, a new AI idea: stored as a 'create' action in the bronze table UserActionExtracts
