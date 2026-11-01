@@ -14,6 +14,10 @@ Der Stub unterstützt ausschließlich `EG_AUTH_DEV_MODE=True` — echte OIDC-Pr�
 kann er nicht und soll er nicht vortäuschen. `authorizer()` liefert, wie das
 Original, eine `Depends`-Instanz (keine nackte Funktion, sonst 422).
 
+Mit `EG_AUTH_DEV_USERS` (JSON-Liste mit `name`, `email`, `groups`) kennt der
+Stub mehrere Personas und nimmt die aus dem Token `Bearer dev:<email>`, ohne
+Token die erste. Das Frontend wechselt sie im Dev-Bypass über „Demo user“.
+
 Lokal starten:
 
 ```sh

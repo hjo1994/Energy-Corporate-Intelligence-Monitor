@@ -95,6 +95,15 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   `AI_COCKPIT_ADMIN_GROUPS` (kommagetrennt; leer = niemand).
   `canViewInitiatives` wird weiter von einer Platzhaltergruppe abgeleitet und
   ist nur informativ (TODO in `app/auth.py`).
+- **Demo mit mehreren Personen (nur lokal):** `EG_AUTH_DEV_USERS` gibt dem
+  Stub Personas, z. B.
+  `[{"name": "Jonas", "email": "jonas@demo.local", "groups": []}, {"name": "Demo Approver", "email": "approver@demo.local", "groups": ["ai_cockpit_admins"]}]`.
+  Der Stub nimmt die Persona aus dem Token `Bearer dev:<email>`, ohne Token die
+  erste. `GET /api/auth/dev-users` listet sie für die Auswahl im Frontend und
+  antwortet ohne `EG_AUTH_DEV_MODE=True` mit 404. Im Cluster prüft das echte
+  `eg-auth` jedes Token, ein `dev:`-Token wird dort abgelehnt. Für eine Demo
+  mit SSO braucht der Approver ein echtes Konto in einer der Gruppen aus
+  `AI_COCKPIT_APPROVER_GROUPS` oder `AI_COCKPIT_ADMIN_GROUPS`.
 - **Frontend:** meldet per OIDC an (`eg-auth-react`) und schickt den Token als
   Bearer-Header; lokal läuft alles im Dev-Modus (Bypass im Frontend, siehe
   `frontend/README.md`).
