@@ -55,6 +55,7 @@ from ai_cockpit_ingestion.models import (
     Initiative,
     Owner,
 )
+from ai_cockpit_ingestion.transforms.gold import RISK_ANSWERS
 from ai_cockpit_ingestion.transforms.normalize import clean_text
 from ai_cockpit_ingestion.transforms.upsert_keys import key_hash, normalize
 from ai_cockpit_ingestion.transforms.user_input_heuristic import estimate_user_input_value, quarter_start
@@ -68,14 +69,7 @@ from ai_cockpit_ingestion.versions import (
     ui_owned_use_cases,
 )
 
-RISK_ANSWER_ATTRIBUTES = {
-    "EmployeePersonalData": "employee_personal_data",
-    "PerformanceOrBehaviourControl": "performance_or_behaviour_control",
-    "DecisionsOnEmployees": "decisions_on_employees",
-    "ProfilingOfIndividuals": "profiling_of_individuals",
-    "ChangesEmployeeWorkflows": "changes_employee_workflows",
-    "ProhibitedPractice": "prohibited_practice",
-}
+RISK_ANSWER_ATTRIBUTES = RISK_ANSWERS  # UI column -> silver attribute
 
 # User-action columns copied 1:1 onto the version when they are set.
 FIELD_ATTRIBUTES = {

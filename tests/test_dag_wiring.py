@@ -37,3 +37,12 @@ def test_raw_to_bronze_still_emits_one_dataset_per_extract(dagbag):
     raw = dagbag.get_dag("raw_to_bronze")
     for source in SOURCES:
         assert {d.uri for d in raw.get_task(f"load_{source.key}").outlets} == {source.asset_uri}
+
+
+def test_silver_to_gold_waits_for_silver_changes(dagbag):
+    dag = dagbag.get_dag("silver_to_gold")
+    assert dag.timetable.summary == "@continuous"
+    assert (dag.max_active_runs, dag.catchup) == (1, False)
+    sensor = dag.get_task("wait_for_silver_changes")
+    assert (sensor.mode, sensor.poke_interval, sensor.soft_fail) == ("reschedule", 60, True)
+    assert dag.get_task("silver_to_gold").upstream_task_ids == {"wait_for_silver_changes"}

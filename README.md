@@ -8,6 +8,7 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 | `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
 | `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
 | `bronze_to_silver_<quelle>` (5×: 4 Extracts + `user_input`) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | `@continuous`; eigener Sensor `wait_for_new_bronze` prüft jede Minute die eigene Bronze-Tabelle | Initiative (Silber, versioniert) |
+| `silver_to_gold` | `dags/silver_to_gold_dag.py` | `@continuous`; Sensor `wait_for_silver_changes` prüft jede Minute, ob ein Use Case fällig ist | AssessedInitiatives (Gold) |
 
 1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
    `2026?AI?Initiatives*.xlsx` (passt auf `2026_AI_Initiatives_Elia_Group.xlsx` in
@@ -150,9 +151,26 @@ Value Domain, Autonomy Level, Zielgruppen als Text; `SafetyComponent`,
 `ActualOpex`). `SourceFileID` ist immer `user-input`, `SubmittedBy` der
 angemeldete Nutzer (in Silber `ChangedBy`).
 
-**Gold** (`AssessedInitiatives`): eine Zeile je Use Case mit `PotentialValue`,
-`RealizedValue`, `RiskClassificationID` und den Feldern fürs Dashboard; die
-Tabelle ist angelegt, befüllt wird sie vom SilverToGold-DAG (nächster Schritt).
+**Gold** (`AssessedInitiatives`, `silver_to_gold`, `operators/silver_to_gold.py`,
+Formeln in `transforms/gold.py`): eine Zeile je Use Case aus seiner aktuellen
+Silber-Version, in place aktualisiert. Bewertet werden nur **vollständige**
+Use Cases: alle vier Value-Buckets, die sechs Risiko-Antworten, `OneTimeCosts`
+und `RunningCosts` gesetzt. Fällig ist ein Use Case, wenn er gerade vollständig
+wurde (noch keine Gold-Zeile), wenn es eine neuere Silber-Version gibt als die
+bewertete (eines der Rechen-Attribute oder ein kopiertes Feld wie Status oder
+Gate hat sich geändert) oder wenn sein laufzeitbasierter RealizedValue zuletzt
+vor heute berechnet wurde.
+
+- `PotentialValue` = Summe der Buckets × ConfidenceScore × DeliveryScore (€/Jahr)
+- `RealizedValue` = `MeasuredBenefits` − `ActualCosts`, wenn echte Werte gemeldet
+  sind; sonst nach `DateDelivery`: PotentialValue × Laufzeit − (OneTimeCosts +
+  RunningCosts × Laufzeit), Laufzeit in Jahren seit Delivery; sonst leer
+- `RiskClassificationID` aus den Antworten (gleiche Regeln wie das Formular)
+
+Läufe stehen in `TransformationRun` mit `BronzeTableName = Initiative`.
+`force` bewertet alle vollständigen Use Cases neu. Lokal gegen die Excel:
+164 Use Cases bewertet, Potenzial ≈ 9,77 Mio. € (wie vorher), 23 mit
+RealizedValue (ETB, Delivery-Quartal vorbei), zweiter Lauf liest nichts.
 
 Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
 oder in der UI „Trigger DAG w/ config“. Der Sensor wartet dann nicht auf neue
@@ -259,6 +277,8 @@ Pfade im Cluster: `SOURCE_DIR=/data/source`, `AI_COCKPIT_DB_PATH=/data/db/ai_coc
 - **Nur zusammen mit dem angepassten Backend deployen**: das Backend liest
   heute `Initiative.RiskClassificationID`/`OperatingCosts` und schreibt in
   `UserInput_Initiatives_Extract`; beides ändert sich hier.
+- **Neuer DAG `silver_to_gold`**: nach dem Deploy einmal aktivieren
+  (`airflow dags unpause silver_to_gold`); ebenso die `bronze_to_silver_*`.
 - **Migration automatisch** (`migrations/lifecycle_2026_11.py`, läuft in
   `db.get_engine`): erkennt das alte `Initiative` (ohne `UseCaseID`), kopiert
   `UserInput_Initiatives_Extract` als `create` nach `UserActionExtracts` (alte
