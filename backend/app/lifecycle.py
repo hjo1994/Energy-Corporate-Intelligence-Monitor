@@ -12,7 +12,8 @@ passed before PoC, deploy gate must be passed before production". From that:
 - On hold, Cancelled, Unknown: no rule
 
 The Excel has no rule for the needs and the retire gate. Dates that are set
-must be in gate order (Needs <= Scope <= Deploy <= Retire).
+must be in gate order (Needs <= Scope <= Deploy <= Retire). The stage can move
+on, but never below the stage given in form 1 (`below_floor`).
 
 Value domains: every number of form 1 is chosen from a short list of ranges;
 the API stores the range's representative value (like the running costs).
@@ -24,6 +25,17 @@ import datetime
 from app.models import GATE_DATE_FIELDS
 
 GATES = tuple(GATE_DATE_FIELDS)
+
+# The stages in their order (maturity); On hold, Cancelled and Unknown stand outside it.
+STAGE_ORDER = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired")
+
+
+def below_floor(stage: str | None, floor: str | None) -> bool:
+    """A stage lower in the order than the floor (the stage given in form 1); side stages never are."""
+    if stage not in STAGE_ORDER or floor not in STAGE_ORDER:
+        return False
+    return STAGE_ORDER.index(stage) < STAGE_ORDER.index(floor)
+
 
 _EARLY = ((), ("Scope", "Deploy"))
 _BUILDING = (("Scope",), ("Deploy",))

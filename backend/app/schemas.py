@@ -217,6 +217,7 @@ class UseCaseDetail(InitiativeOut):
     form2_progress: Form2Progress
     # what does not fit between stage and gate dates (e.g. a sheet use case in Production without dates)
     stage_problems: list[str] = []
+    stage_floor: str | None = None  # the stage given in form 1; the stage cannot go below it
     todos: list[str] = []
     can_edit: bool = False
     can_decide: bool = False
@@ -384,9 +385,10 @@ FORM2_INPUT_FIELDS = (
 
 
 class UseCasePatch(_GateDates, _Form1Values):
-    """A partial update (form 1 edits, form 2, stage and gate dates): only the
-    fields sent count. Name and business unit cannot change; everything else can,
-    at any time."""
+    """A partial update (form 2, stage and gate dates): only the fields sent
+    count. Name and business unit never change; description and the cost
+    estimates of form 1 only while a rejected idea is revised. The stage cannot
+    go below the one given in form 1."""
 
     base_revision: str  # `revision` of the state the user edited; a newer one -> 409
 

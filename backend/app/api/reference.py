@@ -11,7 +11,7 @@ from app.auth import authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session
 from app import schemas
-from app.lifecycle import STAGE_GATE_RULES, VALUE_DOMAINS
+from app.lifecycle import STAGE_GATE_RULES, STAGE_ORDER, VALUE_DOMAINS
 from app.models import Initiative, Owner, RiskClassification, SolutionType, ValueType, current_version_ids
 from app.schemas import BusinessUnitCount, OwnerOut, RiskClassificationOut, StageCount, TypeOut
 from app.user_input import RUNNING_COST_RANGES
@@ -102,6 +102,7 @@ def form_options() -> dict:
     Owners, flagships (value types) and solution types come from their own endpoints."""
     return {
         "stages": _options(schemas.STAGES),
+        "stage_order": list(STAGE_ORDER),  # maturity order; the other stages stand outside it
         "stagegates": _options(schemas.STAGEGATES),
         # stage -> gates that must be passed / must not be passed yet (form 2 Excel, app/lifecycle.py)
         "stage_gate_rules": {stage: {"passed": list(passed), "not_passed": list(not_yet)}

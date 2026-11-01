@@ -99,6 +99,14 @@ def create_records(session: Session, use_case_ids: list[int] | None = None) -> d
     return {use_case_id: action for use_case_id, action in rows}
 
 
+def first_stages(session: Session, use_case_ids: list[int] | None = None) -> dict[int, str]:
+    """UseCaseID -> stage of its first silver version."""
+    first = select(func.min(Initiative.id)).group_by(Initiative.use_case_id)
+    if use_case_ids is not None:
+        first = first.where(Initiative.use_case_id.in_(use_case_ids))
+    return dict(session.execute(select(Initiative.use_case_id, Initiative.stage).where(Initiative.id.in_(first))).all())
+
+
 def actions_of(session: Session, use_case_id: int, create: UserAction | None) -> list[UserAction]:
     """All user actions of a use case in order (processed or not)."""
     if not table_exists(session):
@@ -144,10 +152,14 @@ def load_states(
         if action.action_type != "create":
             pending_by_use_case[action.use_case_id].append(action)
     creates = create_records(session, use_case_ids)
+    floors = first_stages(session, use_case_ids)
 
     states = []
     for version, gold in rows:
         state = _from_version(version, gold, creates.get(version.use_case_id))
+        create = creates.get(version.use_case_id)
+        # the stage given in form 1 (sheet use cases: the stage of their first version)
+        state["stage_floor"] = (create.stage if create is not None and create.stage else None) or floors.get(version.use_case_id)
         on_top = pending_by_use_case.get(version.use_case_id, [])
         if on_top or with_drivers:
             all_actions = actions_of(session, version.use_case_id, creates.get(version.use_case_id))
@@ -189,6 +201,7 @@ def pending_create_state(action: UserAction, with_drivers: bool = False) -> dict
         updated_at=action.timestamp, pending_action_ids=[action.id], last_action_id=action.id,
     )
     _overlay(state, [action], [action], copy_all=True)
+    state["stage_floor"] = action.stage
     if with_drivers:
         state["drivers"] = merged([action])
     state["processing"] = "pending"

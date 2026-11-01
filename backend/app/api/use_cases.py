@@ -20,7 +20,7 @@ from app.api.initiatives import as_datetimes, check_stage_gates, commit
 from app.auth import authorizer
 from app.config import initiative_input_enabled
 from app.db import get_session, get_write_session
-from app.lifecycle import gate_dates
+from app.lifecycle import below_floor, gate_dates
 from app.models import GATE_DATE_FIELDS, Owner, SolutionType, UserAction, ValueType
 from app.schemas import (
     ApprovalItem,
@@ -43,6 +43,9 @@ from app.use_cases import (
     with_refs,
 )
 from app.user_input import RUNNING_COST_RANGES, utcnow
+
+# form 1 values fixed once the idea is submitted (open again while a rejected idea is revised)
+SUBMITTED_ONLY = ("description", "one_time_costs", "running_cost_range")
 
 router = APIRouter(prefix="/api", tags=["use cases"], dependencies=[authorizer()])
 
@@ -177,8 +180,9 @@ def update_use_case(
     user: User,
     session: Annotated[Session, Depends(get_write_session)],
 ) -> UseCaseDetail:
-    """Save form 1 edits, form 2, the stage or gate dates as an 'update' action, at any time.
-    Only the fields sent count (null = not sent). When the stage or a gate date is sent, stage
+    """Save form 2, the stage or gate dates as an 'update' action, at any time. Description and
+    cost estimates only while a rejected idea is revised; the stage never below the one given in
+    form 1 (422). Only the fields sent count (null = not sent). When the stage or a gate date is sent, stage
     and gate dates together must fit (422 otherwise). 409 when the use case changed since
     `base_revision` or while the idea is still being processed."""
     _writable(session)
@@ -192,6 +196,13 @@ def update_use_case(
     fields = {k: v for k, v in body.model_dump(exclude={"base_revision", "resubmit"}).items() if v is not None}
     if not fields and not body.resubmit:
         raise HTTPException(status_code=422, detail="Nothing to change")
+    locked = [f for f in SUBMITTED_ONLY if f in fields]
+    if locked and state["status"] != "rejected":
+        raise HTTPException(status_code=422, detail=f"{', '.join(locked)} cannot be changed after the idea was "
+                                                    "submitted (only while a rejected idea is revised).")
+    if "stage" in fields and below_floor(fields["stage"], state.get("stage_floor")):
+        raise HTTPException(status_code=422, detail=f"The stage cannot go below {state['stage_floor']}, the stage "
+                                                    "given when the idea was submitted.")
     if "stage" in fields or any(f in fields for f in GATE_DATE_FIELDS.values()):
         # an edit of something else is never blocked by an old mismatch (e.g. from the sheet)
         dates = gate_dates({**state, **fields})
