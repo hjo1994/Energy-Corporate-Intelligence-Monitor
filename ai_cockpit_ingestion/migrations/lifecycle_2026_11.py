@@ -17,8 +17,9 @@ would stay as it is. This migration:
 
 Independently of that, a database from an earlier build of this data model
 (one Stagegate + PassedAt per use case) gets the four stage gate dates
-(_add_gate_dates), and every database gets the user table AppUser with the
-columns pointing to it (_add_app_users).
+(_add_gate_dates), every database gets the user table AppUser with the
+columns pointing to it (_add_app_users), and the stages Idea and Exploration
+become the one stage Ideation (_merge_ideation).
 
 Idempotent: does nothing when Initiative already has a UseCaseID column, or
 when there is no Initiative table yet (fresh database). Runs automatically
@@ -83,6 +84,19 @@ def _add_app_users(engine: Engine) -> None:
                 log.info("Dropped Owner.Email")
 
 
+def _stage_mapped() -> str:
+    """SQL for the Stage column with the former stages mapped (Idea/Exploration -> Ideation)."""
+    from ai_cockpit_ingestion.models import FORMER_STAGES
+
+    cases = " ".join(f"WHEN \"Stage\" = '{old}' THEN '{new}'" for old, new in FORMER_STAGES.items())
+    return f'CASE {cases} ELSE "Stage" END'
+
+
+def _selected(columns: list[str]) -> str:
+    """The SELECT list for copying bronze records into the current UserActionExtracts."""
+    return ", ".join(_stage_mapped() if c == "Stage" else f'"{c}"' for c in columns)
+
+
 _GATE_TABLES = ("Initiative", "AssessedInitiatives")
 
 
@@ -128,10 +142,52 @@ def _add_gate_dates(engine: Engine) -> None:
                 )
                 conn.execute(text(
                     f'INSERT INTO "{USER_ACTION_TABLE_NAME}" ({listed}, {gate_columns}) '
-                    f'SELECT {listed}, {gate_values} FROM "{old}" ORDER BY "ID"'
+                    f'SELECT {_selected(shared)}, {gate_values} FROM "{old}" ORDER BY "ID"'
                 ))
                 conn.execute(text(f'DROP TABLE "{old}"'))
                 log.info("Rebuilt %s with the stage gate dates", USER_ACTION_TABLE_NAME)
+
+
+_STAGE_TABLES = ("Initiative", "AssessedInitiatives")
+
+
+def _merge_ideation(engine: Engine) -> None:
+    """Idea and Exploration -> Ideation (11/2026), in silver, gold and bronze.
+
+    Silver and gold (every version) get an UPDATE. UserActionExtracts is rebuilt
+    when its Stage CHECK still lists 'Idea' (renamed, created anew with the new
+    CHECK, copied with the stages mapped, old dropped), like _add_gate_dates."""
+    from ai_cockpit_ingestion.models import FORMER_STAGES, USER_ACTION_TABLE, USER_ACTION_TABLE_NAME
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    former = ", ".join(f"'{stage}'" for stage in FORMER_STAGES)
+    mapped = _stage_mapped()
+    with engine.begin() as conn:
+        for table in _STAGE_TABLES:
+            if table in tables and "Stage" in {c["name"] for c in inspector.get_columns(table)}:
+                changed = conn.execute(text(f'UPDATE "{table}" SET "Stage" = {mapped} WHERE "Stage" IN ({former})')).rowcount
+                if changed:
+                    log.info("Set Stage to Ideation in %d rows of %s", changed, table)
+
+        if USER_ACTION_TABLE_NAME not in tables:
+            return
+        definition = conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = :name"), {"name": USER_ACTION_TABLE_NAME}
+        ).scalar() or ""
+        if "'Idea'" not in definition:
+            return
+        old = f"{USER_ACTION_TABLE_NAME}_before_ideation"
+        columns = {c["name"] for c in inspector.get_columns(USER_ACTION_TABLE_NAME)}
+        for index in inspector.get_indexes(USER_ACTION_TABLE_NAME):
+            conn.execute(text(f'DROP INDEX IF EXISTS "{index["name"]}"'))
+        conn.execute(text(f'ALTER TABLE "{USER_ACTION_TABLE_NAME}" RENAME TO "{old}"'))
+        USER_ACTION_TABLE.create(conn)
+        shared = [c.name for c in USER_ACTION_TABLE.columns if c.name in columns]
+        listed = ", ".join(f'"{c}"' for c in shared)
+        conn.execute(text(f'INSERT INTO "{USER_ACTION_TABLE_NAME}" ({listed}) SELECT {_selected(shared)} FROM "{old}" ORDER BY "ID"'))
+        conn.execute(text(f'DROP TABLE "{old}"'))
+        log.info("Rebuilt %s with the stage Ideation", USER_ACTION_TABLE_NAME)
 
 
 def upgrade(engine: Engine) -> bool:
@@ -140,6 +196,7 @@ def upgrade(engine: Engine) -> bool:
 
     _add_gate_dates(engine)
     _add_app_users(engine)
+    _merge_ideation(engine)
     if not needs_migration(engine):
         return False
     with engine.begin() as conn:
@@ -156,7 +213,7 @@ def upgrade(engine: Engine) -> bool:
             copied = conn.execute(
                 text(
                     f'INSERT INTO "{USER_ACTION_TABLE_NAME}" ({listed}, "ActionType") '
-                    f"SELECT {listed}, 'create' FROM \"{OLD_USER_INPUT_TABLE}\" "
+                    f"SELECT {_selected(shared)}, 'create' FROM \"{OLD_USER_INPUT_TABLE}\" "
                     f'WHERE "ID" NOT IN (SELECT "ID" FROM "{USER_ACTION_TABLE_NAME}") ORDER BY "ID"'
                 )
             ).rowcount

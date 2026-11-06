@@ -96,7 +96,9 @@ STAGEGATES = ("Needs", "Scope", "Deploy", "Retire")
 GATE_DATE_COLUMNS = {"Needs": "NeedsGateDate", "Scope": "ScopeGateDate", "Deploy": "DeployGateDate", "Retire": "RetireGateDate"}
 
 # maturity/stage of "form 2 data fields" (incl. Retired) plus On hold / Cancelled / Unknown from the sheets
-STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown")
+# Idea and Exploration are one stage since 11/2026: Ideation (between the needs and the scope gate).
+STAGES = ("Ideation", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown")
+FORMER_STAGES = {"Idea": "Ideation", "Exploration": "Ideation"}
 ESTIMATE_BASES = ("rough", "benchmark", "measured")  # how solid the value drivers are
 DELIVERY_LIKELIHOODS = ("low", "medium", "high")
 EMPLOYEE_PERSONAL_DATA = ("no", "pseudonymised", "yes")

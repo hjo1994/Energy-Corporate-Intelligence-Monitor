@@ -145,7 +145,9 @@ macht ihn „UI-owned“; der Blatt-Import lässt ihn danach in Ruhe. `force`
 rechnet zusätzlich alle Use Cases mit User-Actions neu.
 
 Typisiert und per CHECK/FK abgesichert: Stammdaten als IDs der Config-Tabellen
-(`OwnerID`, `LeadID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (10 Werte, inkl. `Retired`),
+(`OwnerID`, `LeadID`, `ValueTypeID`, `SolutionTypeID`), `Stage` (9 Werte, inkl. `Retired`; Idea und Exploration sind seit 11/2026 zusammen
+`Ideation`, zwischen Needs- und Scope-Gate, die Migration `_merge_ideation` stellt
+bestehende Daten und den CHECK um; das Blatt darf weiter Idea/Exploration sagen),
 `DateStart`/`DateDelivery` als Quartal („Q2 2027“), die Value-Treiber je Hebel
 (Anteile 0–1, leerer Hebel = 0), `EstimateBasis`, `DeliveryLikelihood`,
 `SolutionComplexityScore` (1–9), `OneTimeCosts`, `OperatingCosts`, die

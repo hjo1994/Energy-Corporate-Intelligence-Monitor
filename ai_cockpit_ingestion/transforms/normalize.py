@@ -16,11 +16,12 @@ logger = logging.getLogger(__name__)
 # it to that quarter's first day.
 _QUARTER_START_MONTH = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}
 
-# Canonical Status values, from the Variables sheet's "Status" column
-# (9 values — not just Idea/Exploration/PoC/Implementation).
+# Canonical Status values, from the Variables sheet's "Status" column. Idea and
+# Exploration are one stage in the cockpit since 11/2026: Ideation.
 _STATUS_CANONICAL = {
-    "idea": "Idea",
-    "exploration": "Exploration",
+    "idea": "Ideation",
+    "exploration": "Ideation",
+    "ideation": "Ideation",
     "poc": "PoC",
     "mvp": "MVP",
     "production": "Production",

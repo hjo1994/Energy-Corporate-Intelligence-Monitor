@@ -127,7 +127,7 @@ def test_insert_unchanged_new_version_deactivate_and_force(engine):
     counts, third = _silver(engine)
     assert counts == _counts(inserted=1, updated=1, unchanged=1, deactivated=1)
     alpha = _versions(engine, "Alpha")
-    assert [(v.use_case_id, v.stage) for v in alpha] == [(1, "Idea"), (1, "PoC")]  # appended, first kept
+    assert [(v.use_case_id, v.stage) for v in alpha] == [(1, "Ideation"), (1, "PoC")]  # appended, first kept
     assert third["Alpha"][2] != first["Alpha"][2]  # the new version has a new BusinessTransaction
     assert third["Beta"] == (first["Beta"][0], False, first["Beta"][2])  # soft delete = copy, keeps its BT
     assert [v.is_active for v in _versions(engine, "Beta")] == [True, False]

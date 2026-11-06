@@ -34,7 +34,7 @@ def record(**over):
         "OwnerID": 1,
         "ValueTypeID": 1,
         "SolutionTypeID": 1,
-        "Stage": "Idea",
+        "Stage": "Ideation",
         "DateStart": "Q1 2027",
         "DateDelivery": None,
         "CasesPerYear": 3000,

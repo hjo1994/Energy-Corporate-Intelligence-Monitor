@@ -61,8 +61,8 @@ def test_old_database_is_migrated_and_silver_rebuilt(tmp_path):
             inspector.get_table_names())
         with engine.connect() as conn:
             action = conn.execute(select(USER_ACTION_TABLE)).one()._mapping
-            assert (action["ID"], action["ActionType"], action["UseCaseID"], action["Name"]) == (
-                1, "create", None, "Smart Invoice Check")
+            assert (action["ID"], action["ActionType"], action["UseCaseID"], action["Name"], action["Stage"]) == (
+                1, "create", None, "Smart Invoice Check", "Ideation")  # Idea -> Ideation
             assert action["Timestamp"] == datetime.datetime(2026, 10, 25, 13, 0)
 
         # the DAG rebuilds silver from bronze
@@ -163,4 +163,48 @@ def test_user_table_and_its_columns_are_added(tmp_path):
         assert {"CreatedByUserID", "ChangedByUserID"} <= {c["name"] for c in inspector.get_columns("Initiative")}
         with Session(engine) as s:
             assert (s.get(Owner, 1).name, s.get(Owner, 1).source) == ("Owner A", "excel")
+        engine.dispose()
+
+
+def test_idea_and_exploration_become_ideation(tmp_path):
+    """A database from before 11/2026: the bronze Stage CHECK still lists Idea/Exploration,
+    silver and gold hold those stages. Afterwards everything says Ideation."""
+    path = tmp_path / "before_ideation.db"
+    get_engine(path).dispose()
+    conn = sqlite3.connect(path)
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = ?", (USER_ACTION_TABLE_NAME,)).fetchone()[0]
+    old_sql = sql.replace("'Ideation'", "'Idea', 'Exploration'")
+    assert old_sql != sql
+    conn.executescript(f"""
+        DROP TABLE "{USER_ACTION_TABLE_NAME}";
+        {old_sql};
+        INSERT INTO "{USER_ACTION_TABLE_NAME}" ("ID", "Timestamp", "SourceFileID", "SubmittedBy", "ActionType", "UseCaseID", "Stage")
+            VALUES (1, '2026-10-30 10:00:00', 'ui', 'jonas', 'update', 1, 'Idea'),
+                   (2, '2026-10-30 11:00:00', 'ui', 'jonas', 'update', 2, 'Exploration'),
+                   (3, '2026-10-30 12:00:00', 'ui', 'jonas', 'update', 1, 'PoC');
+        INSERT INTO "Owner" ("ID", "Name") VALUES (1, 'Owner A');
+        INSERT INTO "ValueType" ("ID", "Name") VALUES (1, 'CAPEX delivery');
+        INSERT INTO "BusinessTransaction" ("ID", "BronzeID", "BronzeTableName") VALUES (1, 1, 'UserActionExtracts');
+    """)
+    conn.commit()
+    conn.close()
+    engine = get_engine(path)
+    with Session(engine) as s:
+        for use_case_id, stage in ((1, "Idea"), (2, "Exploration")):
+            s.add(Initiative(use_case_id=use_case_id, name=f"UC {use_case_id}", owner_id=1, value_type_id=1,
+                             stage=stage, status="approved", key_hash=f"k{use_case_id}", row_hash=f"r{use_case_id}",
+                             business_transaction_id=1, timestamp=datetime.datetime(2026, 10, 1)))
+        s.commit()
+    engine.dispose()
+
+    for _ in range(2):  # idempotent
+        engine = get_engine(path)
+        with engine.connect() as c:
+            rows = c.execute(select(USER_ACTION_TABLE.c.ID, USER_ACTION_TABLE.c.Stage).order_by(USER_ACTION_TABLE.c.ID)).all()
+            definition = c.exec_driver_sql(
+                "SELECT sql FROM sqlite_master WHERE name = ?", (USER_ACTION_TABLE_NAME,)).scalar()
+        assert [tuple(r) for r in rows] == [(1, "Ideation"), (2, "Ideation"), (3, "PoC")]
+        assert "'Idea'" not in definition and "'Ideation'" in definition
+        with Session(engine) as s:
+            assert {i.stage for i in s.scalars(select(Initiative))} == {"Ideation"}
         engine.dispose()

@@ -90,7 +90,7 @@ def _submit(engine, name, owner_id=1, **over):
         **FIXTURE["base"], **FIXTURE["cases"][0]["input"],
         "Timestamp": datetime.datetime(2026, 10, 25, 13, 0), "SubmittedBy": "jonas", "ActionType": "create",
         "Name": name, "Description": f"About {name}", "OwnerID": owner_id, "ValueTypeID": 1, "SolutionTypeID": 1,
-        "Stage": "Idea", "DateStart": None, "DateDelivery": "Q3 2027", "SolutionComplexityScore": 4,
+        "Stage": "Ideation", "DateStart": None, "DateDelivery": "Q3 2027", "SolutionComplexityScore": 4,
         **over,
     }
     with engine.begin() as conn:
@@ -130,7 +130,7 @@ def test_create_becomes_a_pending_use_case_incrementally(engine):
     assert _silver(engine) == _counts(read=1, inserted=1)
     i = _initiatives(engine)["Smart Invoice Check"]
     assert (i.use_case_id, i.status, i.changed_by) == (1, "pending", "jonas")
-    assert (i.owner_id, i.stage, i.date_delivery) == (1, "Idea", datetime.datetime(2027, 7, 1))
+    assert (i.owner_id, i.stage, i.date_delivery) == (1, "Ideation", datetime.datetime(2027, 7, 1))
     assert (i.efficiency_score_eur, i.quality_score_eur) == (90000, 192000)
     assert (i.confidence_score, i.delivery_score, i.one_time_costs, i.running_costs, i.depreciation_years) == (
         0.6, 0.65, 130000, 32500, 5)

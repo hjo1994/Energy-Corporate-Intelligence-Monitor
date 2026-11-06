@@ -115,7 +115,7 @@ def _action(engine, **values):
 def _create(engine, name, **over):
     _action(engine, **{
         **FIXTURE["base"], **FIXTURE["cases"][0]["input"], "ActionType": "create", "Name": name,
-        "Description": f"About {name}", "OwnerID": 1, "ValueTypeID": 1, "Stage": "Idea",
+        "Description": f"About {name}", "OwnerID": 1, "ValueTypeID": 1, "Stage": "Ideation",
         "DateDelivery": "Q3 2027", "SolutionComplexityScore": 4, **over,
     })
 

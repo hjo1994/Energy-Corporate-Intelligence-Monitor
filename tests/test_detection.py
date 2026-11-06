@@ -83,7 +83,7 @@ def _submit(engine, at, name="New"):
     with engine.begin() as conn:
         conn.execute(insert(USER_ACTION_TABLE).values(
             Timestamp=at, SubmittedBy="t", ActionType="create", Name=name, Description="d",
-            OwnerID=1, ValueTypeID=1, SolutionTypeID=1, Stage="Idea", CasesPerYear=10, HoursSavedPerCase=1,
+            OwnerID=1, ValueTypeID=1, SolutionTypeID=1, Stage="Ideation", CasesPerYear=10, HoursSavedPerCase=1,
             EstimateBasis="rough", DeliveryLikelihood="low", SolutionComplexityScore=3, OneTimeCosts=0,
             OperatingCosts=0, EmployeePersonalData="no", PerformanceOrBehaviourControl=False,
             DecisionsOnEmployees="none", ProfilingOfIndividuals=False, ChangesEmployeeWorkflows=False,
