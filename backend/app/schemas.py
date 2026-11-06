@@ -351,14 +351,16 @@ class InitiativeIn(_GateDates, _Form1Values):
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Text
-    # The owner can be chosen (any Owner); without one the signed-in user becomes the owner
-    # (app/users.py), and a user without an owner row yet names their business unit once
-    # (Owner.Category of the new owner).
-    owner_id: int | None = None
+    # The owner is a user (AppUser), the signed-in one unless another is chosen; their owner row
+    # is found or created (app/users.py). A user without an owner row yet gets one in
+    # `business_unit` (Owner.Category of the new owner).
+    owner_user_id: int | None = None
     business_unit: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
     value_type_id: int
     ai_layer: Literal[AI_LAYERS]  # type: ignore[valid-type]
     stage: Stage = DEFAULT_STAGE
+    # form 1 asks when the needs gate was passed: the idea starts between the needs and the scope gate
+    needs_gate_date: date
     date_start: Quarter | None = None
     date_delivery: Quarter | None = None
 
@@ -476,6 +478,15 @@ class DecisionIn(BaseModel):
         if self.decision == "reject" and not self.comment:
             raise ValueError("Rejecting needs a comment")
         return self
+
+
+class PersonOut(_Out):
+    """A user to choose as owner in form 1 (no e-mail, no role)."""
+
+    id: int
+    name: str
+    owner_id: int | None = None
+    business_unit: str | None = None  # of their owner row; None: not an owner yet
 
 
 class AppUserOut(_Out):

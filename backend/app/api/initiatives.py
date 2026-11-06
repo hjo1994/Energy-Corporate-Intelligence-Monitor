@@ -24,6 +24,7 @@ from app.derived import annual_cost_sql, hypothetical_value_sql
 from app.lifecycle import gate_dates, stage_problems
 from app.users import owner_for_create
 from app.models import (
+    AppUser,
     GATE_DATE_FIELDS,
     AssessedInitiative,
     Initiative,
@@ -241,10 +242,15 @@ def create_initiative(
         )
     if user.user_id is None:
         raise HTTPException(status_code=503, detail="Your user could not be stored yet. Please try again in a minute.")
-    if body.owner_id is not None:  # an owner chosen in form 1
-        owner = session.get(Owner, body.owner_id)
+    if body.needs_gate_date > today():
+        raise HTTPException(status_code=422, detail="The needs gate date cannot be in the future: it is the day it was passed.")
+    if body.owner_user_id is not None and body.owner_user_id != user.user_id:  # another user chosen in form 1
+        chosen = session.get(AppUser, body.owner_user_id)
+        if chosen is None or not chosen.is_active:
+            raise HTTPException(status_code=422, detail="Unknown user")
+        owner = owner_for_create(session, chosen.id, chosen.name, body.business_unit)
         if owner is None:
-            raise HTTPException(status_code=422, detail="Unknown owner")
+            raise HTTPException(status_code=422, detail=f"Choose the business unit of {chosen.name}: they are not an owner yet.")
     else:  # the signed-in user
         owner = owner_for_create(session, user.user_id, user.sso_name, body.business_unit)
         if owner is None:
@@ -269,7 +275,7 @@ def create_initiative(
                 "and is still being processed.",
             )
 
-    values = body.model_dump(exclude={"running_cost_range", "business_unit", "owner_id"})
+    values = body.model_dump(exclude={"running_cost_range", "business_unit", "owner_user_id"})
     check_stage_gates(body.stage, gate_dates(values), today())
     as_datetimes(values, GATE_DATE_FIELDS.values())
     record = UserAction(

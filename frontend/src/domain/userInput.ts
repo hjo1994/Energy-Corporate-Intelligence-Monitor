@@ -222,9 +222,9 @@ export function previewRiskLevel(r: Indicators): number {
 export interface FormState {
   name: string;
   description: string;
-  /** the chosen owner's ID; "" = the signed-in user (not sent) */
-  ownerId: string;
-  /** asked only for the signed-in user while they are no owner yet; else the owner's (shown, not sent) */
+  /** the AppUser ID of the user chosen as owner; "" = the signed-in user (not sent) */
+  ownerUserId: string;
+  /** asked only while the owner's user has no owner row yet; else the owner's (shown, not sent) */
   businessUnit: string;
   valueTypeId: string;
   aiLayer: string;
@@ -261,7 +261,7 @@ export interface FormState {
 export const EMPTY_FORM: FormState = {
   name: "",
   description: "",
-  ownerId: "",
+  ownerUserId: "",
   businessUnit: "",
   valueTypeId: "",
   aiLayer: "",
@@ -311,8 +311,8 @@ export function toInput(f: FormState): InitiativeInput {
   return {
     name: f.name.trim(),
     description: f.description.trim(),
-    owner_id: f.ownerId ? Number(f.ownerId) : null,
-    business_unit: f.ownerId ? null : f.businessUnit || null,
+    owner_user_id: f.ownerUserId ? Number(f.ownerUserId) : null,
+    business_unit: f.businessUnit || null,
     value_type_id: Number(f.valueTypeId),
     ai_layer: f.aiLayer,
     stage: f.stage,
@@ -395,6 +395,9 @@ export function validate(
   const complete = LEVERS.some((l) => f.levers[l.key] && l.fields.every((field) => input[field] !== null));
   if (!complete) errors.levers = "Fill in all drivers of at least one value lever.";
 
+  // form 1 asks when the needs gate was passed: the idea starts between the needs and the scope gate
+  if (!f.gateDates.Needs) errors.gateNeeds = "Enter the date the needs gate was passed.";
+  else if (f.gateDates.Needs > today) errors.gateNeeds = "The needs gate date cannot be in the future.";
   for (const p of gateProblems(f.stage, f.gateDates, today, rules)) errors[`gate${p.gate}`] ??= p.message;
   return errors;
 }

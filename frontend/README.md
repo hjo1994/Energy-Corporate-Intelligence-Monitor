@@ -98,13 +98,13 @@ in Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel.
 - **+ New AI idea** (`/new`) — Formular 1. **Alle Zahlen aus Wertebereichen**
   (Auswahllisten, `value_domains` aus `/api/form-options`, Fallback
   `VALUE_DOMAINS` in `src/domain/userInput.ts`; gespeichert wird der Wert der Spanne),
-  laufende Kosten als Spanne, AI layer statt Solution Type. Je nach Stage fragt das
-  Formular per Kalender nach den Daten der schon passierten Gates (PoC → Scope-Gate,
-  Production → Scope und Deploy; Needs optional). **Stage startet mit Ideation**; eingereicht
-  steht die Idee in Formular 2 damit zwischen Needs- und Scope-Gate. **Owner wählbar**: Standard
-  „Me“ (der angemeldete Nutzer; ohne eigenen Owner-Eintrag fragt das Formular einmal die
-  Business Unit), sonst jeder Eintrag aus `/api/owners` (`owner_id`, die Business Unit ist dann
-  die des Owners); der Einreicher sieht die Idee weiter unter „My use cases“. Beim Efficiency-
+  laufende Kosten als Spanne, AI layer statt Solution Type. **Keine Stage-Auswahl:** jede
+  Idee startet in Ideation; Pflichtfeld ist das **Datum des Needs-Gates** (Kalender, bis heute).
+  In Formular 2 steht die Idee damit zwischen Needs- und Scope-Gate, die weiteren Gates
+  trägt man dort ein. **Owner aus der Nutzer-Tabelle** (`/api/users/directory`): Standard
+  „Me“, sonst jeder aktive Nutzer (`owner_user_id`). Hat der Nutzer noch keinen Owner-Eintrag
+  (auch keinen Excel-Owner gleichen Namens), fragt das Formular einmal seine Business Unit;
+  sonst gilt die seines Owners. Der Einreicher sieht die Idee weiter unter „My use cases“. Beim Efficiency-
   und Quality-Hebel heißen die Fälle **Runs** („Runs per year“, „Time saved per run“; Felder
   bleiben `cases_per_year`/`hours_saved_per_case`). Nach dem Absenden geht es zu „My use cases“.
 - **My use cases** (`/my`) — alles, was ich eingereicht habe, besitze oder leite

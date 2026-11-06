@@ -50,6 +50,7 @@ const filled: FormState = {
   aiLayer: "AI for productivity and efficiency",
   stage: "Ideation",
   dateDelivery: "Q3 2027",
+  gateDates: { Needs: "2026-01-15", Scope: "", Deploy: "", Retire: "" },
   levers: { efficiency: true, quality: true, riskReduction: false, speed: false },
   // values of the domains (the selects store the option's value)
   casesPerYear: "5000",
@@ -75,7 +76,10 @@ describe("form", () => {
     const body = toInput(filled);
     expect(body).toMatchObject({
       name: "Smart Invoice Check",
+      owner_user_id: null,
       business_unit: "ETB",
+      stage: "Ideation",
+      needs_gate_date: "2026-01-15",
       cases_per_year: 5000,
       error_rate_before: 0.075,
       errors_avoided: 0.5,
@@ -106,6 +110,15 @@ describe("form", () => {
     expect(validate({ ...filled, oneTimeCosts: "200000" }).oneTimeCosts).toMatch(/ranges/);
   });
 
+  it("asks for the needs gate date, up to today", () => {
+    const today = "2026-11-01";
+    expect(validate({ ...EMPTY_FORM }, undefined, today).gateNeeds).toBe("Enter the date the needs gate was passed.");
+    expect(validate({ ...filled, gateDates: { ...filled.gateDates, Needs: "2026-11-02" } }, undefined, today).gateNeeds)
+      .toMatch(/cannot be in the future/);
+    expect(validate(filled, undefined, today)).toEqual({});
+    expect(toInput({ ...filled, ownerUserId: "5" })).toMatchObject({ owner_user_id: 5 });
+  });
+
   it("asks for the gate dates the stage needs", () => {
     const today = "2026-11-01";
     expect(validate({ ...filled, stage: "PoC" }, undefined, today).gateScope).toMatch(/needs the date the scope gate/);
@@ -113,7 +126,7 @@ describe("form", () => {
     expect(validate(poc, undefined, today)).toEqual({});
     expect(validate({ ...poc, gateDates: { ...poc.gateDates, Scope: "2026-12-01" } }, undefined, today).gateScope).toMatch(/cannot be in the future/);
     expect(validate({ ...poc, gateDates: { ...poc.gateDates, Needs: "2026-03-01" } }, undefined, today).gateScope).toMatch(/before the needs gate/);
-    expect(toInput(poc)).toMatchObject({ scope_gate_date: "2026-02-10", needs_gate_date: null });
+    expect(toInput(poc)).toMatchObject({ scope_gate_date: "2026-02-10", needs_gate_date: "2026-01-15" });
   });
 
   it("finds the range of a value", () => {

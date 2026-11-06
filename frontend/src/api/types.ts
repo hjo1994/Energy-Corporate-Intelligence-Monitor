@@ -91,9 +91,9 @@ export type RunningCostRange = "up_to_10k" | "10k_to_50k" | "50k_to_100k" | "ove
 export interface InitiativeInput {
   name: string;
   description: string;
-  /** the chosen owner; null = the signed-in user */
-  owner_id: number | null;
-  /** only when the signed-in user is the owner and no owner yet: the business unit of their new owner */
+  /** the user chosen as owner (AppUser); null = the signed-in user */
+  owner_user_id: number | null;
+  /** only when the owner's user has no owner row yet: the business unit of their new owner */
   business_unit: string | null;
   value_type_id: number;
   ai_layer: string;
@@ -282,12 +282,23 @@ export interface Rights {
   canAdmin: boolean;
   /** the Users page: grant and take the approver role */
   canManageUsers?: boolean;
+  /** the signed-in user's AppUser ID */
+  userId?: number | null;
   /** the owner the user's new use cases get; null: form 1 asks for the business unit */
   owner?: { id: number; name: string; category: string | null } | null;
   /** may switch to approver rights for a demo (AI_COCKPIT_DEMO_PRESENTERS) */
   demoPresenter?: boolean;
   /** this session runs with the demo approver rights */
   demoApprover?: boolean;
+}
+
+/** A user to choose as owner in form 1 (GET /api/users/directory). */
+export interface Person {
+  id: number;
+  name: string;
+  owner_id: number | null;
+  /** of their owner row; null = not an owner yet */
+  business_unit: string | null;
 }
 
 /** A signed-in user on the Users page (GET /api/users). */

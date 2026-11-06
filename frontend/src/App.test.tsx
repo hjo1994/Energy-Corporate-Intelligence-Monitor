@@ -144,6 +144,11 @@ describe("new initiative form", () => {
     { id: 1, name: "Owner A", department: "Assets", category: "ETB" },
     { id: 2, name: "Owner B", department: "Innovation", category: "IT" },
   ];
+  const people = [
+    { id: 1, name: "Jonas", owner_id: null, business_unit: null },
+    { id: 2, name: "Owner B", owner_id: 2, business_unit: "IT" },
+    { id: 3, name: "New Person", owner_id: null, business_unit: null },
+  ];
   const valueTypes = [{ id: 1, name: "CAPEX delivery", description: null }];
   const solutionTypes = [{ id: 1, name: "Custom agent", description: null }];
   const opt = (...values: string[]) => values.map((value) => ({ value, label: value }));
@@ -161,6 +166,7 @@ describe("new initiative form", () => {
     get.mockReset();
     get.mockImplementation((async (path: string) => {
       if (path === "/owners") return owners;
+      if (path === "/users/directory") return people;
       if (path === "/value-types") return valueTypes;
       if (path === "/solution-types") return solutionTypes;
       if (path === "/features") return { initiative_input: true };
@@ -177,7 +183,7 @@ describe("new initiative form", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: /^Your business unit/ }), "ETB");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Topic/ }), "1");
     await user.selectOptions(screen.getByRole("combobox", { name: /^AI layer/ }), "AI for productivity and efficiency");
-    expect(screen.getByRole("combobox", { name: /^Stage/ })).toHaveValue("Ideation"); // the default
+    fireEvent.change(screen.getByLabelText("Needs gate date"), { target: { value: "2026-01-15" } });
     // every number is chosen from its range
     await user.selectOptions(screen.getByRole("combobox", { name: /^Runs per year/ }), "1,000–10,000");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Time saved per run/ }), "15–30 min");
@@ -218,7 +224,8 @@ describe("new initiative form", () => {
     await user.click(screen.getByRole("button", { name: "Submit idea" }));
 
     expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
-      name: "Smart Invoice Check", owner_id: null, business_unit: "ETB", stage: "Ideation", cases_per_year: 5000, hours_saved_per_case: 0.4,
+      name: "Smart Invoice Check", owner_user_id: null, business_unit: "ETB", stage: "Ideation",
+      needs_gate_date: "2026-01-15", cases_per_year: 5000, hours_saved_per_case: 0.4,
       error_rate_before: null, estimate_basis: "benchmark", solution_complexity_score: 4,
       one_time_costs: 175000, decisions_on_employees: "none", scope_gate_date: null,
       ai_layer: "AI for productivity and efficiency", running_cost_range: "50k_to_100k",
@@ -240,41 +247,40 @@ describe("new initiative form", () => {
     expect(screen.queryByRole("combobox", { name: /business unit/ })).not.toBeInTheDocument();
   });
 
-  it("lets the user choose another owner, whose business unit counts", async () => {
+  it("lets the user choose another user as owner, whose business unit counts", async () => {
     mockWithReference();
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((async (path: string) =>
+      path === "/auth/rights" ? { user: "Jonas", user_id: 1, rights: { canApprove: false, canAdmin: false } } : base(path as never)) as never);
     post.mockReset();
     post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
       ...SAMPLE[0], id: -1, user_input_id: 1, status: "pending", business_transaction_id: null, name: body.name as string,
     })) as never);
     renderAt("/new");
     const user = await fillRequired();
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Owner/ }), "2");
-    expect(screen.queryByRole("combobox", { name: /business unit/ })).not.toBeInTheDocument();
+    const owner = screen.getByRole("combobox", { name: /^Owner/ });
+    expect(within(owner).getAllByRole("option").map((o) => o.textContent)).toEqual(["Me", "Owner B · IT", "New Person"]);
+    // a user who is no owner yet: their business unit is asked
+    await user.selectOptions(owner, "3");
+    expect(screen.getByRole("combobox", { name: /^Business unit of New Person/ })).toBeInTheDocument();
+    // an owner already: their business unit counts
+    await user.selectOptions(owner, "2");
+    expect(screen.queryByRole("combobox", { name: /business unit/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Submit idea" }));
-    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({ owner_id: 2, business_unit: null }));
+    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({ owner_user_id: 2, business_unit: null }));
   });
 
-  it("asks for the dates of the gates the chosen stage has passed", async () => {
+  it("asks for the needs gate date and starts the idea in Ideation", async () => {
     mockWithReference();
     post.mockReset();
-    post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
-      ...SAMPLE[0], id: -1, user_input_id: 1, status: "pending", business_transaction_id: null, name: body.name as string,
-    })) as never);
     renderAt("/new");
     const user = await fillRequired();
-    expect(screen.queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // Ideation: no gate passed yet
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "PoC");
-    expect(screen.getByText(/In PoC the scope gate is already passed/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("Deploy gate date")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /^Stage/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // later gates: form 2
+    fireEvent.change(screen.getByLabelText("Needs gate date"), { target: { value: "" } });
     await user.click(screen.getByRole("button", { name: "Submit idea" }));
-    expect(screen.getByText("PoC needs the date the scope gate was passed.")).toBeInTheDocument();
+    expect(screen.getByText("Enter the date the needs gate was passed.")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
-
-    fireEvent.change(screen.getByLabelText("Scope gate date"), { target: { value: "2026-02-10" } });
-    await user.click(screen.getByRole("button", { name: "Submit idea" }));
-    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
-      stage: "PoC", scope_gate_date: "2026-02-10", needs_gate_date: null, deploy_gate_date: null,
-    }));
   });
 
   it("shows the server's message for a duplicate name", async () => {

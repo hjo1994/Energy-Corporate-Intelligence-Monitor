@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, createInitiative, fetchReferenceData, type ReferenceData } from "../api/client";
-import type { Stagegate } from "../api/types";
-import { GateDatesEditor } from "../components/GateDates";
 import { flagshipLabel } from "../domain/format";
-import { GATES, STAGE_GATE_RULES, gateRequirement, type GateRules } from "../domain/lifecycle";
+import { STAGE_GATE_RULES, todayIso, type GateRules } from "../domain/lifecycle";
 import { riskActions, riskLevelLabel } from "../domain/risk";
 import {
   AI_LAYERS,
   EMPTY_FORM,
   LEVERS,
   RUNNING_COST_RANGES,
-  STAGES,
   VALUE_DOMAINS,
   domainOption,
   previewInput,
@@ -84,8 +81,8 @@ const ownerLabel = (o: { name: string; category: string | null }) => (o.category
 export function NewInitiativeView() {
   const navigate = useNavigate();
   const { addInitiative, rights, reloadRights } = useApp();
-  // The owner can be chosen; by default it is the signed-in user, who chooses their business unit
-  // once while they have no owner row yet.
+  // The owner is a user (Users table), by default the signed-in one. A user without an owner row
+  // yet gets one: the form then asks for their business unit once.
   const myOwner = rights.owner ?? null;
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [refError, setRefError] = useState<string | null>(null);
@@ -112,11 +109,8 @@ export function NewInitiativeView() {
     () => [...new Set((ref?.owners ?? []).map((o) => o.category).filter((c): c is string => !!c))].sort(),
     [ref],
   );
-  const otherOwners = useMemo(
-    () => (ref?.owners ?? []).filter((o) => o.id !== myOwner?.id),
-    [ref, myOwner],
-  );
-  const chosenOwner = form.ownerId ? ref?.owners.find((o) => String(o.id) === form.ownerId) ?? null : null;
+  const otherPeople = useMemo(() => (ref?.people ?? []).filter((p) => p.id !== rights.userId), [ref, rights.userId]);
+  const chosen = form.ownerUserId ? ref?.people.find((p) => String(p.id) === form.ownerUserId) ?? null : null;
   const flagship = ref?.valueTypes.find((t) => String(t.id) === form.valueTypeId)?.name;
   const typical = typicalValues(form.aiLayer || undefined, flagship);
   const aiLayers = ref?.options?.ai_layers?.map((o) => o.value) ?? AI_LAYERS;
@@ -124,26 +118,18 @@ export function NewInitiativeView() {
   const quarters = useMemo(() => quarterOptions(), []);
   const domains = { ...VALUE_DOMAINS, ...(ref?.options?.value_domains as Record<DomainField, DomainOption[]> | undefined) };
   const rules: GateRules = ref?.options?.stage_gate_rules ?? STAGE_GATE_RULES;
-  const stages = ref?.options?.stages?.map((o) => o.value) ?? STAGES;
   /** "Typical: …" as the label of the range the typical value falls in. */
   const typicalHint = (field: DomainField, value: number | undefined, what = "Typical") =>
     value === undefined ? undefined : `${what}: ${domainOption(domains[field], value)?.label ?? value}`;
-  /** A new stage asks for other gates: dates of gates it does not ask for are dropped. */
-  const changeStage = (stage: string) =>
-    setForm((f) => {
-      const asked = GATES.filter((g) => gateRequirement(stage, g, rules) === "passed");
-      const keep = (g: Stagegate) => asked.includes(g) || (g === "Needs" && asked.length > 0);
-      const gateDates = Object.fromEntries(GATES.map((g) => [g, keep(g) ? f.gateDates[g] : ""])) as FormState["gateDates"];
-      return { ...f, stage, gateDates };
-    });
   const pick = (field: DomainField, key: keyof FormState) => (
     <DomainSelect value={String(form[key])} options={domains[field]} invalid={!!errors[key]} onChange={(v) => set(key, v as never)} />
   );
 
-  // with an owner (chosen, or the user's own) the business unit is the owner's: not asked, not sent
-  const owner = chosenOwner ?? myOwner;
-  const checked: FormState = owner ? { ...form, businessUnit: owner.category || "owner" } : form;
-  const input = { ...toInput(form), business_unit: owner ? null : form.businessUnit || null };
+  // with an owner row the business unit is the owner's: not asked, not sent
+  const ownerUnit = chosen ? (chosen.owner_id ? chosen.business_unit ?? "" : null) : myOwner ? myOwner.category ?? "" : null;
+  const ownerName = chosen ? chosen.name : "you";
+  const checked: FormState = ownerUnit !== null ? { ...form, businessUnit: ownerUnit || "owner" } : form;
+  const input = { ...toInput(form), business_unit: ownerUnit !== null ? null : form.businessUnit || null };
   const preview = previewValue(previewInput(input));
   const level = previewRiskLevel(input);
   const errors: Errors = showErrors ? validate(checked, domains, undefined, rules) : {};
@@ -156,7 +142,7 @@ export function NewInitiativeView() {
     try {
       const created = await createInitiative(input);
       addInitiative(created);
-      if (!myOwner && !form.ownerId) reloadRights();
+      if (!myOwner && !form.ownerUserId) reloadRights();
       navigate("/my", { state: { created: created.name } });
     } catch (err) {
       setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The idea could not be saved.");
@@ -275,15 +261,22 @@ export function NewInitiativeView() {
             <div className="nf-grid3">
               <Field
                 label="Owner"
-                hint={chosenOwner ? "You still find the use case under My use cases." : "You by default; choose someone else if they own it."}
+                hint={chosen ? "You still find the use case under My use cases." : "You by default; choose another user if they own it."}
               >
-                <select className="nf-input" value={form.ownerId} onChange={(e) => set("ownerId", e.target.value)}>
+                <select className="nf-input" value={form.ownerUserId} onChange={(e) => set("ownerUserId", e.target.value)}>
                   <option value="">{myOwner ? `Me · ${ownerLabel(myOwner)}` : "Me"}</option>
-                  {otherOwners.map((o) => <option key={o.id} value={o.id}>{ownerLabel(o)}</option>)}
+                  {otherPeople.map((p) => (
+                    <option key={p.id} value={p.id}>{p.business_unit ? `${p.name} · ${p.business_unit}` : p.name}</option>
+                  ))}
                 </select>
               </Field>
-              {!owner && (
-                <Field label="Your business unit" required error={errors.businessUnit} hint="Asked once: you become an owner.">
+              {ownerUnit === null && (
+                <Field
+                  label={chosen ? `Business unit of ${chosen.name}` : "Your business unit"}
+                  required
+                  error={errors.businessUnit}
+                  hint={`Asked once: ${ownerName === "you" ? "you become" : `${ownerName} becomes`} an owner.`}
+                >
                   <select className="nf-input" value={form.businessUnit} onChange={(e) => set("businessUnit", e.target.value)}>
                     <option value="">Choose …</option>
                     {businessUnits.map((bu) => <option key={bu} value={bu}>{bu}</option>)}
@@ -302,10 +295,21 @@ export function NewInitiativeView() {
                   {aiLayers.map((l) => <option key={l} value={l}>{l}</option>)}
                 </select>
               </Field>
-              <Field label="Stage" required error={errors.stage}>
-                <select className="nf-input" value={form.stage} onChange={(e) => changeStage(e.target.value)}>
-                  {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+              <Field
+                label="Needs gate passed on"
+                required
+                error={errors.gateNeeds}
+                hint="The idea starts in Ideation, between the needs and the scope gate. Later gates follow in the details."
+              >
+                <input
+                  type="date"
+                  className={`nf-input${errors.gateNeeds ? " invalid" : ""}`}
+                  aria-label="Needs gate date"
+                  aria-invalid={errors.gateNeeds ? true : undefined}
+                  value={form.gateDates.Needs}
+                  max={todayIso()}
+                  onChange={(e) => setForm((f) => ({ ...f, gateDates: { ...f.gateDates, Needs: e.target.value } }))}
+                />
               </Field>
               <div className="nf-grid2 nf-dates">
                 <Field label="Start">
@@ -322,8 +326,6 @@ export function NewInitiativeView() {
                 </Field>
               </div>
             </div>
-            <GateDatesEditor stage={form.stage} dates={form.gateDates} mode="new" rules={rules} showProblems={showErrors}
-              onChange={(gate: Stagegate, date: string) => setForm((f) => ({ ...f, gateDates: { ...f.gateDates, [gate]: date } }))} />
           </section>
 
           <section className="card nf-card" aria-labelledby="nf-value">

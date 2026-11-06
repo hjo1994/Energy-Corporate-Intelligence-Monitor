@@ -9,6 +9,7 @@ import type {
   InitiativePage,
   MyUseCase,
   Owner,
+  Person,
   Rights,
   SimilarUseCase,
   TypeRef,
@@ -77,6 +78,8 @@ export async function fetchAllInitiatives(): Promise<Initiative[]> {
 
 export interface ReferenceData {
   owners: Owner[];
+  /** the users to choose as owner */
+  people: Person[];
   valueTypes: TypeRef[];
   solutionTypes: TypeRef[];
   options: FormOptions;
@@ -84,14 +87,16 @@ export interface ReferenceData {
 
 export async function fetchReferenceData(): Promise<ReferenceData> {
   try {
-    const [owners, valueTypes, solutionTypes, options] = await Promise.all([
+    const [owners, people, valueTypes, solutionTypes, options] = await Promise.all([
       serviceApi.get<Owner[]>("/owners"),
+      serviceApi.get<Person[]>("/users/directory"),
       serviceApi.get<TypeRef[]>("/value-types"),
       serviceApi.get<TypeRef[]>("/solution-types"),
       serviceApi.get<FormOptions>("/form-options"),
     ]);
     return {
       owners,
+      people: Array.isArray(people) ? people : [],
       valueTypes: valueTypes.map((t) => clean(t) as TypeRef),
       solutionTypes: solutionTypes.map((t) => clean(t) as TypeRef),
       options,
@@ -132,11 +137,12 @@ const NO_RIGHTS: Rights = { canApprove: false, canAdmin: false };
 export async function fetchRights(): Promise<Rights> {
   try {
     const r = await serviceApi.get<{
-      rights?: Partial<Rights>; demo_presenter?: boolean; demo_approver?: boolean; owner?: Rights["owner"];
+      rights?: Partial<Rights>; demo_presenter?: boolean; demo_approver?: boolean; owner?: Rights["owner"]; user_id?: number | null;
     }>("/auth/rights");
     const rights: Rights = { canApprove: r?.rights?.canApprove === true, canAdmin: r?.rights?.canAdmin === true };
     if (r?.rights?.canManageUsers === true) rights.canManageUsers = true;
     if (r?.owner) rights.owner = r.owner;
+    if (typeof r?.user_id === "number") rights.userId = r.user_id;
     if (r?.demo_presenter) Object.assign(rights, { demoPresenter: true, demoApprover: r.demo_approver === true });
     return rights;
   } catch {

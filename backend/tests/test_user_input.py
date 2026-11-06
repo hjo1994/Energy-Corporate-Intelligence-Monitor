@@ -94,7 +94,7 @@ def form1(**over):
     return {
         "name": "Smart Invoice Check", "description": "Checks invoices against orders",
         "value_type_id": 1, "ai_layer": "AI for business process optimization", "stage": "Ideation",
-        "date_delivery": "Q3 2027", **values, "running_cost_range": "10k_to_50k",
+        "date_delivery": "Q3 2027", "needs_gate_date": "2026-01-15", **values, "running_cost_range": "10k_to_50k",
         "solution_complexity_score": 4, **over,
     }
 
@@ -246,18 +246,42 @@ def test_an_excel_owner_of_the_same_name_is_linked(submit, db_path):
         assert conn.execute('SELECT "UserID", "Source" FROM "Owner" WHERE "ID" = 2').fetchone() == (1, "excel")
 
 
-def test_an_owner_can_be_chosen(submit, client, db_path):
-    """Form 1 can name any owner; the submitter still sees the use case as theirs."""
-    resp = submit(name="For Owner B", owner_id=2)
+def test_another_user_can_be_chosen_as_owner(submit, client, db_path):
+    """Form 1 chooses the owner among the users (AppUser); the submitter still sees the use case as theirs."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('INSERT INTO "AppUser" ("ID", "Name", "Role", "IsActive") VALUES (2, \'Owner B\', \'user\', 1)')
+        conn.execute('INSERT INTO "AppUser" ("ID", "Name", "Role", "IsActive") VALUES (3, \'New Person\', \'user\', 1)')
+        conn.execute('INSERT INTO "AppUser" ("ID", "Name", "Role", "IsActive") VALUES (4, \'Gone\', \'user\', 0)')
+    people = client.get("/api/users/directory").json()
+    assert [(p["id"], p["name"], p["business_unit"]) for p in people] == [
+        (1, "Dev User", "ETB"), (3, "New Person", None), (2, "Owner B", "IT")]  # Owner B: the Excel owner
+    assert "email" not in people[0] and "role" not in people[0]
+
+    # the Excel owner of the same name gets linked to that user
+    resp = submit(name="For Owner B", owner_user_id=2)
     assert resp.status_code == 201, resp.text
     assert (resp.json()["owner"]["id"], resp.json()["owner"]["category"]) == (2, "IT")
     with sqlite3.connect(db_path) as conn:
         assert conn.execute('SELECT "OwnerID", "SubmittedByUserID" FROM "UserActionExtracts"').fetchall() == [(2, 1)]
+        assert conn.execute('SELECT "UserID" FROM "Owner" WHERE "ID" = 2').fetchone() == (2,)
     assert "For Owner B" in {m["name"] for m in client.get("/api/me/use-cases").json()}
-    # the same name in another business unit is another use case; in the same one a duplicate
-    assert submit(name="For Owner B").status_code == 201  # Lead C, ETB
-    assert submit(name="For Owner B", owner_id=2).status_code == 409
-    assert submit(name="Nobody", owner_id=99).status_code == 422
+    # a user who is no owner yet needs a business unit, then gets an owner row
+    resp = submit(name="For New Person", owner_user_id=3)
+    assert resp.status_code == 422 and "business unit of New Person" in resp.json()["detail"]
+    resp = submit(name="For New Person", owner_user_id=3, business_unit="ETB")
+    assert resp.status_code == 201 and resp.json()["owner"]["name"] == "New Person"
+    assert submit(name="Nobody", owner_user_id=99).status_code == 422
+    assert submit(name="Inactive", owner_user_id=4, business_unit="ETB").status_code == 422
+    assert submit(name="Me", owner_user_id=1).json()["owner"]["id"] == 3  # the signed-in user's own owner
+
+
+def test_form1_asks_for_the_needs_gate_date(submit, client):
+    body = form1(name="No needs date")
+    body.pop("needs_gate_date")
+    assert client.post("/api/initiatives", json=body).status_code == 422
+    resp = submit(name="Future", needs_gate_date="2999-01-01")
+    assert resp.status_code == 422 and "needs gate" in resp.json()["detail"]
+    assert submit(name="Today-ish").json()["needs_gate_date"].startswith("2026-01-15")
 
 
 def test_former_stages_are_mapped_to_ideation(submit, db_path):
