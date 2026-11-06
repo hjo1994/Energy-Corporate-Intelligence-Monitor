@@ -28,6 +28,7 @@ from db.get_engine, so the DAGs migrate the shared database on first use.
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
@@ -51,7 +52,8 @@ def _add_app_users(engine: Engine) -> None:
     are added by ALTER TABLE: Owner.UserID + Owner.Source ('excel' for the
     owners already there), UserActionExtracts.SubmittedByUserID,
     Initiative.CreatedByUserID / ChangedByUserID. Owner.Email (an earlier
-    build) is dropped again; the signed-in user is matched through AppUser."""
+    build) is dropped again where SQLite can (>= 3.35), otherwise it stays
+    unused; the signed-in user is matched through AppUser."""
     from ai_cockpit_ingestion.models import AppUser, USER_ACTION_TABLE_NAME
 
     AppUser.__table__.create(engine, checkfirst=True)
@@ -80,8 +82,18 @@ def _add_app_users(engine: Engine) -> None:
         if "Owner" in tables:
             conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS "ux_owner_userid" ON "Owner" ("UserID")'))
             if "Email" in {c["name"] for c in inspector.get_columns("Owner")}:
-                conn.execute(text('ALTER TABLE "Owner" DROP COLUMN "Email"'))  # SQLite >= 3.35
-                log.info("Dropped Owner.Email")
+                if _supports_drop_column():
+                    conn.execute(text('ALTER TABLE "Owner" DROP COLUMN "Email"'))
+                    log.info("Dropped Owner.Email")
+                else:
+                    # The cluster's SQLite is older than 3.35 (no DROP COLUMN). The column is
+                    # nullable and unused, so it simply stays; nothing reads or writes it.
+                    log.info("Kept Owner.Email: SQLite %s cannot drop columns", sqlite3.sqlite_version)
+
+
+def _supports_drop_column() -> bool:
+    """ALTER TABLE ... DROP COLUMN exists since SQLite 3.35."""
+    return sqlite3.sqlite_version_info >= (3, 35, 0)
 
 
 def _stage_mapped() -> str:

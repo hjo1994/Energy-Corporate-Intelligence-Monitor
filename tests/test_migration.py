@@ -166,6 +166,35 @@ def test_user_table_and_its_columns_are_added(tmp_path):
         engine.dispose()
 
 
+def test_old_sqlite_keeps_owner_email(tmp_path, monkeypatch):
+    """SQLite < 3.35 (the cluster) has no DROP COLUMN: Owner.Email stays, the rest of the migration runs."""
+    from ai_cockpit_ingestion.migrations import lifecycle_2026_11
+
+    monkeypatch.setattr(lifecycle_2026_11, "_supports_drop_column", lambda: False)
+    path = tmp_path / "old_sqlite.db"
+    get_engine(path).dispose()
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        DROP INDEX "ux_owner_userid";
+        ALTER TABLE "Owner" RENAME TO "Owner_new";
+        CREATE TABLE "Owner" ("ID" INTEGER PRIMARY KEY, "Category" VARCHAR, "Name" VARCHAR NOT NULL,
+            "Department" VARCHAR, "Email" VARCHAR);
+        DROP TABLE "Owner_new";
+        INSERT INTO "Owner" ("ID", "Name", "Email") VALUES (1, 'Owner A', 'a@x.de');
+    """)
+    conn.commit()
+    conn.close()
+    for _ in range(2):  # idempotent, no error on the second connect either
+        engine = get_engine(path)
+        owner_columns = {c["name"] for c in inspect(engine).get_columns("Owner")}
+        assert {"UserID", "Source", "Email"} <= owner_columns
+        with Session(engine) as s:
+            s.add(Owner(name="Owner B", source="app"))  # new owners do not need the leftover column
+            s.commit()
+            assert s.get(Owner, 1).source == "excel"
+        engine.dispose()
+
+
 def test_idea_and_exploration_become_ideation(tmp_path):
     """A database from before 11/2026: the bronze Stage CHECK still lists Idea/Exploration,
     silver and gold hold those stages. Afterwards everything says Ideation."""
