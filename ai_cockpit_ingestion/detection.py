@@ -57,6 +57,14 @@ def is_new(newest: datetime.datetime | None, seen: datetime.datetime | None) -> 
     return seen is None or as_naive_utc(newest) > as_naive_utc(seen)
 
 
+def needs_transform(session: Session, source: SourceConfig, force: bool = False) -> bool:
+    """Whether a bronze_to_silver run has anything to do: new data in its table,
+    or (force) any data at all."""
+    if force:
+        return has_data(session, source)
+    return is_new(newest_record(session, source), processed_up_to(session, source))
+
+
 def start_run(engine: Engine, source: SourceConfig, dag_run_id: str | None) -> int:
     """Log a running transformation, with the bronze table's newest Timestamp taken now —
     before the run reads the data. Committed at once, so the run is visible while it lasts."""

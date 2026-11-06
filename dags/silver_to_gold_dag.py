@@ -1,17 +1,15 @@
 """SilverToGold: Initiative (silver, versioned) -> AssessedInitiatives (gold).
 
-Like the bronze_to_silver DAGs: schedule "@continuous" with max_active_runs=1,
-and the DAG's own sensor wait_for_silver_changes (operators/silver_to_gold.py)
-checks every POKE_SECONDS whether a use case is due — it has just become
-complete (value buckets, confidence and delivery score, risk answers,
-one-time and running costs all set),
-one of its attributes changed (new silver version), or its runtime-based
-RealizedValue was last computed before today. Reschedule mode, soft fail
-after SENSOR_TIMEOUT without changes. Then silver_to_gold assesses the due
-use cases (PotentialValue, RealizedValue, risk level; transforms/gold.py).
+Event-driven like the bronze_to_silver DAGs: triggered by the silver Dataset
+that every bronze_to_silver_* run emits after writing silver, and once a day
+(GOLD_DAILY_CRON, Europe/Berlin), because the runtime-based RealizedValue grows
+with the days without any silver change. silver_to_gold assesses the due use
+cases (due_use_cases: just complete, a new silver version, or RealizedValue
+last computed before today; PotentialValue, RealizedValue, risk level;
+transforms/gold.py). Nothing due -> the run writes nothing.
 
-Trigger with {"force": true} to assess every complete use case again
-(e.g. after a formula change).
+Retries instead of an endless run loop. Trigger by hand with {"force": true}
+to assess every complete use case again (e.g. after a formula change).
 """
 from __future__ import annotations
 
@@ -30,36 +28,35 @@ import dependency_loader  # noqa: E402,F401 — installs polars/fastexcel on the
 import datetime
 
 from airflow import DAG
+from airflow.datasets import Dataset
 from airflow.models.param import Param
+from airflow.timetables.datasets import DatasetOrTimeSchedule
+from airflow.timetables.trigger import CronTriggerTimetable
 
 from ai_cockpit_ingestion import config
-from ai_cockpit_ingestion.operators.silver_to_gold import SilverChangesSensor, SilverToGoldOperator
+from ai_cockpit_ingestion.operators.silver_to_gold import SilverToGoldOperator
+from ai_cockpit_ingestion.sources import SILVER_ASSET_URI
 
-POKE_SECONDS = int(os.environ.get("AI_COCKPIT_SILVER_POKE_SECONDS", "60"))
-SENSOR_TIMEOUT = datetime.timedelta(hours=24)
+GOLD_DAILY_CRON = os.environ.get("AI_COCKPIT_GOLD_DAILY_CRON", "0 3 * * *")
 
 with DAG(
     dag_id="silver_to_gold",
     description="Initiative -> AssessedInitiatives (potential value, realized value, risk level)",
-    schedule="@continuous",
+    schedule=DatasetOrTimeSchedule(
+        timetable=CronTriggerTimetable(GOLD_DAILY_CRON, timezone="Europe/Berlin"),
+        datasets=[Dataset(SILVER_ASSET_URI)],
+    ),
     start_date=datetime.datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
     tags=["ai-cockpit", "input-orchestration", "gold"],
+    default_args={"retries": 2, "retry_delay": datetime.timedelta(minutes=2)},
     params={
         "force": Param(
             False,
             type="boolean",
-            description="Assess every complete use case again without waiting for changes.",
+            description="Assess every complete use case again (e.g. after a formula change).",
         )
     },
 ) as silver_to_gold:
-    wait_for_silver_changes = SilverChangesSensor(
-        task_id="wait_for_silver_changes",
-        db_path=str(config.DB_PATH),
-        mode="reschedule",
-        poke_interval=POKE_SECONDS,
-        timeout=SENSOR_TIMEOUT.total_seconds(),
-        soft_fail=True,
-    )
-    wait_for_silver_changes >> SilverToGoldOperator(task_id="silver_to_gold", db_path=str(config.DB_PATH))
+    SilverToGoldOperator(task_id="silver_to_gold", db_path=str(config.DB_PATH))

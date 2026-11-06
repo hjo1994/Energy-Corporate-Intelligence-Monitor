@@ -2,8 +2,8 @@
 each of its four raw sheets 1:1 into its extract (bronze) table.
 
 One load task per entry in sources.SOURCES. Each task emits the Dataset of its
-extract table (lineage in the Airflow UI). The matching bronze_to_silver_<key>
-DAG (dags/bronze_to_silver_dag.py) picks the new load up with its own sensor.
+extract table, which triggers the matching bronze_to_silver_<key> DAG
+(dags/bronze_to_silver_dag.py).
 """
 from __future__ import annotations
 

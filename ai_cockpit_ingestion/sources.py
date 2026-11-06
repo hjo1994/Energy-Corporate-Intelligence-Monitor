@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 
 SHEET = "sheet"  # a raw sheet: snapshot loads, one business unit, soft delete
+SILVER_ASSET_URI = "ai-cockpit://silver/Initiative"  # emitted by bronze_to_silver_*, triggers silver_to_gold
 USER_INPUT = "user_input"  # the UI: one record per user action, see USER_INPUT_SOURCE
 
 

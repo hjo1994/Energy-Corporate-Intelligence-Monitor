@@ -23,7 +23,6 @@ from __future__ import annotations
 import datetime
 
 from airflow.models.baseoperator import BaseOperator
-from airflow.sensors.base import BaseSensorOperator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -133,26 +132,3 @@ class SilverToGoldOperator(BaseOperator):
             engine.dispose()
         self.log.info("Initiative -> AssessedInitiatives, force=%s: %s", force, counts)
         return counts
-
-
-class SilverChangesSensor(BaseSensorOperator):
-    """Waits until a use case is due for (re)assessment (due_use_cases); with
-    force=true it succeeds at once. Reschedule mode, reads only the AI Cockpit DB."""
-
-    template_fields = ("db_path",)
-
-    def __init__(self, *, db_path: str, **kwargs):
-        super().__init__(**kwargs)
-        self.db_path = db_path
-
-    def poke(self, context) -> bool:
-        if (context.get("params") or {}).get("force", False):
-            return True
-        engine = get_engine(self.db_path)
-        try:
-            with Session(engine) as session:
-                due = due_use_cases(session, utcnow().date())
-        finally:
-            engine.dispose()
-        self.log.info("%d use cases due for assessment", len(due))
-        return bool(due)

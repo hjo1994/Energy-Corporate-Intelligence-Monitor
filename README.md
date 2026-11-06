@@ -7,8 +7,12 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 | --- | --- | --- | --- |
 | `raw_to_bronze` | `dags/raw_to_bronze_dag.py` | stündlich, Sensor auf die Quell-Excel | 4 Extract-Tabellen (Bronze) |
 | `seed_config` | `dags/seed_config_dag.py` | nur manuell, einmalig | Owner, SolutionType, ValueType, RiskClassification (Config) |
-| `bronze_to_silver_<quelle>` (5×: 4 Extracts + `user_input`) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | `@continuous`; eigener Sensor `wait_for_new_bronze` prüft jede Minute die eigene Bronze-Tabelle | Initiative (Silber, versioniert) |
-| `silver_to_gold` | `dags/silver_to_gold_dag.py` | `@continuous`; Sensor `wait_for_silver_changes` prüft jede Minute, ob ein Use Case fällig ist | AssessedInitiatives (Gold) |
+| `bronze_to_silver_<quelle>` (5×: 4 Extracts + `user_input`) | `dags/bronze_to_silver_dag.py` (Meta-DAG) | Dataset der eigenen Bronze-Tabelle: von `raw_to_bronze` (Excel) bzw. vom Backend per REST-API (`user_input`) | Initiative (Silber, versioniert) |
+| `silver_to_gold` | `dags/silver_to_gold_dag.py` | Silber-Dataset (von jedem `bronze_to_silver_*`, der Silber geschrieben hat) und täglich 03:00 (RealizedValue) | AssessedInitiatives (Gold) |
+
+Kein DAG läuft dauerhaft oder fragt Tabellen ab: Jeder wird vom vorherigen
+ausgelöst (Airflow-Datasets). Alle Tasks haben 2 Retries; ein Fehler ergibt
+einen roten Lauf, keine Endlosschleife von Läufen.
 
 1. **RawToBronze** — `SourceFileSensor` wartet auf eine neue/geänderte
    `2026?AI?Initiatives*.xlsx` (passt auf `2026_AI_Initiatives_Elia_Group.xlsx` in
@@ -33,21 +37,18 @@ Eigenes Kubernetes-Deployment. Medallion-Aufbau laut
 3. **BronzeToSilver (Meta-DAG)** — `build_bronze_to_silver_dag()` erzeugt aus
    einem Template je Eintrag in `ai_cockpit_ingestion/sources.py` einen DAG
    `bronze_to_silver_<key>` (auch für `UserActionExtracts`). Jeder
-   läuft `@continuous` (max. ein offener Lauf) mit eigenem Sensor
-   `wait_for_new_bronze` (`operators/new_bronze_sensor.py`, Modus reschedule,
-   alle 60 s, `AI_COCKPIT_BRONZE_POKE_SECONDS`): Er prüft nur die eigene
-   Tabelle und meldet „neu“, wenn deren jüngster Datensatz (max `Timestamp`)
-   neuer ist als der jüngste `BronzeTimestamp` eines erfolgreichen Laufs in
-   `TransformationRun` (noch kein Lauf → neu). Jeder Lauf protokolliert sich
-   dort (Technik-Tabelle, ohne FK): `BronzeTableName`, `DagRunID`,
+   wird vom Dataset seiner Tabelle ausgelöst (`ai-cockpit://bronze/<Tabelle>`,
+   max. ein Lauf gleichzeitig; Events während eines Laufs ergeben genau einen
+   weiteren Lauf, der alles Neue liest). Jeder Lauf protokolliert sich in
+   `TransformationRun` (Technik-Tabelle, ohne FK): `BronzeTableName`, `DagRunID`,
    `StartedAt`, `FinishedAt`, `BronzeTimestamp` (= max `Timestamp`, ermittelt
    **vor** dem Lesen — während des Laufs geschriebene Datensätze sind damit
    beim nächsten Lauf „neu“), `Status` (`running` → `success` im selben Commit
    wie die Silber-Schreibvorgänge, sonst `failed`) und die Zähler `RowsRead`,
    `RowsInserted`, `RowsUpdated`, `RowsUnchanged`, `RowsDeactivated`,
-   `RowsConflict`. Verglichen werden nur Bronze-Zeitstempel, keine Airflow-
-   Metadaten. Nach 24 h ohne neue Daten wird der Sensor übersprungen
-   (soft fail), der Lauf endet grün und der nächste beginnt. Der Hash-Delta-
+   `RowsConflict`. Danach prüft `silver_changed`, ob Silber geschrieben wurde;
+   nur dann emittiert `silver_updated` das Silber-Dataset
+   (`ai-cockpit://silver/Initiative`) und löst `silver_to_gold` aus. Der Hash-Delta-
    Check hält wiederholte Läufe idempotent. Der
    `BronzeToSilverOperator` normalisiert Status → Stage
    und Timing, verknüpft **nur bestehende** Config-Einträge (Unbekanntes
@@ -192,10 +193,27 @@ Läufe stehen in `TransformationRun` mit `BronzeTableName = Initiative`.
 RealizedValue (ETB, Delivery-Quartal vorbei), zweiter Lauf liest nichts.
 
 Mit `{"force": true}` triggern: `airflow dags trigger bronze_to_silver_it -c '{"force": true}'`
-oder in der UI „Trigger DAG w/ config“. Der Sensor wartet dann nicht auf neue
-Daten. Weil `@continuous` immer einen Lauf offen hat, startet der getriggerte
-Lauf erst nach dem offenen; schneller geht es, den wartenden Sensor des
-offenen Laufs in der UI auf „success“ zu setzen.
+oder in der UI „Trigger DAG w/ config“. Der Lauf rechnet alle Initiativen der
+Tabelle neu und löst danach `silver_to_gold` aus.
+
+## Auslösung durch das Backend (UI-Eingaben)
+
+Das Backend schreibt Form 1/Form 2, Approve und Reject selbst nach
+`UserActionExtracts`; es gibt keinen vorherigen DAG. Nach jedem Schreiben
+meldet es deshalb ein Dataset-Event an die Airflow-REST-API
+(`POST /api/v1/datasets/events` mit `ai-cockpit://bronze/UserActionExtracts`),
+das `bronze_to_silver_user_input` auslöst. Voraussetzungen:
+
+- Airflow: Basic Auth für die API einschalten, z. B.
+  `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session`,
+  und einen technischen User mit Rolle `Op` anlegen
+  (`airflow users create --role Op …`).
+- Backend: `AI_COCKPIT_AIRFLOW_URL` (z. B. `http://<airflow-service>:8080`),
+  `AI_COCKPIT_AIRFLOW_USER`, `AI_COCKPIT_AIRFLOW_PASSWORD` (Secret).
+
+Schlägt der Aufruf fehl (Airflow nicht erreichbar), bleibt die Eingabe in
+Bronze und wird mit dem nächsten Event verarbeitet; von Hand geht es mit
+einem Trigger von `bronze_to_silver_user_input`.
 
 ## Heuristiken (Schätzungen, keine Messwerte)
 
@@ -252,7 +270,7 @@ mit dem Schema vor der Upsert-Strategie muss einmal neu aufgebaut werden
     dependency_loader.py         # installiert polars/fastexcel im Cluster nach, falls sie fehlen
     raw_to_bronze_dag.py
     seed_config_dag.py
-    bronze_to_silver_dag.py      # Meta-DAG: ein DAG je Extract-Tabelle
+    bronze_to_silver_dag.py      # Meta-DAG: ein DAG je Bronze-Tabelle, ausgelöst über deren Dataset
   ai_cockpit_ingestion/
     config.py                    # SOURCE_DIR, SOURCE_FILENAME_GLOB, DB_PATH, PLANNING_YEAR
     sources.py                   # die 4 Quellblätter: Tabelle, Business Unit, Spalten
@@ -315,20 +333,18 @@ Pfade im Cluster: `SOURCE_DIR=/data/source`, `AI_COCKPIT_DB_PATH=/data/db/ai_coc
 ## Deploy-Hinweise (Stand 25.10.2026)
 
 - **Neue Tabellen** `UserInput_Initiatives_Extract` und `TransformationRun`
-  legt der erste Task, der die DB öffnet, per `create_all` an (die Sensoren
-  tun das in der ersten Minute). Keine Migration, bestehende Tabellen
+  legt der erste Task, der die DB öffnet, per `create_all` an. Keine Migration, bestehende Tabellen
   unverändert.
 - **Neuer DAG `bronze_to_silver_user_input`**: Airflow legt neue DAGs
   pausiert an — nach dem Deploy einmal aktivieren
   (`airflow dags unpause bronze_to_silver_user_input` oder Schalter in der UI).
-- **`@continuous` + Sensor**: Jeder `bronze_to_silver_<key>`-DAG hat immer
-  einen offenen Lauf; `wait_for_new_bronze` prüft im Modus reschedule alle
-  60 s (`AI_COCKPIT_BRONZE_POKE_SECONDS`). Mit dem KubernetesExecutor startet
-  jede Prüfung einen Pod (5 DAGs → 5 kurze Pods pro Minute); bei Bedarf das
-  Intervall erhöhen.
-- **Erster Lauf nach dem Deploy**: `TransformationRun` ist leer, jeder Sensor
-  meldet einmal „neu“ und transformiert den aktuellen Stand; der
-  Hash-Delta-Check ändert dabei nichts (lokal verifiziert: nur „unchanged“).
+- **Ereignisgesteuert (11/2026)**: Die `bronze_to_silver_*`-DAGs und
+  `silver_to_gold` laufen nicht mehr `@continuous`. Nach dem Deploy die alten
+  Läufe aufräumen (`airflow db clean --clean-before-timestamp <jetzt> --tables dag_run,task_instance`
+  oder Browse → DAG Runs). Die Excel-Kette löst `raw_to_bronze` aus; für die
+  UI-Eingaben braucht das Backend den API-Zugang (siehe „Auslösung durch das
+  Backend“). Nach dem Umstellen einmal `bronze_to_silver_user_input` von Hand
+  triggern, damit Eingaben aus der Zeit davor verarbeitet werden.
 - **Gemeinsame DB**: Das Backend schreibt neue Eingaben in
   `UserInput_Initiatives_Extract` (RWX-Volume, wie Airflow).
 

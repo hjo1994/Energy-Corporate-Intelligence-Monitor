@@ -7,7 +7,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from ai_cockpit_ingestion.db import get_engine
-from ai_cockpit_ingestion.detection import is_new
+from ai_cockpit_ingestion.detection import is_new, needs_transform
 from ai_cockpit_ingestion.models import (
     EXTRACT_TABLES,
     USER_ACTION_TABLE,
@@ -19,7 +19,6 @@ from ai_cockpit_ingestion.models import (
     ValueType,
 )
 from ai_cockpit_ingestion.operators.bronze_to_silver import BronzeToSilverOperator
-from ai_cockpit_ingestion.operators.new_bronze_sensor import NewBronzeDataSensor
 from ai_cockpit_ingestion.sources import BRONZE_TO_SILVER_SOURCES, SOURCES_BY_KEY
 from ai_cockpit_ingestion.transforms.risk_heuristic import RISK_LEVELS
 
@@ -57,8 +56,8 @@ class _DagRun:
 
 
 def _poke(engine, key, force=False):
-    sensor = NewBronzeDataSensor(task_id=f"w_{key}", source_key=key, db_path=str(engine.url.database))
-    return sensor.poke({"params": {"force": force}})
+    with Session(engine) as session:
+        return needs_transform(session, SOURCES_BY_KEY[key], force)
 
 
 def _transform(engine, key, force=False):

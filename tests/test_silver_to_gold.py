@@ -21,7 +21,6 @@ from ai_cockpit_ingestion.models import (
 )
 from ai_cockpit_ingestion.operators.bronze_to_silver import BronzeToSilverOperator
 from ai_cockpit_ingestion.operators.silver_to_gold import (
-    SilverChangesSensor,
     SilverToGoldOperator,
     assess_into_gold,
     due_use_cases,
@@ -130,7 +129,9 @@ def _rows(engine):
 
 
 def _poke(engine, force=False):
-    return SilverChangesSensor(task_id="w", db_path=str(engine.url.database)).poke({"params": {"force": force}})
+    """Whether a silver_to_gold run would assess anything."""
+    with Session(engine) as session:
+        return bool(due_use_cases(session, datetime.date.today(), force))
 
 
 def test_new_use_case_is_assessed_once_and_reassessed_when_it_changes(engine):

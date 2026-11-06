@@ -24,7 +24,7 @@ matching the layers in `Architecture.drawio`:
   silver version.
 - TransformationRun: technical log of the bronze_to_silver runs, one row per
   run and bronze table (when, up to which bronze Timestamp, outcome, counts).
-  The DAGs' sensors read it to tell whether a table has new data.
+  detection.needs_transform reads it to tell whether a table has new data.
 - BusinessTransaction: one row per bronze record that BronzeToSilver turned
   into a silver version (BronzeTableName + BronzeID), and per processed user
   action. The version points to it, so every silver row can be traced to its
@@ -375,7 +375,7 @@ class TransformationRun(Base):
     BronzeTimestamp is max(Timestamp) of the bronze table, taken BEFORE the run
     reads the data, so a record written during the run counts as new for the
     next one. A table has new data when its newest record is later than the
-    newest BronzeTimestamp of a successful run (operators.new_bronze_sensor).
+    newest BronzeTimestamp of a successful run (detection.needs_transform).
     Status: running -> success (in the same commit as the silver writes) or failed.
     """
 
