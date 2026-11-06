@@ -34,6 +34,7 @@ from app.models import (
     ValueType,
     current_version_ids,
 )
+from app.pipeline import notify_user_action
 from app.schemas import (
     InitiativeIn,
     InitiativeOut,
@@ -305,6 +306,8 @@ def commit(session: Session, record: UserAction) -> None:
             ) from err
         raise
     session.refresh(record)
+    if isinstance(record, UserAction):
+        notify_user_action()  # bronze_to_silver_user_input processes it within seconds
 
 
 @router.get("/summary", response_model=Summary)

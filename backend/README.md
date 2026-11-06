@@ -177,7 +177,8 @@ backend/
   app/
     main.py          # get_app() — mit uvicorn als Factory starten
     auth.py          # eg-auth: Rights, authorizer(), /api/auth/rights
-    config.py        # AI_COCKPIT_DB_PATH (Default /data/db/ai_cockpit.db)
+    config.py        # AI_COCKPIT_DB_PATH (Default /data/db/ai_cockpit.db), Airflow-API
+    pipeline.py      # Dataset-Event an Airflow nach jeder Eingabe
     db.py            # read-only Engine (+ Schreib-Engine nur für POST), Session mit Retry
     models.py        # Kopie der Silber-/Config-Modelle aus input-orchestration (von Hand synchron halten)
     derived.py       # abgeleitete Werte: hypothetischer Nutzen, Potenzial, Kosten/Jahr
@@ -209,6 +210,13 @@ Die Plattform baut per S2I (Python/Poetry 1.8), nicht per Dockerfile:
   `AI_COCKPIT_ENABLE_INITIATIVE_INPUT` (Default `true`; `false` nur als
   Notbremse, schaltet die Eingabemaske ab). **`PYTHONPATH` darf nicht gesetzt
   sein oder `local_stubs` enthalten.**
+- Airflow-Auslösung: `AI_COCKPIT_AIRFLOW_URL` (Service der Input
+  Orchestration, z. B. `http://<airflow-service>:8080`), `AI_COCKPIT_AIRFLOW_USER`
+  und im Secret `AI_COCKPIT_AIRFLOW_PASSWORD`. Nach jeder gespeicherten Eingabe
+  (Form 1, Form 2, Approve, Reject) meldet `app/pipeline.py` im Hintergrund ein
+  Dataset-Event für `ai-cockpit://bronze/UserActionExtracts`; das löst
+  `bronze_to_silver_user_input` aus. Ohne URL wird nichts gesendet; schlägt der
+  Aufruf fehl, wird das geloggt und die Eingabe mit dem nächsten Event verarbeitet.
 - Keine Probes im Referenz-Deployment; `/api/healthz` steht trotzdem bereit.
 - Alles, was die App zur Laufzeit liest, muss unter `backend/` liegen (der
   Build sieht nur diesen Ordner) — aktuell nur die DB-Datei vom Volume.

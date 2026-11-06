@@ -1,7 +1,7 @@
 """Formulas and helpers for user actions (bronze UserActionExtracts).
 
-The Backend does not trigger Airflow: the sensor of bronze_to_silver_user_input
-checks the table every minute and applies new actions to silver; silver_to_gold
+After each action the Backend posts a Dataset event to Airflow (app/pipeline.py):
+bronze_to_silver_user_input applies the new actions to silver, and silver_to_gold
 then assesses the use case. Until that has happened, the API shows the action's
 effect with the same formulas computed here — kept identical to the input
 orchestration (transforms/user_input_heuristic.py, transforms/gold.py) by the
