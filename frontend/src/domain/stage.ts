@@ -1,7 +1,6 @@
-// The 9 canonical stage values (normalized from the workbook's Status), in pipeline order.
+// The canonical stage values (Idea and Exploration are one stage since 11/2026: Ideation) (normalized from the workbook's Status), in pipeline order.
 export const STAGE_ORDER = [
-  "Idea",
-  "Exploration",
+  "Ideation",
   "PoC",
   "MVP",
   "Implementation",
@@ -12,8 +11,7 @@ export const STAGE_ORDER = [
 ] as const;
 
 const STAGE_COLOR: Record<string, string> = {
-  Idea: "#8a8378",
-  Exploration: "#3b6fa0",
+  Ideation: "#3b6fa0",
   PoC: "#b9792e",
   MVP: "#7a5c99",
   Implementation: "#0f6e6e",

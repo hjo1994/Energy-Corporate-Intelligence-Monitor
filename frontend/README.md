@@ -19,14 +19,14 @@ JSON-Body des Backends (`detail`) sind noch deutsch, das Frontend zeigt sie aber
 nicht an, sondern eigene Texte je HTTP-Status.
 
 - **Matrix** (`/`) — Aufwand × Potenzial als Quadranten-Plot, KPI-Kacheln,
-  Detailpanel zur angeklickten Initiative. Darunter das **Flagships-Widget**:
+  Detailpanel zur angeklickten Initiative. Darunter das **Topics-Widget** (in den Daten `ValueType`, früher „Flagship“):
   je strategischer Säule Anzahl und Summe des geschätzten Potenzials (und wie
   viele Initiativen darin überhaupt geschätzt sind). Es folgt den übrigen Filtern; ein Klick auf eine Zeile filtert über alle
-  Ansichten nach diesem Flagship. Initiativen ohne Flagship stehen als eigene
-  Zeile „Not assigned“, damit die Summe stimmt; „No flagship“ ist der
+  Ansichten nach diesem Topic. Initiativen ohne Topic stehen als eigene
+  Zeile „Not assigned“, damit die Summe stimmt; „No topic“ ist der
   Katalogeintrag `-`.
 - **List** (`/list`) — sortierbare Tabelle (inkl. Potenzial und Risikostufe), Filter links (Stage,
-  Business Unit, Flagship), Klick auf den Namen öffnet die Details.
+  Business Unit, Topic), Klick auf den Namen öffnet die Details.
 - **Board** (`/board`) — Spalten je Stage, Karten mit Owner, Aufwand,
   Potenzial; Klick öffnet die Details.
 - **Value** (`/value`) — drei Wert-Ansichten nach den Entwürfen A, B und G
@@ -43,7 +43,7 @@ nicht an, sondern eigene Texte je HTTP-Status.
     k €; gestrichelte Diagonale Potenzial = Kosten, Fläche darüber getönt.
     Die Kosten-Heuristik arbeitet in Stufen, darum werden die Punkte
     deterministisch um bis zu 8 px seitlich versetzt. Chips nach Stage-Gruppe
-    (Idea & Exploration / PoC & MVP / Implementation & Production / Unclear,
+    (Ideation / PoC & MVP / Implementation & Production / Unclear,
     paused = On hold, Cancelled, Unknown) blenden die übrigen Punkte ab; die
     Kennzahlen (über Break-even, Netto-Summe) folgen der Auswahl. Tooltip bei
     Hover/Fokus, Klick öffnet den Detaildialog.
@@ -67,7 +67,7 @@ Backend: Summe der Buckets × Confidence × Delivery). Alle Geldbeträge sind
 Heuristik-Schätzungen und werden gerundet mit „≈“ angezeigt; die Risikostufe
 trägt den Zusatz „estimated“.
 
-Die Filter (Business Unit, Stage, Flagship, Suche) gelten über alle
+Die Filter (Business Unit, Stage, Topic, Suche) gelten über alle
 Ansichten hinweg. Alle Initiativen werden einmal vollständig geladen
 (seitenweise, 500 pro Anfrage); Filtern, Sortieren und die KPI-Kacheln laufen
 im Browser — damit reagieren auch die Kennzahlen auf die Filter, was
@@ -87,7 +87,7 @@ gleich wie im Backend (`app/lifecycle.py`, als `stage_gate_rules` in
 
 | Stage | Scope-Gate | Deploy-Gate |
 |---|---|---|
-| Idea, Exploration | noch nicht passiert (geplant oder leer) | noch nicht passiert |
+| Ideation | noch nicht passiert (geplant oder leer) | noch nicht passiert |
 | PoC, MVP, Implementation | passiert (Datum bis heute) | noch nicht passiert |
 | Production, Retired | passiert | passiert |
 | On hold, Cancelled, Unknown | keine Regel | keine Regel |
@@ -100,14 +100,20 @@ in Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel.
   `VALUE_DOMAINS` in `src/domain/userInput.ts`; gespeichert wird der Wert der Spanne),
   laufende Kosten als Spanne, AI layer statt Solution Type. Je nach Stage fragt das
   Formular per Kalender nach den Daten der schon passierten Gates (PoC → Scope-Gate,
-  Production → Scope und Deploy; Needs optional). Nach dem Absenden geht es zu „My use cases“.
+  Production → Scope und Deploy; Needs optional). **Stage startet mit Ideation**; eingereicht
+  steht die Idee in Formular 2 damit zwischen Needs- und Scope-Gate. **Owner wählbar**: Standard
+  „Me“ (der angemeldete Nutzer; ohne eigenen Owner-Eintrag fragt das Formular einmal die
+  Business Unit), sonst jeder Eintrag aus `/api/owners` (`owner_id`, die Business Unit ist dann
+  die des Owners); der Einreicher sieht die Idee weiter unter „My use cases“. Beim Efficiency-
+  und Quality-Hebel heißen die Fälle **Runs** („Runs per year“, „Time saved per run“; Felder
+  bleiben `cases_per_year`/`hours_saved_per_case`). Nach dem Absenden geht es zu „My use cases“.
 - **My use cases** (`/my`) — alles, was ich eingereicht habe, besitze oder leite
   (Filter nach Rolle), Kennzahlen, „Needs your attention“ aus den To-dos des
   Backends (`revise_and_resubmit`, `complete_details`), Tabelle mit Freigabe,
   Stage, letztem passierten Gate (`last_gate`, Hinweis „check dates“, wenn Stage und
   Daten nicht passen), Potenzial (Vorschau mit `*`), Risiko und dem nächsten Schritt.
 - **Use case** (`/use-cases/:id`) — **Stage und Stage Gates**: die Stages als
-  Abfolge (Idea › Exploration › Needs/Scope/Deploy/Retire-Gate dazwischen … Retired),
+  Abfolge (Needs-Gate › Ideation › Scope-Gate › PoC … Retired),
   daneben „On hold“ und „Cancelled“; Stages unter der aus Formular 1
   (`stage_floor`) sind gesperrt. Darunter die vier Gate-Daten mit Status passed /
   planned / no date; ein passiertes Gate bleibt fest, außer die Stage verlangt es
@@ -130,8 +136,9 @@ lesen die Ansichten die Daten alle paar Sekunden neu.
 
 ## Abweichungen vom Entwurf — wegen der echten Daten
 
-- **9 statt 4 Stage-Werte** (Idea, Exploration, PoC, MVP, Implementation,
-  Production, On hold, Cancelled, Unknown). Das Board zeigt die sechs
+- **8 statt 4 Stage-Werte** (Ideation, PoC, MVP, Implementation,
+  Production, On hold, Cancelled, Unknown; Idea und Exploration sind seit 11/2026
+  zusammen Ideation). Das Board zeigt die fünf
   Pipeline-Spalten immer, On hold/Cancelled/Unknown nur wenn gefüllt.
 - **Aufwand ist ein 1–10-Score** (5 Balken plus Zahl), **Mehrwert ein
   €-Betrag** (Zahl plus Balken). Das Potenzial reicht von ≈ 2,5k bis ≈ 460k €
@@ -151,7 +158,7 @@ lesen die Ansichten die Daten alle paar Sekunden neu.
 - **„+ Neue Initiative" und Benutzer-Avatar entfallen** — die API ist
   read-only; Anmeldung läuft über den Authenticator, angezeigt wird nur ein
   „Sign out"-Link.
-- Der Katalog-Eintrag `-` bei Flagship heißt „No flagship"; ein unsichtbares
+- Der Katalog-Eintrag `-` bei Topic heißt „No topic"; ein unsichtbares
   Zeichen im Katalognamen „Connection lifecycle" wird beim Laden entfernt.
 - Start/Lieferung stehen als „Q3 2026" mit dem Zusatz „(approx.)": die Quelle
   kennt nur Quartale, das Jahr ist eine Annahme (siehe Root-README).

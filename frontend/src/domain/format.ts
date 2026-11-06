@@ -46,6 +46,6 @@ export function formatQuarter(iso: string | null): string {
   return `Q${Math.floor((Number(m[2]) - 1) / 3) + 1} ${m[1]}`;
 }
 
-// The Flagship catalog has a literal "-" entry meaning "no flagship".
-export const NO_FLAGSHIP_LABEL = "No flagship";
+// The Flagship (shown as "Topic") catalog has a literal "-" entry meaning "no topic".
+export const NO_FLAGSHIP_LABEL = "No topic";
 export const flagshipLabel = (name: string): string => (name === "-" ? NO_FLAGSHIP_LABEL : name);

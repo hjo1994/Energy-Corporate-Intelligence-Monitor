@@ -3,7 +3,7 @@ import { flagshipStats } from "../domain/flagship";
 import { formatEur } from "../domain/format";
 import { useApp } from "../store";
 
-/** Initiatives and estimated potential per strategic pillar; a click filters by that flagship. */
+/** Initiatives and estimated potential per strategic pillar; a click filters by that topic. */
 export function FlagshipWidget() {
   const { all, filters, setFilters } = useApp();
 
@@ -12,8 +12,8 @@ export function FlagshipWidget() {
   const largest = Math.max(1, ...stats.map((s) => s.count));
 
   return (
-    <section className="card flagships" aria-label="Flagships">
-      <h2>Flagships</h2>
+    <section className="card flagships" aria-label="Topics">
+      <h2>Topics</h2>
       <p className="muted">
         Initiatives and estimated potential (€ per year) per strategic pillar. Click a row to filter
         by it. The potential is a heuristic estimate, not a business case.

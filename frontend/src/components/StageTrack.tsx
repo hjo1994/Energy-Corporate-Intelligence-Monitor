@@ -2,11 +2,11 @@ import type { Stagegate } from "../api/types";
 import { gateState, type GateDates } from "../domain/lifecycle";
 
 /** The maturity order of the stages; On hold, Cancelled and Unknown stand outside it. */
-export const STAGE_ORDER = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired"];
+export const STAGE_ORDER = ["Ideation", "PoC", "MVP", "Implementation", "Production", "Retired"];
 export const SIDE_STAGES = ["On hold", "Cancelled"];
 
 /** The gate that lies right before a stage in the order. */
-const GATE_BEFORE: Record<string, Stagegate> = { Idea: "Needs", PoC: "Scope", Production: "Deploy", Retired: "Retire" };
+const GATE_BEFORE: Record<string, Stagegate> = { Ideation: "Needs", PoC: "Scope", Production: "Deploy", Retired: "Retire" };
 
 export const belowFloor = (stage: string, floor: string | null | undefined, order: string[] = STAGE_ORDER) =>
   !!floor && order.includes(stage) && order.includes(floor) && order.indexOf(stage) < order.indexOf(floor);

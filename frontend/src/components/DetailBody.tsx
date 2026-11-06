@@ -81,7 +81,7 @@ export function DetailBody({ initiative: i }: { initiative: Initiative }) {
       </section>
 
       <dl className="facts">
-        <dt>Flagship</dt>
+        <dt>Topic</dt>
         <dd>{i.value_type ? flagshipLabel(i.value_type.name) : <span className="missing">not assigned</span>}</dd>
         <dt>Solution Type</dt>
         <dd>

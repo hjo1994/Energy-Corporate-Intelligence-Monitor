@@ -52,7 +52,7 @@ def test_list_nests_owner_and_types(client):
     alpha = next(i for i in body["items"] if i["name"] == "Alpha")
     assert alpha["owner"] == {"id": 1, "name": "Owner A", "department": "Assets", "category": "ETB"}
     assert (alpha["id"], alpha["use_case_id"], alpha["version_id"]) == (1, 1, 2)  # the current version
-    assert (alpha["processing"], alpha["provisional"], alpha["stage"]) == ("assessed", False, "Idea")
+    assert (alpha["processing"], alpha["provisional"], alpha["stage"]) == ("assessed", False, "Ideation")
     assert alpha["solution_type"]["name"] == "Copilot"
     assert alpha["value_type"]["name"] == "CAPEX delivery"
     assert alpha["risk_classification"] == {"id": 2, "name": "Geringes Risiko"}
@@ -77,7 +77,7 @@ def test_derived_values(client):
 
 
 def test_filter_stage_multi_and_business_unit(client):
-    assert sorted(names(client.get("/api/initiatives?stage=Idea&stage=PoC"))) == ["Alpha", "Beta", "Gamma"]
+    assert sorted(names(client.get("/api/initiatives?stage=Ideation&stage=PoC"))) == ["Alpha", "Beta", "Gamma"]
     resp = client.get("/api/initiatives?business_unit=ETB")
     assert sorted(names(resp)) == ["Alpha", "Beta"]
     assert resp.json()["total"] == 2
@@ -129,7 +129,7 @@ def test_summary(client):
     assert s["total_realized_value_eur"] == pytest.approx(1000.0)
     assert s["total_annual_cost_eur"] == pytest.approx(61500.0)
     assert s["without_owner"] == 1
-    assert {x["stage"]: x["count"] for x in s["by_stage"]} == {"Idea": 2, "PoC": 1, "Unknown": 1}
+    assert {x["stage"]: x["count"] for x in s["by_stage"]} == {"Ideation": 2, "PoC": 1, "Unknown": 1}
     assert [(r["id"], r["count"]) for r in s["by_risk_classification"]] == [(1, 1), (2, 1)]
 
 
@@ -142,7 +142,7 @@ def test_reference_endpoints(client):
     assert client.get("/api/value-types").json()[0]["name"] == "CAPEX delivery"
     bu = {b["name"]: b["count"] for b in client.get("/api/business-units").json()}
     assert bu == {"ETB": 2, "IT": 1}  # Delta has no owner -> in no business unit
-    assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Idea"] == 2
+    assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Ideation"] == 2
     risks = client.get("/api/risk-classifications").json()
     assert [r["id"] for r in risks] == [1, 2, 5]  # unused levels are listed too
     assert risks[0]["derived_action"] == "a1"
@@ -168,7 +168,7 @@ def test_sees_rows_committed_by_the_writer(db_path):
     conn = sqlite3.connect(db_path)
     conn.execute(
         "INSERT INTO Initiative(UseCaseID, Name, Stage, Timestamp, KeyHash, RowHash, IsActive,"
-        " BusinessTransactionID) VALUES (6, 'Epsilon', 'Idea', '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
+        " BusinessTransactionID) VALUES (6, 'Epsilon', 'Ideation', '2026-10-23 00:00:00', 'eps', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -195,7 +195,7 @@ def test_sees_file_replaced_by_rename(db_path, tmp_path):
     )
     conn.execute(
         "INSERT INTO Initiative(ID, UseCaseID, Name, Stage, Timestamp, KeyHash, RowHash, IsActive,"
-        " BusinessTransactionID) VALUES (1, 1, 'Only', 'Idea', '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
+        " BusinessTransactionID) VALUES (1, 1, 'Only', 'Ideation', '2026-10-23 00:00:00', 'only', 'r', 1, 1)"
     )
     conn.commit()
     conn.close()
@@ -239,7 +239,7 @@ def test_soft_deleted_initiatives_are_hidden_unless_asked_for(client):
     assert body["total"] == 5 and omega["is_active"] is False and omega["business_transaction_id"] == 1
     assert client.get("/api/initiatives/summary").json()["total"] == 4
     assert {b["name"]: b["count"] for b in client.get("/api/business-units").json()}["ETB"] == 2
-    assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Idea"] == 2
+    assert {s["stage"]: s["count"] for s in client.get("/api/stages").json()}["Ideation"] == 2
 
 
 def test_a_new_silver_version_shows_until_gold_has_assessed_it(client, db_path):

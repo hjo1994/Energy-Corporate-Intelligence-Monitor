@@ -102,8 +102,8 @@ describe("value bridge", () => {
 
 describe("break-even map", () => {
   it("groups stages and keeps the jitter small and deterministic", () => {
-    expect(["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown"]
-      .map(stageGroupOf)).toEqual(["early", "early", "test", "test", "live", "live", "other", "other", "other"]);
+    expect(["Ideation", "PoC", "MVP", "Implementation", "Production", "On hold", "Cancelled", "Unknown"]
+      .map(stageGroupOf)).toEqual(["early", "test", "test", "live", "live", "other", "other", "other"]);
     const points = breakEvenPoints([a, b, c, unestimated]);
     expect(points.map((p) => p.initiative.id)).toEqual([1, 2, 3]);
     expect(points.every((p) => Math.abs(p.jitter) <= 8)).toBe(true);

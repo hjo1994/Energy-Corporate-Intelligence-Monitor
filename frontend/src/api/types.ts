@@ -91,7 +91,9 @@ export type RunningCostRange = "up_to_10k" | "10k_to_50k" | "50k_to_100k" | "ove
 export interface InitiativeInput {
   name: string;
   description: string;
-  /** only for a user who is no owner yet: the business unit of their new owner (the user is always the owner) */
+  /** the chosen owner; null = the signed-in user */
+  owner_id: number | null;
+  /** only when the signed-in user is the owner and no owner yet: the business unit of their new owner */
   business_unit: string | null;
   value_type_id: number;
   ai_layer: string;

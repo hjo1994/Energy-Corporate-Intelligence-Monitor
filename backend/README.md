@@ -24,7 +24,7 @@ aber noch nicht änder- oder entscheidbar (`409`).
 | `GET /api/initiatives` | Dashboard-Liste: aktuelle Silber-Version je Use Case mit Gold-Werten. Filter `stage`, `business_unit`, `department`, `risk_classification_id` (Gold), `approval_status`, `owner_id`, `solution_type_id`, `value_type_id`, `search`; `sort` (`name`, `stage`, `potential_value_eur`, `realized_value_eur`, `hypothetical_value_eur`, `annual_cost_eur`, `solution_complexity_score`, `risk_classification`, `date_start`, `date_delivery`), `order`, `limit` (1–500), `offset`, `include_inactive`, `include_pending` | angemeldet |
 | `GET /api/initiatives/summary` | Kennzahlen; Potenzial, realisierter Wert und Risiko aus Gold, dazu `not_assessed` | angemeldet |
 | `GET /api/initiatives/{id}` | ein Use Case im Dashboard-Format | angemeldet |
-| `POST /api/initiatives` | **Formular 1**: neue AI-Idee → User-Action `create`. `ai_layer` statt Solution Type, `running_cost_range` (`up_to_10k`, `10k_to_50k`, `50k_to_100k`, `over_100k`; gespeichert als 5k/30k/75k/150k €/Jahr) statt Betriebskosten. Alle Zahlen nur aus ihrem Wertebereich (`value_domains`, sonst `422`); Gate-Daten passend zur Stage (siehe unten). `201` als `pending`, `409` bei gleichem Namen in derselben Business Unit | angemeldet |
+| `POST /api/initiatives` | **Formular 1**: neue AI-Idee → User-Action `create`. `ai_layer` statt Solution Type, `running_cost_range` (`up_to_10k`, `10k_to_50k`, `50k_to_100k`, `over_100k`; gespeichert als 5k/30k/75k/150k €/Jahr) statt Betriebskosten. Owner wählbar (`owner_id`, sonst der angemeldete Nutzer, siehe unten; unbekannt `422`); `stage` Standard `Ideation`. Alle Zahlen nur aus ihrem Wertebereich (`value_domains`, sonst `422`); Gate-Daten passend zur Stage (siehe unten). `201` als `pending`, `409` bei gleichem Namen in derselben Business Unit | angemeldet |
 | `GET /api/me/use-cases` | **Meine Use Cases**: eingereicht, Owner oder Lead (Abgleich über `Owner.Email`, sonst Name), mit `roles`, `todos` (`complete_details`, `revise_and_resubmit`), `form2_progress` | angemeldet |
 | `GET /api/use-cases/{id}` | alle Felder aus Formular 1 und 2, Gold-Werte, eingegebene Treiber (`drivers`), `revision`, `can_edit`, `can_decide`, `todos` | angemeldet |
 | `PATCH /api/use-cases/{id}` | Teilupdate → User-Action `update`. `base_revision` Pflicht (`409`, wenn inzwischen geändert); `name`/Business Unit `422`; Beschreibung und Kostenschätzungen (`one_time_costs`, `running_cost_range`) nach dem Einreichen `422`, außer beim Überarbeiten einer abgelehnten Idee; die Stage nie unter die aus Formular 1 (`stage_floor`, `422`); Formular 2, Stage und Gate-Daten sonst jederzeit, auch vor der Genehmigung. Wird `stage` oder ein Gate-Datum geschickt, müssen Stage und Gate-Daten zusammen passen (`422`); `resubmit: true` schickt eine abgelehnte Idee zurück in `pending` | Einreicher, Owner, Lead, Admin |
@@ -52,10 +52,10 @@ Kosten / Abschreibungsjahre + laufende Kosten).
 **Stage und Stage-Gates** (`app/lifecycle.py`): ein Datum je Gate, bis heute
 = passiert, später = geplant. Regel aus der Form-2-Excel („scope gate must be
 passed before PoC, deploy gate must be passed before production“):
-Idea/Exploration – Scope und Deploy noch nicht passiert; PoC/MVP/Implementation –
+Ideation – Scope und Deploy noch nicht passiert; PoC/MVP/Implementation –
 Scope passiert, Deploy noch nicht; Production/Retired – Scope und Deploy
 passiert; On hold/Cancelled/Unknown – keine Regel. Gesetzte Daten in
-Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel. Reihenfolge der Stages: Idea → Exploration → PoC → MVP → Implementation → Production → Retired (`stage_order` in `/api/form-options`); On hold, Cancelled und Unknown stehen außerhalb. Passt ein
+Gate-Reihenfolge. Für Needs und Retire nennt die Excel keine Regel. Reihenfolge der Stages: Ideation → PoC → MVP → Implementation → Production → Retired (`stage_order` in `/api/form-options`); On hold, Cancelled und Unknown stehen außerhalb. Passt ein
 Stand nicht (etwa ein Use Case aus dem Blatt in Production ohne Daten), steht
 das in `stage_problems`; andere Änderungen blockiert das nicht.
 
@@ -97,6 +97,14 @@ und `EG_AUTH_DEV_GROUPS` (siehe `.env.example`).
   `/api/auth/rights` meldet `role`, `user_id` und `owner` (null: Formular 1
   fragt die Business Unit). Tabelle und Spalten legt die Migration der
   Pipeline an; das Backend macht dasselbe beim Start (`ensure_user_schema`).
+  Formular 1 kann stattdessen einen beliebigen Owner wählen (`owner_id`); der
+  Einreicher (`SubmittedByUserID`) sieht den Use Case trotzdem als seinen.
+- **Ideation (11/2026):** Idea und Exploration sind eine Stage, Ideation,
+  zwischen Needs- und Scope-Gate; Formular 1 setzt sie, wenn keine Stage kommt.
+  Alte Werte (`Idea`, `Exploration`) nimmt die API noch an und speichert sie als
+  Ideation, ebenso im Filter `?stage=`. Beim Start stellt `ensure_current_stages`
+  (`app/stage_migration.py`) Silver, Gold und den Stage-CHECK von
+  `UserActionExtracts` um, wie die Migration der Pipeline.
 - **Rechte:** Lesen und Einreichen verlangt nur Anmeldung. `canApprove`
   (Inbox, Entscheidung, Re-use-Check) hat, wer `Role = approver` hat, in
   `AI_COCKPIT_APPROVERS` steht (kommagetrennt, E-Mails oder SSO-Namen; wird

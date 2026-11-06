@@ -79,11 +79,13 @@ function Segmented<T extends string>({ name, label, value, options, onChange }: 
 }
 
 const yesNo = (v: boolean): "yes" | "no" => (v ? "yes" : "no");
+const ownerLabel = (o: { name: string; category: string | null }) => (o.category ? `${o.name} · ${o.category}` : o.name);
 
 export function NewInitiativeView() {
   const navigate = useNavigate();
   const { addInitiative, rights, reloadRights } = useApp();
-  // the signed-in user is the owner; without an owner row yet they choose their business unit once
+  // The owner can be chosen; by default it is the signed-in user, who chooses their business unit
+  // once while they have no owner row yet.
   const myOwner = rights.owner ?? null;
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [refError, setRefError] = useState<string | null>(null);
@@ -110,6 +112,11 @@ export function NewInitiativeView() {
     () => [...new Set((ref?.owners ?? []).map((o) => o.category).filter((c): c is string => !!c))].sort(),
     [ref],
   );
+  const otherOwners = useMemo(
+    () => (ref?.owners ?? []).filter((o) => o.id !== myOwner?.id),
+    [ref, myOwner],
+  );
+  const chosenOwner = form.ownerId ? ref?.owners.find((o) => String(o.id) === form.ownerId) ?? null : null;
   const flagship = ref?.valueTypes.find((t) => String(t.id) === form.valueTypeId)?.name;
   const typical = typicalValues(form.aiLayer || undefined, flagship);
   const aiLayers = ref?.options?.ai_layers?.map((o) => o.value) ?? AI_LAYERS;
@@ -133,9 +140,10 @@ export function NewInitiativeView() {
     <DomainSelect value={String(form[key])} options={domains[field]} invalid={!!errors[key]} onChange={(v) => set(key, v as never)} />
   );
 
-  // with an owner the business unit is theirs: not asked, not sent
-  const checked: FormState = myOwner ? { ...form, businessUnit: myOwner.category || "owner" } : form;
-  const input = { ...toInput(form), business_unit: myOwner ? null : form.businessUnit || null };
+  // with an owner (chosen, or the user's own) the business unit is the owner's: not asked, not sent
+  const owner = chosenOwner ?? myOwner;
+  const checked: FormState = owner ? { ...form, businessUnit: owner.category || "owner" } : form;
+  const input = { ...toInput(form), business_unit: owner ? null : form.businessUnit || null };
   const preview = previewValue(previewInput(input));
   const level = previewRiskLevel(input);
   const errors: Errors = showErrors ? validate(checked, domains, undefined, rules) : {};
@@ -148,7 +156,7 @@ export function NewInitiativeView() {
     try {
       const created = await createInitiative(input);
       addInitiative(created);
-      if (!myOwner) reloadRights();
+      if (!myOwner && !form.ownerId) reloadRights();
       navigate("/my", { state: { created: created.name } });
     } catch (err) {
       setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The idea could not be saved.");
@@ -168,8 +176,8 @@ export function NewInitiativeView() {
   const leverFields: Record<LeverKey, ReactNode> = {
     efficiency: (
       <div className="nf-grid2">
-        <Field label="Cases per year" error={errors.casesPerYear}>{pick("cases_per_year", "casesPerYear")}</Field>
-        <Field label="Time saved per case" error={errors.hoursSavedPerCase} hint={typicalHint("hours_saved_per_case", typical.hoursSavedPerCase, "Typical for this AI layer")}>
+        <Field label="Runs per year" error={errors.casesPerYear}>{pick("cases_per_year", "casesPerYear")}</Field>
+        <Field label="Time saved per run" error={errors.hoursSavedPerCase} hint={typicalHint("hours_saved_per_case", typical.hoursSavedPerCase, "Typical for this AI layer")}>
           {pick("hours_saved_per_case", "hoursSavedPerCase")}
         </Field>
       </div>
@@ -177,7 +185,7 @@ export function NewInitiativeView() {
     quality: (
       <div className="nf-grid3">
         {!form.levers.efficiency && (
-          <Field label="Cases per year" error={errors.casesPerYear}>{pick("cases_per_year", "casesPerYear")}</Field>
+          <Field label="Runs per year" error={errors.casesPerYear}>{pick("cases_per_year", "casesPerYear")}</Field>
         )}
         <Field label="Error rate today" error={errors.errorRateBefore} hint={typicalHint("error_rate_before", typical.errorRateBefore)}>
           {pick("error_rate_before", "errorRateBefore")}
@@ -185,7 +193,7 @@ export function NewInitiativeView() {
         <Field label="Errors avoided" error={errors.errorsAvoided} hint={typicalHint("errors_avoided", typical.errorsAvoided)}>
           {pick("errors_avoided", "errorsAvoided")}
         </Field>
-        <Field label="Cost per error" error={errors.costPerError} hint={typicalHint("cost_per_error", typical.costPerError, "Typical for this flagship")}>
+        <Field label="Cost per error" error={errors.costPerError} hint={typicalHint("cost_per_error", typical.costPerError, "Typical for this topic")}>
           {pick("cost_per_error", "costPerError")}
         </Field>
       </div>
@@ -196,7 +204,7 @@ export function NewInitiativeView() {
         <Field label="Incidents avoided" error={errors.eventsAvoided} hint={typicalHint("events_avoided", typical.eventsAvoided)}>
           {pick("events_avoided", "eventsAvoided")}
         </Field>
-        <Field label="Cost per incident" error={errors.costPerEvent} hint={typicalHint("cost_per_event", typical.costPerEvent, "Typical for this flagship")}>
+        <Field label="Cost per incident" error={errors.costPerEvent} hint={typicalHint("cost_per_event", typical.costPerEvent, "Typical for this topic")}>
           {pick("cost_per_event", "costPerEvent")}
         </Field>
       </div>
@@ -204,7 +212,7 @@ export function NewInitiativeView() {
     speed: (
       <div className="nf-grid3">
         <Field label="Delay-relevant events per year" error={errors.delayEventsPerYear}>{pick("delay_events_per_year", "delayEventsPerYear")}</Field>
-        <Field label="Cost of delay per event" error={errors.costOfDelayPerEvent} hint={typicalHint("cost_of_delay_per_event", typical.costOfDelayPerEvent, "Typical for this flagship")}>
+        <Field label="Cost of delay per event" error={errors.costOfDelayPerEvent} hint={typicalHint("cost_of_delay_per_event", typical.costOfDelayPerEvent, "Typical for this topic")}>
           {pick("cost_of_delay_per_event", "costOfDelayPerEvent")}
         </Field>
         <Field label="Lead time saved" error={errors.leadTimeSaved} hint={typicalHint("lead_time_saved", typical.leadTimeSaved)}>
@@ -215,8 +223,8 @@ export function NewInitiativeView() {
   };
 
   const FORMULA: Record<LeverKey, string> = {
-    efficiency: "cases × time saved × 60 €/h",
-    quality: "cases × error rate × errors avoided × cost per error",
+    efficiency: "runs × time saved × 60 €/h",
+    quality: "runs × error rate × errors avoided × cost per error",
     riskReduction: "incidents × share avoided × cost per incident",
     speed: "events × cost of delay × lead time saved",
   };
@@ -265,19 +273,24 @@ export function NewInitiativeView() {
               <textarea className={`nf-input nf-textarea${errors.description ? " invalid" : ""}`} value={form.description} rows={3} onChange={(e) => set("description", e.target.value)} />
             </Field>
             <div className="nf-grid3">
-              {myOwner ? (
-                <Field label="Owner" hint="You are the owner of the use cases you submit.">
-                  <input className="nf-input" value={myOwner.category ? `${myOwner.name} · ${myOwner.category}` : myOwner.name} readOnly disabled />
-                </Field>
-              ) : (
-                <Field label="Your business unit" required error={errors.businessUnit} hint="Asked once: you become the owner of your use cases.">
+              <Field
+                label="Owner"
+                hint={chosenOwner ? "You still find the use case under My use cases." : "You by default; choose someone else if they own it."}
+              >
+                <select className="nf-input" value={form.ownerId} onChange={(e) => set("ownerId", e.target.value)}>
+                  <option value="">{myOwner ? `Me · ${ownerLabel(myOwner)}` : "Me"}</option>
+                  {otherOwners.map((o) => <option key={o.id} value={o.id}>{ownerLabel(o)}</option>)}
+                </select>
+              </Field>
+              {!owner && (
+                <Field label="Your business unit" required error={errors.businessUnit} hint="Asked once: you become an owner.">
                   <select className="nf-input" value={form.businessUnit} onChange={(e) => set("businessUnit", e.target.value)}>
                     <option value="">Choose …</option>
                     {businessUnits.map((bu) => <option key={bu} value={bu}>{bu}</option>)}
                   </select>
                 </Field>
               )}
-              <Field label="Flagship" required error={errors.valueTypeId}>
+              <Field label="Topic" required error={errors.valueTypeId}>
                 <select className="nf-input" value={form.valueTypeId} onChange={(e) => set("valueTypeId", e.target.value)}>
                   <option value="">Choose …</option>
                   {ref.valueTypes.map((t) => <option key={t.id} value={t.id}>{flagshipLabel(t.name)}</option>)}
@@ -291,7 +304,6 @@ export function NewInitiativeView() {
               </Field>
               <Field label="Stage" required error={errors.stage}>
                 <select className="nf-input" value={form.stage} onChange={(e) => changeStage(e.target.value)}>
-                  <option value="">Choose …</option>
                   {stages.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>

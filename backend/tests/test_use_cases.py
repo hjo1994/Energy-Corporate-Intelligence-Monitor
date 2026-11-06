@@ -36,7 +36,7 @@ def process(db_path, record_id, use_case_id):
         ' "SolutionComplexityScore", "EmployeePersonalData", "PerformanceOrBehaviourControl", "DecisionsOnEmployees",'
         ' "ProfilingOfIndividuals", "ChangesEmployeeWorkflows", "ProhibitedPractice", "KeyHash", "RowHash",'
         ' "IsActive", "BusinessTransactionID", "ChangedBy", "Timestamp")'
-        " VALUES (?, ?, 'Checks invoices against orders', 'Idea', 'pending', ?, 1, 'AI for business process"
+        " VALUES (?, ?, 'Checks invoices against orders', 'Ideation', 'pending', ?, 1, 'AI for business process"
         " optimization', 90000, 192000, 50000, 150000, 0.6, 0.65, 130000, 19500, 5, 4, 'no', 0, 'none', 0, 1, 0,"
         " ?, 'r', 1, ?, 'Dev User', '2026-10-25 13:01:00')",
         (use_case_id, name, owner_id, key_hash("ETB", name), bt),
@@ -67,7 +67,7 @@ def test_form_options(client):
     assert "Operational and advanced AI" in [o["value"] for o in options["ai_layers"]]
     assert {"enabling_teams", "eu_ai_act_classes", "stagegates", "applicable_to"} <= set(options)
     assert options["stage_gate_rules"]["PoC"] == {"passed": ["Scope"], "not_passed": ["Deploy"]}
-    assert options["stage_order"][:3] == ["Idea", "Exploration", "PoC"] and options["stage_order"][-1] == "Retired"
+    assert options["stage_order"][:2] == ["Ideation", "PoC"] and options["stage_order"][-1] == "Retired"
     assert "Retired" in [o["value"] for o in options["stages"]]
     assert options["value_domains"]["one_time_costs"][0] == {"value": 25000, "label": "under 50k €"}
     assert set(options["value_domains"]) >= {"cases_per_year", "hours_saved_per_case", "lead_time_saved"}
@@ -207,8 +207,8 @@ def test_stage_and_gate_dates_must_fit(client, idea):
     resp = patch(client, 6, stage="Production", deploy_gate_date="2026-05-01")
     assert resp.status_code == 200 and resp.json()["last_gate"] == "Deploy"
     # back to an earlier stage: the scope and deploy gates must move to the future
-    assert patch(client, 6, stage="Exploration").status_code == 422
-    resp = patch(client, 6, stage="Exploration", scope_gate_date="2030-01-01", deploy_gate_date="2030-06-01")
+    assert patch(client, 6, stage="Ideation").status_code == 422
+    resp = patch(client, 6, stage="Ideation", scope_gate_date="2030-01-01", deploy_gate_date="2030-06-01")
     assert resp.status_code == 200 and resp.json()["last_gate"] == "Needs"
     # no rule for On hold; other edits are never blocked by the stage
     assert patch(client, 6, stage="On hold").status_code == 200

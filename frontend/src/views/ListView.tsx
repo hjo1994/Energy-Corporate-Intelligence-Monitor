@@ -89,7 +89,7 @@ export function ListView() {
           onToggle={(v) => setFilters((f) => ({ ...f, businessUnits: toggle(f.businessUnits, v) }))}
         />
         <FilterGroup
-          title="Flagship"
+          title="Topic"
           options={flagshipsIn(all).map((v) => ({ value: v, label: flagshipLabel(v) }))}
           selected={filters.flagships}
           counts={countBy(all, flagshipOf)}

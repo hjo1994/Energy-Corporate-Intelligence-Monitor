@@ -110,14 +110,14 @@ export function waterfallSteps(b: Bridge): WaterfallStep[] {
 export type StageGroup = "early" | "test" | "live" | "other";
 
 export const STAGE_GROUPS: { id: StageGroup; label: string }[] = [
-  { id: "early", label: "Idea & Exploration" },
+  { id: "early", label: "Ideation" },
   { id: "test", label: "PoC & MVP" },
   { id: "live", label: "Implementation & Production" },
   { id: "other", label: "Unclear / paused" },
 ];
 
 export function stageGroupOf(stage: string): StageGroup {
-  if (stage === "Idea" || stage === "Exploration") return "early";
+  if (stage === "Ideation") return "early";
   if (stage === "PoC" || stage === "MVP") return "test";
   if (stage === "Implementation" || stage === "Production") return "live";
   return "other"; // On hold, Cancelled, Unknown

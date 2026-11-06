@@ -48,7 +48,7 @@ const filled: FormState = {
   businessUnit: "ETB",
   valueTypeId: "1",
   aiLayer: "AI for productivity and efficiency",
-  stage: "Idea",
+  stage: "Ideation",
   dateDelivery: "Q3 2027",
   levers: { efficiency: true, quality: true, riskReduction: false, speed: false },
   // values of the domains (the selects store the option's value)
@@ -96,8 +96,10 @@ describe("form", () => {
   it("requires the basics and one complete lever", () => {
     const errors = validate({ ...EMPTY_FORM });
     expect(Object.keys(errors)).toEqual(
-      expect.arrayContaining(["name", "aiLayer", "stage", "complexity", "oneTimeCosts", "runningCostRange", "levers"]),
+      expect.arrayContaining(["name", "aiLayer", "complexity", "oneTimeCosts", "runningCostRange", "levers"]),
     );
+    expect(EMPTY_FORM.stage).toBe("Ideation"); // the stage form 1 starts with
+    expect(validate({ ...EMPTY_FORM, stage: "" }).stage).toBe("Choose a stage.");
     expect(validate({ ...filled, hoursSavedPerCase: "", levers: { ...filled.levers, quality: false } }).levers).toBeDefined();
     // only values of the domain
     expect(validate({ ...filled, casesPerYear: "3000" }).casesPerYear).toMatch(/ranges/);

@@ -28,7 +28,9 @@ export const AI_LAYERS = [
   "Operational and advanced AI",
 ];
 
-export const STAGES = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown"];
+/** Idea and Exploration are one stage since 11/2026: Ideation, the stage form 1 starts with. */
+export const DEFAULT_STAGE = "Ideation";
+export const STAGES = ["Ideation", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown"];
 
 // ---------- value domains: every number of form 1 is chosen from a short list ----------
 
@@ -220,7 +222,9 @@ export function previewRiskLevel(r: Indicators): number {
 export interface FormState {
   name: string;
   description: string;
-  /** asked only while the user is no owner yet; else their owner's (shown, not sent) */
+  /** the chosen owner's ID; "" = the signed-in user (not sent) */
+  ownerId: string;
+  /** asked only for the signed-in user while they are no owner yet; else the owner's (shown, not sent) */
   businessUnit: string;
   valueTypeId: string;
   aiLayer: string;
@@ -257,10 +261,11 @@ export interface FormState {
 export const EMPTY_FORM: FormState = {
   name: "",
   description: "",
+  ownerId: "",
   businessUnit: "",
   valueTypeId: "",
   aiLayer: "",
-  stage: "",
+  stage: DEFAULT_STAGE,
   dateStart: "",
   dateDelivery: "",
   gateDates: { Needs: "", Scope: "", Deploy: "", Retire: "" },
@@ -306,7 +311,8 @@ export function toInput(f: FormState): InitiativeInput {
   return {
     name: f.name.trim(),
     description: f.description.trim(),
-    business_unit: f.businessUnit || null,
+    owner_id: f.ownerId ? Number(f.ownerId) : null,
+    business_unit: f.ownerId ? null : f.businessUnit || null,
     value_type_id: Number(f.valueTypeId),
     ai_layer: f.aiLayer,
     stage: f.stage,
@@ -371,7 +377,7 @@ export function validate(
     ["name", "Enter a name."],
     ["description", "Describe the idea."],
     ["businessUnit", "Choose a business unit."],
-    ["valueTypeId", "Choose a flagship."],
+    ["valueTypeId", "Choose a topic."],
     ["aiLayer", "Choose the AI layer."],
     ["runningCostRange", "Choose a range."],
     ["stage", "Choose a stage."],

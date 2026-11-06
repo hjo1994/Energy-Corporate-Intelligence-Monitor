@@ -24,7 +24,7 @@ describe("cockpit", () => {
   const items = [
     valued(1, 500_000, 100_000, { stage: "Production", owner: unit("ETB"), date_delivery: "2026-04-01T00:00:00" }),
     valued(2, 200_000, 300_000, { stage: "Implementation", owner: unit("50Hertz"), date_delivery: "2027-01-01T00:00:00" }),
-    valued(3, 300_000, 50_000, { stage: "Idea", owner: null, date_delivery: "2027-04-01T00:00:00" }),
+    valued(3, 300_000, 50_000, { stage: "Ideation", owner: null, date_delivery: "2027-04-01T00:00:00" }),
     make({ id: 4, name: "unvalued", potential_value_eur: 90_000 }),
   ];
 

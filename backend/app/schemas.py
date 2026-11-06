@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
 
 from app.lifecycle import VALUE_DOMAINS, domain_problems
 from app.user_input import RUNNING_COST_RANGES, running_cost_range
@@ -38,7 +38,18 @@ class RiskClassificationOut(RiskClassificationRef):
 
 # ---------- choice lists (same as the CHECK constraints of UserActionExtracts) ----------
 
-STAGES = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown")
+# Idea and Exploration are one stage since 11/2026: Ideation (between the needs and the scope gate).
+STAGES = ("Ideation", "PoC", "MVP", "Implementation", "Production", "Retired", "On hold", "Cancelled", "Unknown")
+FORMER_STAGES = {"Idea": "Ideation", "Exploration": "Ideation"}
+DEFAULT_STAGE = "Ideation"  # of form 1
+
+
+def current_stage(value: Any) -> Any:
+    """A former stage (Idea, Exploration) as the stage it belongs to now."""
+    return FORMER_STAGES.get(value, value) if isinstance(value, str) else value
+
+
+Stage = Annotated[Literal[STAGES], BeforeValidator(current_stage)]  # type: ignore[valid-type]
 STAGEGATES = ("Needs", "Scope", "Deploy", "Retire")
 APPROVAL_STATUSES = ("pending", "approved", "rejected")
 ESTIMATE_BASES = ("rough", "benchmark", "measured")
@@ -340,12 +351,14 @@ class InitiativeIn(_GateDates, _Form1Values):
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Text
-    # The signed-in user becomes the owner (app/users.py); a user without an owner row
-    # yet names their business unit once (Owner.Category of the new owner).
+    # The owner can be chosen (any Owner); without one the signed-in user becomes the owner
+    # (app/users.py), and a user without an owner row yet names their business unit once
+    # (Owner.Category of the new owner).
+    owner_id: int | None = None
     business_unit: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
     value_type_id: int
     ai_layer: Literal[AI_LAYERS]  # type: ignore[valid-type]
-    stage: Literal[STAGES]  # type: ignore[valid-type]
+    stage: Stage = DEFAULT_STAGE
     date_start: Quarter | None = None
     date_delivery: Quarter | None = None
 
@@ -397,7 +410,7 @@ class UseCasePatch(_GateDates, _Form1Values):
     owner_id: int | None = None  # within the same business unit
     value_type_id: int | None = None
     ai_layer: Literal[AI_LAYERS] | None = None  # type: ignore[valid-type]
-    stage: Literal[STAGES] | None = None  # type: ignore[valid-type]
+    stage: Stage | None = None
     date_start: Quarter | None = None
     date_delivery: Quarter | None = None
     estimate_basis: Literal[ESTIMATE_BASES] | None = None  # type: ignore[valid-type]

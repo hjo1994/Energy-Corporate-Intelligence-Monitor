@@ -219,7 +219,7 @@ def update_use_case(
         if state["owner_id"] is not None and (owner.category or "") != lookups.business_unit(state["owner_id"]):
             raise HTTPException(status_code=422, detail="The business unit cannot change: choose an owner from "
                                                         f"{lookups.business_unit(state['owner_id']) or 'the same unit'}.")
-    for field, table, label in (("lead_id", Owner, "lead"), ("value_type_id", ValueType, "flagship (value type)"),
+    for field, table, label in (("lead_id", Owner, "lead"), ("value_type_id", ValueType, "topic (value type)"),
                                 ("solution_type_id", SolutionType, "solution type")):
         if field in fields and session.get(table, fields[field]) is None:
             raise HTTPException(status_code=422, detail=f"Unknown {label}")

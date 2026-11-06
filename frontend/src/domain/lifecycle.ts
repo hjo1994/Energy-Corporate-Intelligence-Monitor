@@ -23,8 +23,7 @@ const BUILDING = { passed: ["Scope"] as Stagegate[], not_passed: ["Deploy"] as S
 const LIVE = { passed: ["Scope", "Deploy"] as Stagegate[], not_passed: [] as Stagegate[] };
 /** Used until /api/form-options has loaded. On hold, Cancelled and Unknown have no rule. */
 export const STAGE_GATE_RULES: GateRules = {
-  Idea: EARLY,
-  Exploration: EARLY,
+  Ideation: EARLY,
   PoC: BUILDING,
   MVP: BUILDING,
   Implementation: BUILDING,

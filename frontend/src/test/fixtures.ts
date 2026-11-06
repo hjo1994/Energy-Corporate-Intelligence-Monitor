@@ -3,7 +3,7 @@ import type { Initiative } from "../api/types";
 export function make(over: Partial<Initiative> & { id: number; name: string }): Initiative {
   return {
     description: null,
-    stage: "Idea",
+    stage: "Ideation",
     date_start: null,
     date_delivery: null,
     efficiency_score_eur: null,
@@ -37,7 +37,7 @@ const medium = { id: 3, name: "Mittleres Risiko" };
 
 export const SAMPLE: Initiative[] = [
   make({
-    id: 1, name: "Alpha", description: "Automatisierung", stage: "Idea",
+    id: 1, name: "Alpha", description: "Automatisierung", stage: "Ideation",
     efficiency_score_eur: 40000, quality_score_eur: 30000, risk_reduction_score_eur: 20000, strategic_value_score_eur: 10000,
     confidence_score: 0.6, delivery_score: 0.9, hypothetical_value_eur: 100000, potential_value_eur: 54000,
     one_time_costs: 75000, operating_costs: 19000, depreciation_years: 3, annual_cost_eur: 44000,
@@ -45,6 +45,6 @@ export const SAMPLE: Initiative[] = [
     date_delivery: "2026-07-01T00:00:00",
   }),
   make({ id: 2, name: "Beta", stage: "PoC", potential_value_eur: 4550, annual_cost_eur: 17500, solution_complexity_score: 5, owner: etb, risk_classification: low }),
-  make({ id: 3, name: "Gamma", stage: "Idea", potential_value_eur: 20000, solution_complexity_score: null, owner: it, risk_classification: low }),
+  make({ id: 3, name: "Gamma", stage: "Ideation", potential_value_eur: 20000, solution_complexity_score: null, owner: it, risk_classification: low }),
   make({ id: 4, name: "Delta", stage: "Cancelled", owner: null, risk_classification: low }),
 ];

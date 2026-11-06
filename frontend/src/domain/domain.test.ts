@@ -7,7 +7,7 @@ describe("filters", () => {
   it("combines business unit, stage and search; empty filters keep everything", () => {
     expect(applyFilters(SAMPLE, EMPTY_FILTERS)).toHaveLength(4);
     expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, businessUnits: ["ETB"] }).map((i) => i.name)).toEqual(["Alpha", "Beta"]);
-    expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, stages: ["Idea"], businessUnits: ["IT"] }).map((i) => i.name)).toEqual(["Gamma"]);
+    expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, stages: ["Ideation"], businessUnits: ["IT"] }).map((i) => i.name)).toEqual(["Gamma"]);
     expect(applyFilters(SAMPLE, { ...EMPTY_FILTERS, search: "AUTOMAT" }).map((i) => i.name)).toEqual(["Alpha"]);
   });
 
@@ -81,7 +81,7 @@ describe("display cleanup", () => {
     expect(page.items[0].value_type).toEqual({ id: 1, name: "Connection lifecycle", description: "d" });
   });
   it("labels the catalog's literal '-' flagship", () => {
-    expect(flagshipLabel("-")).toBe("No flagship");
+    expect(flagshipLabel("-")).toBe("No topic");
     expect(flagshipLabel("CAPEX delivery")).toBe("CAPEX delivery");
   });
 });
@@ -110,14 +110,14 @@ describe("flagship statistics", () => {
     expect(stats.find((s) => s.key === "Grid planning process")).toMatchObject({ count: 2, estimated: 0, totalPotential: null });
   });
 
-  it("keeps the catalog's '-' as 'No flagship' and lists unassigned initiatives so the counts add up", () => {
-    expect(stats.find((s) => s.key === "-")?.label).toBe("No flagship");
+  it("keeps the catalog's '-' as 'No topic' and lists unassigned initiatives so the counts add up", () => {
+    expect(stats.find((s) => s.key === "-")?.label).toBe("No topic");
     expect(stats.find((s) => s.key === "")).toMatchObject({ label: "Not assigned", count: 1 });
     expect(stats.reduce((n, s) => n + s.count, 0)).toBe(items.length);
   });
 
   it("sorts by size and puts the unassigned group last", () => {
-    expect(stats.map((s) => s.label)).toEqual(["CAPEX delivery", "Grid planning process", "No flagship", "Not assigned"]);
+    expect(stats.map((s) => s.label)).toEqual(["CAPEX delivery", "Grid planning process", "No topic", "Not assigned"]);
   });
 
   it("is empty for no initiatives", () => {

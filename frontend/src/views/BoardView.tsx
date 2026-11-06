@@ -7,7 +7,7 @@ import { STAGE_ORDER, stageColor } from "../domain/stage";
 import { sortInitiatives } from "../domain/filters";
 import { useApp } from "../store";
 
-const ALWAYS_SHOWN = ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production"];
+const ALWAYS_SHOWN = ["Ideation", "PoC", "MVP", "Implementation", "Production"];
 
 export function BoardView() {
   const { all, visible } = useApp();

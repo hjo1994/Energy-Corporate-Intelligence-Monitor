@@ -68,7 +68,7 @@ def db_path(tmp_path):
         bt = BusinessTransaction(id=1, bronze_id=1, bronze_table_name="ETB_Initiatives_Extract")
         s.add(bt)
         s.flush()
-        alpha = dict(description="100% automation", stage="Idea",
+        alpha = dict(description="100% automation", stage="Ideation",
                      efficiency_score_eur=10000.0, quality_score_eur=20000.0, risk_reduction_score_eur=30000.0,
                      strategic_value_score_eur=40000.0, confidence_score=0.6, delivery_score=0.9,
                      solution_complexity_score=3.0, one_time_costs=75000.0, running_costs=19000.0,
@@ -77,17 +77,17 @@ def db_path(tmp_path):
         versions = [
             # Alpha has two versions; the second is current: potential = 100k x 0.6 x 0.9 = 54,000,
             # cost = 75k/3 + 19k = 44,000
-            version(1, "Alpha", bt, **{**alpha, "stage": "Exploration"}),
+            version(1, "Alpha", bt, **{**alpha, "stage": "Ideation"}),
             version(1, "Alpha", bt, **alpha),
             # potential = 4 x 5k x 0.35 x 0.65 = 4,550; cost = 30k/3 + 7.5k = 17,500
             version(2, "Beta", bt, description="under_score", stage="PoC",
                     efficiency_score_eur=5000.0, quality_score_eur=5000.0, risk_reduction_score_eur=5000.0,
                     strategic_value_score_eur=5000.0, confidence_score=0.35, delivery_score=0.65,
                     one_time_costs=30000.0, running_costs=7500.0, depreciation_years=3, owner=etb),
-            version(3, "Gamma", bt, stage="Idea", owner=it),  # incomplete: not in gold
+            version(3, "Gamma", bt, stage="Ideation", owner=it),  # incomplete: not in gold
             version(4, "Delta", bt, stage="Unknown", owner=None),  # incomplete: not in gold
             # no longer in its source sheet: soft-deleted, hidden by default
-            version(5, "Omega", bt, stage="Idea", owner=etb, is_active=False,
+            version(5, "Omega", bt, stage="Ideation", owner=etb, is_active=False,
                     efficiency_score_eur=1.0, quality_score_eur=0.0, risk_reduction_score_eur=0.0,
                     strategic_value_score_eur=0.0, confidence_score=1.0, delivery_score=1.0,
                     one_time_costs=0.0, running_costs=0.0, depreciation_years=5),

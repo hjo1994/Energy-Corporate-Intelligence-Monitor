@@ -6,7 +6,9 @@ Which gates must lie in the past for a stage comes from the form 2 Excel
 ("20261028 form 2 data fields", Sheet1, gate date rows): "scope gate must be
 passed before PoC, deploy gate must be passed before production". From that:
 
-- Idea, Exploration:           scope and deploy gate not passed yet (planned or empty)
+- Ideation:                    scope and deploy gate not passed yet (planned or empty);
+                               Idea and Exploration until 11/2026, it lies between the needs
+                               and the scope gate
 - PoC, MVP, Implementation:    scope gate passed; deploy gate not passed yet
 - Production, Retired:         scope and deploy gate passed
 - On hold, Cancelled, Unknown: no rule
@@ -27,7 +29,7 @@ from app.models import GATE_DATE_FIELDS
 GATES = tuple(GATE_DATE_FIELDS)
 
 # The stages in their order (maturity); On hold, Cancelled and Unknown stand outside it.
-STAGE_ORDER = ("Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired")
+STAGE_ORDER = ("Ideation", "PoC", "MVP", "Implementation", "Production", "Retired")
 
 
 def below_floor(stage: str | None, floor: str | None) -> bool:
@@ -42,7 +44,7 @@ _BUILDING = (("Scope",), ("Deploy",))
 _LIVE = (("Scope", "Deploy"), ())
 # stage -> (gates that must be passed, gates that must not be passed yet)
 STAGE_GATE_RULES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "Idea": _EARLY, "Exploration": _EARLY,
+    "Ideation": _EARLY,
     "PoC": _BUILDING, "MVP": _BUILDING, "Implementation": _BUILDING,
     "Production": _LIVE, "Retired": _LIVE,
 }

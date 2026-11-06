@@ -31,7 +31,7 @@ const formOptions = {
 
 function mine(over: Partial<MyUseCase> & { id: number; name: string }): MyUseCase {
   return {
-    approval_status: "approved", stage: "Idea", needs_gate_date: "2026-01-15T00:00:00", scope_gate_date: null,
+    approval_status: "approved", stage: "Ideation", needs_gate_date: "2026-01-15T00:00:00", scope_gate_date: null,
     deploy_gate_date: null, retire_gate_date: null, last_gate: "Needs", comment: null,
     potential_value_eur: 145000, risk_classification: { id: 3, name: "Mittleres Risiko" }, processing: "assessed",
     provisional: false, form2_progress: { filled: 2, total: 18 }, roles: ["owner"], todos: [], updated_at: null, can_edit: true,
@@ -42,7 +42,7 @@ function mine(over: Partial<MyUseCase> & { id: number; name: string }): MyUseCas
 function detail(over: Partial<UseCaseDetail> = {}): UseCaseDetail {
   return {
     ...make({ id: 7, name: "Grid check", owner, potential_value_eur: 145000 }),
-    lead, approval_status: "approved", stage: "Idea", needs_gate_date: "2026-01-15T00:00:00", scope_gate_date: null,
+    lead, approval_status: "approved", stage: "Ideation", needs_gate_date: "2026-01-15T00:00:00", scope_gate_date: null,
     deploy_gate_date: null, retire_gate_date: null, last_gate: "Needs", stage_problems: [], processing: "assessed",
     provisional: false, comment: null, measured_benefits: null, actual_costs: null, running_cost_range: "up_to_10k",
     employee_personal_data: "no", performance_or_behaviour_control: false, decisions_on_employees: "none",
@@ -92,8 +92,8 @@ describe("stage and stage gates", () => {
   const dates = (over: Partial<Record<"Needs" | "Scope" | "Deploy" | "Retire", string>> = {}) => ({ Needs: "", Scope: "", Deploy: "", Retire: "", ...over });
 
   it("follows the form 2 Excel: scope gate before PoC, deploy gate before Production", () => {
-    expect(gateProblems("Idea", dates(), today)).toEqual([]);
-    expect(gateProblems("Idea", dates({ Scope: "2026-02-01" }), today).map((p) => p.gate)).toEqual(["Scope"]);
+    expect(gateProblems("Ideation", dates(), today)).toEqual([]);
+    expect(gateProblems("Ideation", dates({ Scope: "2026-02-01" }), today).map((p) => p.gate)).toEqual(["Scope"]);
     expect(gateProblems("PoC", dates(), today).map((p) => p.gate)).toEqual(["Scope"]);
     expect(gateProblems("PoC", dates({ Scope: "2026-02-01", Deploy: "2027-03-01" }), today)).toEqual([]);
     expect(gateProblems("PoC", dates({ Scope: "2026-02-01", Deploy: "2026-03-01" }), today).map((p) => p.gate)).toEqual(["Deploy"]);
@@ -160,7 +160,7 @@ describe("use case page", () => {
     const user = userEvent.setup();
     const track = screen.getByRole("radiogroup", { name: "Stage / maturity" });
     expect(within(track).getAllByRole("radio").map((r) => (r as HTMLInputElement).value)).toEqual(
-      ["Idea", "Exploration", "PoC", "MVP", "Implementation", "Production", "Retired"]);
+      ["Ideation", "PoC", "MVP", "Implementation", "Production", "Retired"]);
     await user.click(within(track).getByRole("radio", { name: "PoC" }));
     expect(within(gates).getByText("PoC needs the date the scope gate was passed.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -184,7 +184,7 @@ describe("use case page", () => {
     renderAt("/use-cases/7");
     const gates = await screen.findByRole("group", { name: "Stage gates" });
     expect(within(gates).queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // passed: fixed
-    await userEvent.click(screen.getByRole("radio", { name: "Exploration" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Ideation" }));
     expect(within(gates).getByText(/the scope gate is not passed yet: move the date to the future/)).toBeInTheDocument();
     expect(within(gates).getByLabelText("Scope gate date")).toHaveValue("2026-02-10");
   });
@@ -194,7 +194,7 @@ describe("use case page", () => {
     renderAt("/use-cases/7");
     const track = await screen.findByRole("radiogroup", { name: "Stage / maturity" });
     expect(within(track).getByRole("radio", { name: /^PoC/ })).toBeDisabled();
-    expect(within(track).getByRole("radio", { name: /^Exploration/ })).toBeDisabled();
+    expect(within(track).getByRole("radio", { name: /^Ideation/ })).toBeDisabled();
     expect(within(track).getByRole("radio", { name: "Implementation" })).toBeEnabled();
     expect(screen.getByRole("radio", { name: "On hold" })).toBeEnabled();
   });

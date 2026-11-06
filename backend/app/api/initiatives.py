@@ -40,6 +40,7 @@ from app.schemas import (
     RiskClassificationCount,
     StageCount,
     Summary,
+    current_stage,
 )
 from app.use_cases import (
     Lookups,
@@ -151,6 +152,7 @@ def list_initiatives(
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> InitiativePage:
+    stage = [current_stage(s) for s in stage] if stage else None  # ?stage=Idea still finds Ideation
     filters = (stage, business_unit, department, owner_id, solution_type_id, value_type_id,
                risk_classification_id, approval_status, search)
     conditions = _conditions(*filters, include_inactive)
@@ -239,11 +241,16 @@ def create_initiative(
         )
     if user.user_id is None:
         raise HTTPException(status_code=503, detail="Your user could not be stored yet. Please try again in a minute.")
-    owner = owner_for_create(session, user.user_id, user.sso_name, body.business_unit)
-    if owner is None:
-        raise HTTPException(status_code=422, detail="Choose your business unit: you are not an owner yet.")
+    if body.owner_id is not None:  # an owner chosen in form 1
+        owner = session.get(Owner, body.owner_id)
+        if owner is None:
+            raise HTTPException(status_code=422, detail="Unknown owner")
+    else:  # the signed-in user
+        owner = owner_for_create(session, user.user_id, user.sso_name, body.business_unit)
+        if owner is None:
+            raise HTTPException(status_code=422, detail="Choose your business unit: you are not an owner yet.")
     if session.get(ValueType, body.value_type_id) is None:
-        raise HTTPException(status_code=422, detail="Unknown flagship (value type)")
+        raise HTTPException(status_code=422, detail="Unknown topic (value type)")
 
     key = key_hash(owner.category or "", body.name)
     business_unit = owner.category or "no business unit"
@@ -262,7 +269,7 @@ def create_initiative(
                 "and is still being processed.",
             )
 
-    values = body.model_dump(exclude={"running_cost_range", "business_unit"})
+    values = body.model_dump(exclude={"running_cost_range", "business_unit", "owner_id"})
     check_stage_gates(body.stage, gate_dates(values), today())
     as_datetimes(values, GATE_DATE_FIELDS.values())
     record = UserAction(

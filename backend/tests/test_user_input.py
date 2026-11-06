@@ -93,7 +93,7 @@ def form1(**over):
     values.pop("operating_costs")
     return {
         "name": "Smart Invoice Check", "description": "Checks invoices against orders",
-        "value_type_id": 1, "ai_layer": "AI for business process optimization", "stage": "Idea",
+        "value_type_id": 1, "ai_layer": "AI for business process optimization", "stage": "Ideation",
         "date_delivery": "Q3 2027", **values, "running_cost_range": "10k_to_50k",
         "solution_complexity_score": 4, **over,
     }
@@ -244,3 +244,31 @@ def test_an_excel_owner_of_the_same_name_is_linked(submit, db_path):
     assert resp.status_code == 201 and resp.json()["owner"]["id"] == 2
     with sqlite3.connect(db_path) as conn:
         assert conn.execute('SELECT "UserID", "Source" FROM "Owner" WHERE "ID" = 2').fetchone() == (1, "excel")
+
+
+def test_an_owner_can_be_chosen(submit, client, db_path):
+    """Form 1 can name any owner; the submitter still sees the use case as theirs."""
+    resp = submit(name="For Owner B", owner_id=2)
+    assert resp.status_code == 201, resp.text
+    assert (resp.json()["owner"]["id"], resp.json()["owner"]["category"]) == (2, "IT")
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute('SELECT "OwnerID", "SubmittedByUserID" FROM "UserActionExtracts"').fetchall() == [(2, 1)]
+    assert "For Owner B" in {m["name"] for m in client.get("/api/me/use-cases").json()}
+    # the same name in another business unit is another use case; in the same one a duplicate
+    assert submit(name="For Owner B").status_code == 201  # Lead C, ETB
+    assert submit(name="For Owner B", owner_id=2).status_code == 409
+    assert submit(name="Nobody", owner_id=99).status_code == 422
+
+
+def test_former_stages_are_mapped_to_ideation(submit, db_path):
+    assert submit(name="Old stage", stage="Exploration").json()["stage"] == "Ideation"
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute('SELECT "Stage" FROM "UserActionExtracts"').fetchall() == [("Ideation",)]
+
+
+def test_form1_without_stage_is_ideation(client):
+    body = form1(name="No stage")
+    body.pop("stage")
+    resp = client.post("/api/initiatives", json=body)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["stage"] == "Ideation"

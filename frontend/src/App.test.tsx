@@ -44,7 +44,7 @@ describe("app", () => {
     const top = within(matrix).getByRole("list", { name: "Top 10 by potential" });
     expect(within(top).getByLabelText("Risk level 3: Medium risk (estimated)")).toHaveTextContent("3");
     expect(within(top).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "1AlphaETB · Idea354 k€",
+      "1AlphaETB · Ideation354 k€",
       "2BetaETB · PoC15 k€",
     ]);
   });
@@ -92,7 +92,7 @@ describe("app", () => {
   it("filters by business unit across views and keeps them in sync", async () => {
     mockApi(ok);
     renderAt("/board");
-    await screen.findByRole("region", { name: "Idea" });
+    await screen.findByRole("region", { name: "Ideation" });
     await userEvent.click(screen.getByRole("button", { name: "No business unit" }));
     expect(screen.getByRole("region", { name: "Cancelled" })).toHaveTextContent("Delta");
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
@@ -175,12 +175,12 @@ describe("new initiative form", () => {
     await user.type(await screen.findByRole("textbox", { name: /^Name/ }), "Smart Invoice Check");
     await user.type(screen.getByRole("textbox", { name: /^Description/ }), "Checks invoices against orders");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Your business unit/ }), "ETB");
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Flagship/ }), "1");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Topic/ }), "1");
     await user.selectOptions(screen.getByRole("combobox", { name: /^AI layer/ }), "AI for productivity and efficiency");
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "Idea");
+    expect(screen.getByRole("combobox", { name: /^Stage/ })).toHaveValue("Ideation"); // the default
     // every number is chosen from its range
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Cases per year/ }), "1,000–10,000");
-    await user.selectOptions(screen.getByRole("combobox", { name: /^Time saved per case/ }), "15–30 min");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Runs per year/ }), "1,000–10,000");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Time saved per run/ }), "15–30 min");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Complexity/ }), "4");
     await user.selectOptions(screen.getByRole("combobox", { name: /^One-time cost/ }), "100k–250k €");
     await user.selectOptions(screen.getByRole("combobox", { name: /^Running costs/ }), "50k_to_100k");
@@ -218,7 +218,7 @@ describe("new initiative form", () => {
     await user.click(screen.getByRole("button", { name: "Submit idea" }));
 
     expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({
-      name: "Smart Invoice Check", business_unit: "ETB", cases_per_year: 5000, hours_saved_per_case: 0.4,
+      name: "Smart Invoice Check", owner_id: null, business_unit: "ETB", stage: "Ideation", cases_per_year: 5000, hours_saved_per_case: 0.4,
       error_rate_before: null, estimate_basis: "benchmark", solution_complexity_score: 4,
       one_time_costs: 175000, decisions_on_employees: "none", scope_gate_date: null,
       ai_layer: "AI for productivity and efficiency", running_cost_range: "50k_to_100k",
@@ -236,8 +236,22 @@ describe("new initiative form", () => {
         ? { user: "Jonas", rights: { canApprove: false, canAdmin: false }, owner: { id: 7, name: "Jonas", category: "IT" } }
         : base(path as never)) as never);
     renderAt("/new");
-    expect(await screen.findByDisplayValue("Jonas · IT")).toBeDisabled();
+    expect(await screen.findByRole("combobox", { name: /^Owner/ })).toHaveDisplayValue("Me · Jonas · IT");
     expect(screen.queryByRole("combobox", { name: /business unit/ })).not.toBeInTheDocument();
+  });
+
+  it("lets the user choose another owner, whose business unit counts", async () => {
+    mockWithReference();
+    post.mockReset();
+    post.mockImplementation((async (_path: string, body: Record<string, unknown>) => ({
+      ...SAMPLE[0], id: -1, user_input_id: 1, status: "pending", business_transaction_id: null, name: body.name as string,
+    })) as never);
+    renderAt("/new");
+    const user = await fillRequired();
+    await user.selectOptions(screen.getByRole("combobox", { name: /^Owner/ }), "2");
+    expect(screen.queryByRole("combobox", { name: /business unit/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Submit idea" }));
+    expect(post).toHaveBeenCalledWith("/initiatives", expect.objectContaining({ owner_id: 2, business_unit: null }));
   });
 
   it("asks for the dates of the gates the chosen stage has passed", async () => {
@@ -248,7 +262,7 @@ describe("new initiative form", () => {
     })) as never);
     renderAt("/new");
     const user = await fillRequired();
-    expect(screen.queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // Idea: no gate passed yet
+    expect(screen.queryByLabelText("Scope gate date")).not.toBeInTheDocument(); // Ideation: no gate passed yet
     await user.selectOptions(screen.getByRole("combobox", { name: /^Stage/ }), "PoC");
     expect(screen.getByText(/In PoC the scope gate is already passed/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Deploy gate date")).not.toBeInTheDocument();
