@@ -25,6 +25,10 @@ Differences to the sheet mode (operators.bronze_to_silver):
   - reject: only from pending -> rejected, with the comment.
   - unknown use case, or a decision on a use case that is not pending ->
     conflict, nothing written.
+  - UseCaseID < 0 refers to the use case created by create record −UseCaseID:
+    the Backend lets an approver decide on (and record actions for) an idea
+    before this DAG has given it its UseCaseID. Records run in ID order, so the
+    create is always applied first.
   - the result equals the current version -> unchanged, nothing written.
 - Value buckets, factors and costs come from the entered drivers
   (transforms.user_input_heuristic), merged over all actions of the use case
@@ -148,7 +152,7 @@ class _Context:
     def apply(self, record: dict, transaction: BusinessTransaction) -> str:
         if record["ActionType"] == "create":
             return self._create(record, transaction)
-        current = current_version(self.session, record["UseCaseID"])
+        current = current_version(self.session, self._use_case_id(record["UseCaseID"]))
         if current is None:
             return self._conflict(record, f"use case {record['UseCaseID']} does not exist")
         if record["ActionType"] in ("approve", "reject") and current.status != "pending":
@@ -194,6 +198,18 @@ class _Context:
 
     # --- helpers --------------------------------------------------------------
 
+    def _use_case_id(self, use_case_id: int | None) -> int | None:
+        """UseCaseID of a record; a negative one is −(ID of the create record) of the use case."""
+        if use_case_id is None or use_case_id > 0:
+            return use_case_id
+        return self.session.scalar(
+            select(Initiative.use_case_id)
+            .join(BusinessTransaction, Initiative.business_transaction_id == BusinessTransaction.id)
+            .where(BusinessTransaction.bronze_table_name == USER_ACTION_TABLE_NAME,
+                   BusinessTransaction.bronze_id == -use_case_id)
+            .limit(1)
+        )
+
     def _conflict(self, record: dict, reason: str) -> str:
         self.log.error(
             "Conflict: %s record %d (use case %s) not taken — %s",
@@ -214,7 +230,8 @@ class _Context:
     def _actions_of(self, use_case_id: int, up_to: int | None = None) -> list[dict]:
         """All user actions of a use case in order: its create record (found
         through the BusinessTransaction of its first version) and every record
-        carrying its UseCaseID, up to and including record `up_to`."""
+        carrying its UseCaseID (or −ID of the create record, see _use_case_id),
+        up to and including record `up_to`."""
         table = USER_ACTION_TABLE
         first_version = select(func.min(Initiative.id)).where(Initiative.use_case_id == use_case_id).scalar_subquery()
         create_record = (
@@ -222,7 +239,11 @@ class _Context:
             .join(Initiative, Initiative.business_transaction_id == BusinessTransaction.id)
             .where(Initiative.id == first_version, BusinessTransaction.bronze_table_name == USER_ACTION_TABLE_NAME)
         )
-        query = select(table).where((table.c.UseCaseID == use_case_id) | table.c.ID.in_(create_record))
+        create_id = self.session.scalar(create_record)
+        condition = table.c.UseCaseID == use_case_id
+        if create_id is not None:
+            condition = condition | (table.c.ID == create_id) | (table.c.UseCaseID == -create_id)
+        query = select(table).where(condition)
         if up_to is not None:
             query = query.where(table.c.ID <= up_to)
         return [dict(r._mapping) for r in self.session.execute(query.order_by(table.c.ID))]

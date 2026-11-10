@@ -188,6 +188,27 @@ def test_lifecycle_approve_detail_and_stage_gate(engine):
     assert versions[0].efficiency_score_eur == 90000 and versions[1].ai_layer is None
 
 
+def test_a_decision_before_the_create_was_processed_refers_to_the_create_record(engine):
+    # the Backend lets the approver decide at once: UseCaseID = −(ID of the create record)
+    first = _submit(engine, "Early")
+    _act(engine, "approve", -first, LeadID=2)
+    assert _silver(engine) == _counts(read=2, inserted=1, updated=1)
+    early = _initiatives(engine)["Early"]
+    assert (early.use_case_id, early.status, early.lead_id) == (1, "approved", 2)
+    # also when the create was processed in an earlier run, and for later updates
+    second = _submit(engine, "Late")
+    _silver(engine)
+    _act(engine, "reject", -second, Comment="Duplicate")
+    _act(engine, "update", -second, HoursSavedPerCase=1.0)
+    assert _silver(engine) == _counts(read=2, updated=2)
+    late = _initiatives(engine)["Late"]
+    assert (late.use_case_id, late.status, late.comment) == (2, "rejected", "Duplicate")
+    assert late.efficiency_score_eur == 3000 * 1.0 * 60  # merged with the create's drivers
+    # a negative UseCaseID of no create record is a conflict
+    _act(engine, "approve", -999, LeadID=2)
+    assert _silver(engine) == _counts(read=1, conflicts=1)
+
+
 def test_name_and_business_unit_cannot_change(engine):
     _submit(engine, "Alpha", owner_id=1)
     _silver(engine)
