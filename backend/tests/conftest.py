@@ -33,6 +33,7 @@ def dev_auth(monkeypatch):
     monkeypatch.setenv("EG_AUTH_DEV_GROUPS", '["app_50hzt_aap_communities_all__x"]')
     monkeypatch.setenv("AI_COCKPIT_APPROVER_GROUPS", APPROVERS)
     monkeypatch.setenv("AI_COCKPIT_ADMIN_GROUPS", ADMINS)
+    monkeypatch.setenv("AI_COCKPIT_DEMO_ALL_APPROVERS", "false")  # the tests check the real rights
 
 
 @pytest.fixture()

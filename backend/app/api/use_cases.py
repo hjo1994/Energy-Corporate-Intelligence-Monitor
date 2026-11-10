@@ -4,7 +4,7 @@ Writes go to the bronze table UserActionExtracts (action update / approve /
 reject); reads lay the actions the pipeline has not processed yet over the
 current silver version and its gold assessment (app/use_cases.py), so a change
 is visible at once. Paths take the UseCaseID; an idea that is still being
-processed has a negative id and can be read, not changed.
+processed has a negative id and can be read and decided, not changed.
 """
 from __future__ import annotations
 
@@ -246,12 +246,13 @@ def decide(
 ) -> UseCaseDetail:
     """Approve (with use case lead; passes the needs gate) or reject (with a comment) a pending
     idea. Approvers only. Approving sets the needs gate date to today unless the submitter has
-    already dated it in the past; never later than a later gate that is already passed."""
+    already dated it in the past; never later than a later gate that is already passed.
+    Works before the pipeline has processed the idea (negative id): the action then refers
+    to it by −(ID of its create record), which the pipeline resolves."""
     _writable(session)
     if not getattr(user.rights, "canApprove", False):
         raise HTTPException(status_code=403, detail="Only approvers can decide on ideas.")
     state = _state_or_404(session, use_case_id)
-    _not_processing(state)
     if state["status"] != "pending":
         raise HTTPException(status_code=409, detail=f"The idea is not waiting for a decision (status: "
                                                     f"{state['status'] or 'imported from a sheet'}).")
@@ -265,7 +266,8 @@ def decide(
                             needs_gate_date=_needs_gate_on_approval(state, now.date()))
     else:
         record = UserAction(action_type="reject", comment=body.comment)
-    record.use_case_id, record.timestamp = state["use_case_id"], now
+    record.use_case_id = state["use_case_id"] if state["use_case_id"] is not None else state["id"]
+    record.timestamp = now
     record.source_file_id, record.submitted_by = "user-input", user.name
     commit(session, record)
     return _detail(session, _state_or_404(session, use_case_id), user)

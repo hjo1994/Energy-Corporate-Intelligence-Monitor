@@ -8,7 +8,7 @@ current version, the same way the DAG will (app/user_input.py), and mark the
 use case:
 
 - processing "pending":         created in the UI, not in silver yet
-                                (id = −record ID, cannot be edited or decided yet)
+                                (id = −record ID; can be decided at once, not edited yet)
 - processing "changes_pending": in silver, with unprocessed actions on top
 - processing "not_assessed":    in silver, but gold has not assessed the current
                                 version (incomplete, or silver_to_gold not run yet)
@@ -17,6 +17,10 @@ use case:
 Potential value and risk level come from gold when it has assessed the current
 version and nothing is pending; otherwise they are computed provisionally with
 the same formulas (`provisional` = True). The realized value only comes from gold.
+
+An action can refer to a use case by −(ID of its create record) instead of its
+UseCaseID: the approver decides on an idea without waiting for the pipeline,
+which resolves the reference (user_input_to_silver._use_case_id).
 """
 from __future__ import annotations
 
@@ -128,7 +132,7 @@ def actions_of(session: Session, use_case_id: int, create: UserAction | None) ->
         return []
     condition = UserAction.use_case_id == use_case_id
     if create is not None:
-        condition = condition | (UserAction.id == create.id)
+        condition = condition | (UserAction.id == create.id) | (UserAction.use_case_id == -create.id)
     return list(session.scalars(select(UserAction).where(condition).order_by(UserAction.id)))
 
 
@@ -172,14 +176,16 @@ def load_states(
 
     states = []
     for version, gold in rows:
-        state = _from_version(version, gold, creates.get(version.use_case_id))
         create = creates.get(version.use_case_id)
+        state = _from_version(version, gold, create)
         # the stage given in form 1 (sheet use cases: the stage of their first version)
         state["stage_floor"] = (create.stage if create is not None and create.stage else None) or floors.get(version.use_case_id)
         state["details_saved"] = version.use_case_id in saved
         on_top = pending_by_use_case.get(version.use_case_id, [])
+        if create is not None and -create.id in pending_by_use_case:  # decided before it was processed
+            on_top = sorted([*on_top, *pending_by_use_case[-create.id]], key=lambda a: a.id)
         if on_top or with_drivers:
-            all_actions = actions_of(session, version.use_case_id, creates.get(version.use_case_id))
+            all_actions = actions_of(session, version.use_case_id, create)
             _overlay(state, on_top, all_actions)
             if with_drivers:
                 state["drivers"] = merged(all_actions)
@@ -189,26 +195,32 @@ def load_states(
     if include_pending_creates and use_case_ids is None:
         for action in pending:
             if action.action_type == "create":
-                states.append(pending_create_state(action, with_drivers))
+                states.append(pending_create_state(action, with_drivers, pending_by_use_case.get(-action.id, [])))
     return states
 
 
 def load_state(session: Session, id: int, with_drivers: bool = True) -> dict | None:
-    """One use case by UseCaseID, or a pending create by −record ID."""
+    """One use case by UseCaseID, or a pending create by −record ID (once processed: its use case)."""
     if id < 0:
         if not table_exists(session):
             return None
         action = session.get(UserAction, -id)
         if action is None or action.action_type != "create":
             return None
-        if session.scalar(processed_action_ids().where(BusinessTransaction.bronze_id == action.id)) is not None:
-            return None  # processed: it is a use case now
-        return pending_create_state(action, with_drivers)
+        transaction = session.scalar(select(BusinessTransaction.id).where(
+            BusinessTransaction.bronze_table_name == ACTION_TABLE, BusinessTransaction.bronze_id == action.id))
+        if transaction is not None:  # processed: it is a use case now (unless the create was a conflict)
+            use_case_id = session.scalar(select(Initiative.use_case_id).where(
+                Initiative.business_transaction_id == transaction).limit(1))
+            return None if use_case_id is None else load_state(session, use_case_id, with_drivers)
+        on_top = [a for a in unprocessed_actions(session) if a.use_case_id == id]
+        return pending_create_state(action, with_drivers, on_top)
     states = load_states(session, [id], include_pending_creates=False, with_drivers=with_drivers)
     return states[0] if states else None
 
 
-def pending_create_state(action: UserAction, with_drivers: bool = False) -> dict:
+def pending_create_state(action: UserAction, with_drivers: bool = False, on_top: list[UserAction] = ()) -> dict:
+    """An idea not processed yet, with the actions already recorded for it (a decision)."""
     state = {name: None for name in SILVER_FIELDS}
     state.update(
         id=-action.id, use_case_id=None, version_id=None, user_action_id=action.id, gold=None,
@@ -219,10 +231,12 @@ def pending_create_state(action: UserAction, with_drivers: bool = False) -> dict
         updated_at=action.timestamp, pending_action_ids=[action.id], last_action_id=action.id,
     )
     _overlay(state, [action], [action], copy_all=True)
+    if on_top:
+        _overlay(state, list(on_top), [action, *on_top])
     state["stage_floor"] = action.stage
     state["details_saved"] = False
     if with_drivers:
-        state["drivers"] = merged([action])
+        state["drivers"] = merged([action, *on_top])
     state["processing"] = "pending"
     _finish(state)
     return state
@@ -344,7 +358,8 @@ def can_edit(state: dict, user, owner_ids: set[int], rights) -> bool:
 
 
 def can_decide(state: dict, rights) -> bool:
-    return bool(getattr(rights, "canApprove", False)) and state["status"] == "pending" and state["id"] > 0
+    # also while the idea is still being processed (id < 0): the pipeline applies the decision after the create
+    return bool(getattr(rights, "canApprove", False)) and state["status"] == "pending"
 
 
 def todos(state: dict) -> list[str]:

@@ -22,3 +22,10 @@ def airflow_api() -> tuple[str, str, str] | None:
     if not url:
         return None
     return url, os.environ.get("AI_COCKPIT_AIRFLOW_USER", ""), os.environ.get("AI_COCKPIT_AIRFLOW_PASSWORD", "")
+
+
+# TEMPORARY (demo): every signed-in user gets the approver rights (inbox, decisions), whatever
+# their role in AppUser; their stored role and the Users page stay untouched. To revert: set
+# AI_COCKPIT_DEMO_ALL_APPROVERS=false, or delete this function and its one use in app/auth.py.
+def demo_all_approvers() -> bool:
+    return os.environ.get("AI_COCKPIT_DEMO_ALL_APPROVERS", "true").strip().lower() not in ("false", "0", "no", "off")

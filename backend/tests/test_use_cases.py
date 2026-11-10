@@ -98,17 +98,50 @@ def test_only_submitter_owner_lead_or_admin_may_edit(client, monkeypatch):
     assert alpha["potential_value_eur"] == pytest.approx(54000)
 
 
-def test_a_pending_idea_can_be_read_but_not_changed(client, submit, as_approver):
+def test_a_pending_idea_can_be_read_and_decided_but_not_changed(client, submit, db_path, as_approver):
     created = submit()
     pending = detail(client, created["id"])
     assert (pending["processing"], pending["approval_status"], pending["can_edit"]) == ("pending", "pending", False)
     assert pending["drivers"]["cases_per_year"] == 5000 and pending["running_cost_range"] == "10k_to_50k"
     assert client.patch(f"/api/use-cases/{created['id']}", json={"base_revision": "0-1", "stage": "PoC"}
                         ).status_code == 409
-    assert client.post(f"/api/use-cases/{created['id']}/decision",
-                       json={"decision": "approve", "lead_id": 3}).status_code == 409
+    # the approver does not wait for the pipeline (bronze_to_silver_user_input)
     inbox = client.get("/api/approvals").json()
-    assert [(i["name"], i["can_decide"]) for i in inbox] == [("Smart Invoice Check", False)]
+    assert [(i["name"], i["can_decide"]) for i in inbox] == [("Smart Invoice Check", True)]
+    resp = client.post(f"/api/use-cases/{created['id']}/decision",
+                       json={"decision": "approve", "lead_id": 3, "base_revision": pending["revision"]})
+    assert resp.status_code == 200, resp.text
+    decided = resp.json()
+    assert (decided["id"], decided["approval_status"], decided["lead"]["id"], decided["can_decide"]) == (
+        created["id"], "approved", 3, False)
+    assert client.get("/api/approvals").json() == []
+    # the decision refers to the idea by −(ID of its create record), which the pipeline resolves
+    conn = sqlite3.connect(db_path)
+    assert conn.execute('SELECT "ActionType", "UseCaseID", "LeadID" FROM "UserActionExtracts" WHERE "ID" > ?',
+                        (created["user_input_id"],)).fetchall() == [("approve", -created["user_input_id"], 3)]
+    conn.close()
+    # once the create is processed (the decision not yet), the use case shows it too, also under the old id
+    process(db_path, created["user_input_id"], 6)
+    for id in (6, created["id"]):
+        after = detail(client, id)
+        assert (after["id"], after["approval_status"], after["lead"]["id"], after["processing"]) == (
+            6, "approved", 3, "changes_pending")
+    assert client.post("/api/use-cases/6/decision", json={"decision": "reject", "comment": "x"}).status_code == 409
+
+
+def test_a_pending_idea_can_be_rejected_at_once(client, submit, as_approver):
+    created = submit()
+    resp = client.post(f"/api/use-cases/{created['id']}/decision", json={"decision": "reject", "comment": "Duplicate"})
+    assert resp.status_code == 200, resp.text
+    assert (resp.json()["approval_status"], resp.json()["comment"]) == ("rejected", "Duplicate")
+
+
+def test_demo_switch_makes_everyone_an_approver(client, idea, monkeypatch):
+    monkeypatch.setenv("AI_COCKPIT_DEMO_ALL_APPROVERS", "true")
+    rights = client.get("/api/auth/rights").json()
+    assert (rights["rights"]["canApprove"], rights["rights"]["canManageUsers"], rights["role"]) == (True, False, "user")
+    assert client.get("/api/approvals").status_code == 200
+    assert client.post("/api/use-cases/6/decision", json={"decision": "approve", "lead_id": 3}).status_code == 200
 
 
 def test_my_use_cases_with_roles_and_todos(client, idea, db_path):

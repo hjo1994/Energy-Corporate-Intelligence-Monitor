@@ -88,7 +88,7 @@ function Decision({ d, lists, onDone }: { d: UseCaseDetail; lists: ReferenceData
           {saving ? "Saving …" : "Approve & assign lead"}
         </button>
       </div>
-      {!d.can_decide && <p className="muted">The idea is still being processed – you can decide in about a minute.</p>}
+      {!d.can_decide && <p className="muted">This idea is no longer waiting for a decision.</p>}
     </section>
   );
 }

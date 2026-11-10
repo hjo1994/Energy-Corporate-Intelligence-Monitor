@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.config import demo_all_approvers  # TEMPORARY demo switch, see app/config.py
+
 AUTH_TAG = "auth"
 
 
@@ -108,7 +110,7 @@ def acting_user(request: Request, user: Annotated[UserInfo, authorizer()]) -> Ac
     can_approve = bool(claims.get("canApprove")) or approver
     # every real approver (role or AD group) manages the users; a demo approver does not
     rights = Rights(**{**{name: bool(claims.get(name)) for name in Rights.model_fields},
-                       "canApprove": can_approve, "canManageUsers": can_approve})
+                       "canApprove": can_approve or demo_all_approvers(), "canManageUsers": can_approve})
     # A presenter's view follows the switch: "Approver (demo)" -> approver rights (recorded as
     # "<name> (demo approver)" unless they are an approver anyway), "Normal user" -> none, so
     # the normal user's view can be shown even by a real approver.
