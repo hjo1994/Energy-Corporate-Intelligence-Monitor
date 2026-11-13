@@ -14,7 +14,8 @@ RunningCosts set) and
   benefits) and was last computed before today, since the runtime grows daily.
 
 Incomplete use cases are left out of gold (the UI shows them from silver /
-bronze, marked as not assessed yet). force=True assesses every complete use
+bronze, marked as not assessed yet). The Topic comes from the name and
+description (transforms.topic). force=True assesses every complete use
 case again. Every run is logged in TransformationRun with BronzeTableName
 "Initiative" (the newest silver Timestamp as BronzeTimestamp).
 """
@@ -30,9 +31,10 @@ from ai_cockpit_ingestion.db import get_engine
 from ai_cockpit_ingestion.lineage import utcnow
 from ai_cockpit_ingestion.models import AssessedInitiative, Initiative, TransformationRun, current_versions
 from ai_cockpit_ingestion.transforms.gold import assess, is_complete, runtime_years
+from ai_cockpit_ingestion.transforms.topic import classify
 
 SILVER_TABLE_NAME = "Initiative"  # TransformationRun.BronzeTableName of the SilverToGold runs
-_NOT_COPIED = ("id", "initiative_id", "potential_value", "realized_value", "risk_classification_id", "assessed_at")
+_NOT_COPIED = ("id", "initiative_id", "potential_value", "realized_value", "risk_classification_id", "assessed_at", "topic")
 # Gold columns copied 1:1 from the silver version (same attribute names).
 COPIED = tuple(
     c.key for c in AssessedInitiative.__mapper__.column_attrs
@@ -73,6 +75,7 @@ def assess_into_gold(session: Session, force: bool, today: datetime.date | None 
             "potential_value": result.potential_value,
             "realized_value": result.realized_value,
             "risk_classification_id": result.risk_level,
+            "topic": classify(version.name, version.description),
         }
         row = gold.get(version.use_case_id)
         if row is None:

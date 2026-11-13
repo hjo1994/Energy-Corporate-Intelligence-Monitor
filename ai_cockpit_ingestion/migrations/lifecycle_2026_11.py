@@ -91,6 +91,20 @@ def _add_app_users(engine: Engine) -> None:
                     log.info("Kept Owner.Email: SQLite %s cannot drop columns", sqlite3.sqlite_version)
 
 
+
+def _add_gold_topic(engine: Engine) -> None:
+    """AssessedInitiatives.Topic (11/2026), the topic key from the silver text.
+    Existing rows stay NULL until silver_to_gold assesses them again
+    (trigger once with {"force": true} to fill all of them)."""
+    inspector = inspect(engine)
+    if "AssessedInitiatives" not in inspector.get_table_names():
+        return
+    if "Topic" not in {c["name"] for c in inspector.get_columns("AssessedInitiatives")}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE "AssessedInitiatives" ADD COLUMN "Topic" VARCHAR'))
+        log.info("Added AssessedInitiatives.Topic")
+
+
 def _supports_drop_column() -> bool:
     """ALTER TABLE ... DROP COLUMN exists since SQLite 3.35."""
     return sqlite3.sqlite_version_info >= (3, 35, 0)
@@ -208,6 +222,7 @@ def upgrade(engine: Engine) -> bool:
 
     _add_gate_dates(engine)
     _add_app_users(engine)
+    _add_gold_topic(engine)
     _merge_ideation(engine)
     if not needs_migration(engine):
         return False

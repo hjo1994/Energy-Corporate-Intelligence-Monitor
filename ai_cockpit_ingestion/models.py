@@ -578,6 +578,7 @@ class AssessedInitiative(Base):
     works_council_risk_class = Column("WorksCouncilRiskClass", String, nullable=True)
     works_council_approved_at = Column("WorksCouncilApprovedAt", DateTime, nullable=True)
     is_active = Column("IsActive", Boolean, nullable=False, default=True)
+    topic = Column("Topic", String, nullable=True)  # topic key from the silver text, see transforms/topic.py
 
     initiative = relationship("Initiative")
     risk_classification = relationship("RiskClassification", back_populates="assessed_initiatives")

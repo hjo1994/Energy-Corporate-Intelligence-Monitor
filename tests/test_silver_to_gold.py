@@ -182,3 +182,14 @@ def test_force_reassesses_everything_without_changes(engine):
     _gold(engine)
     assert _poke(engine, force=True) is True
     assert _gold(engine, force=True) == {"read": 2, "inserted": 0, "updated": 0, "unchanged": 2}
+
+
+def test_topic_from_the_silver_text_follows_changes(engine):
+    _create(engine, "Alpha", Description="Forecast the load and generation per bidding zone")
+    _gold(engine)
+    assert _rows(engine)["Alpha"].topic == "forecast"
+
+    # a new description -> new silver version -> the topic is derived again
+    _action(engine, ActionType="update", UseCaseID=1, Description="Reply to customer letters")
+    assert _gold(engine)["updated"] == 1
+    assert _rows(engine)["Alpha"].topic == "writing"
