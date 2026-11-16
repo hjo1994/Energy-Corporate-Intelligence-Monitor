@@ -209,6 +209,7 @@ class AssessedInitiative(Base):
     realized_value = Column("RealizedValue", Float, nullable=True)
     risk_classification_id = Column("RiskClassificationID", Integer, ForeignKey("RiskClassification.ID"), nullable=True)
     assessed_at = Column("AssessedAt", DateTime, nullable=False)
+    topic = Column("Topic", String, nullable=True)  # key from the silver text (input orchestration transforms/topic.py)
     # Gold also copies the silver fields for the dashboard; the API reads those
     # from the silver version instead, so they are not mapped here.
 

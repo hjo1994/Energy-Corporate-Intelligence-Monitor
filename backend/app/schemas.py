@@ -110,6 +110,7 @@ class InitiativeOut(_Out):
     value_type: TypeOut | None
     risk_classification: RiskClassificationRef | None
     ai_layer: str | None = None
+    topic: str | None = None  # gold Topic key (e.g. "forecast"); None until assessed
     approval_status: Literal["pending", "approved", "rejected"] | None = None  # NULL: imported from a sheet
     # one date per stage gate: up to today = passed, later = planned (see app/lifecycle.py)
     needs_gate_date: datetime | None = None

@@ -294,6 +294,7 @@ def _finish(state: dict) -> None:
     assessed = state["processing"] == "assessed"
     state["assessed_version_id"] = gold.initiative_id if gold is not None else None
     state["assessed_at"] = gold.assessed_at if gold is not None else None
+    state["topic"] = gold.topic if gold is not None else None
     if assessed:
         state["potential_value_eur"] = gold.potential_value
         state["risk_level"] = gold.risk_classification_id

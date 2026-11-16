@@ -49,6 +49,8 @@ export interface Initiative {
   owner: Owner | null;
   lead?: Owner | null;
   ai_layer?: string | null;
+  /** gold Topic key (exploration clusters), null until assessed */
+  topic?: string | null;
   /** null for use cases imported from the Excel sheet */
   approval_status?: ApprovalStatus | null;
   /** one date per stage gate: up to today = passed, later = planned */

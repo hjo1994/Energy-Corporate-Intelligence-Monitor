@@ -305,7 +305,7 @@ describe("feature switch", () => {
     get.mockImplementation((async (path: string) =>
       path === "/features" ? { initiative_input: false } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
     renderAt("/new");
-    expect(await screen.findByRole("region", { name: "The path of an idea" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "The path from an idea to AI in production" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ New AI idea" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start Form 1 →" })).toBeDisabled();

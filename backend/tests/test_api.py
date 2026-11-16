@@ -60,6 +60,13 @@ def test_list_nests_owner_and_types(client):
     assert delta["owner"] is None and delta["solution_type"] is None
 
 
+def test_topic_comes_from_gold(client):
+    # the exploration view groups by it; use cases not in gold (or with NULL Topic) have none
+    topics = {i["name"]: i["topic"] for i in client.get("/api/initiatives").json()["items"]}
+    assert topics["Alpha"] == "automation"
+    assert topics["Beta"] is None and topics["Gamma"] is None
+
+
 def test_derived_values(client):
     items = {i["name"]: i for i in client.get("/api/initiatives").json()["items"]}
     alpha = items["Alpha"]

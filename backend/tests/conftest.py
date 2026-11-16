@@ -97,7 +97,7 @@ def db_path(tmp_path):
         s.flush()
         s.add_all([
             AssessedInitiative(use_case_id=1, initiative_id=versions[1].id, potential_value=54000.0,
-                               realized_value=None, risk_classification_id=2, assessed_at=NOW),
+                               realized_value=None, risk_classification_id=2, assessed_at=NOW, topic="automation"),
             AssessedInitiative(use_case_id=2, initiative_id=versions[2].id, potential_value=4550.0,
                                realized_value=1000.0, risk_classification_id=1, assessed_at=NOW),
             AssessedInitiative(use_case_id=5, initiative_id=versions[5].id, potential_value=1.0,

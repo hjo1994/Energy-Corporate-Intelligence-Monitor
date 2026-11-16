@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "./App";
-import { departmentCount, groupByDepartment } from "./domain/departments";
+import { atlasItems, departmentKeyOf, tokens } from "./domain/atlas";
 import { FALLBACK_STATS, pathStats } from "./domain/path";
 import { make, SAMPLE } from "./test/fixtures";
 
@@ -13,7 +13,7 @@ vi.mock("./shared/api/serviceApi", () => ({ serviceApi: { get: vi.fn(), post: vi
 const get = vi.mocked(serviceApi.get);
 const opt = (...values: string[]) => values.map((value) => ({ value, label: value }));
 
-function mockApi({ rights = { canApprove: true, canAdmin: true }, approvals = [] as unknown[] } = {}) {
+function mockApi({ rights = { canApprove: true, canAdmin: true }, approvals = [] as unknown[], items = SAMPLE } = {}) {
   get.mockReset();
   get.mockImplementation((async (path: string) => {
     if (path === "/auth/rights") return { user: "Jonas", rights };
@@ -22,9 +22,18 @@ function mockApi({ rights = { canApprove: true, canAdmin: true }, approvals = []
     if (path === "/me/use-cases") return [];
     if (path === "/owners" || path === "/users/directory" || path === "/value-types" || path === "/solution-types") return [];
     if (path === "/form-options") return { ai_layers: opt("AI for productivity and efficiency"), running_cost_ranges: [] };
-    return { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 };
+    return { items, total: items.length, limit: 500, offset: 0 };
   }) as never);
 }
+
+// departments as the sheets spell them (the atlas maps them to its areas)
+const owner = (id: number, department: string, category: string) => ({ id, name: `Owner ${id}`, department, category });
+const ATLAS = [
+  make({ id: 1, name: "Alpha", description: "Automatisierung", stage: "Ideation", owner: owner(1, "ASSETS", "ETB"), topic: "automation" }),
+  make({ id: 2, name: "Beta", stage: "PoC", owner: owner(2, "Asset Management", "50 Hertz"), topic: "forecast" }),
+  make({ id: 3, name: "Gamma", stage: "Ideation", owner: owner(3, "Innovation", "IT"), topic: "code" }),
+  make({ id: 4, name: "Delta", stage: "Cancelled", owner: null }),
+];
 
 function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
@@ -49,7 +58,7 @@ describe("role navigation", () => {
   it("opens as innovator on the start page; each role has its own tabs", async () => {
     mockApi();
     renderAt("/");
-    await screen.findByRole("region", { name: "The path of an idea" });
+    await screen.findByRole("heading", { name: "The path from an idea to AI in production" });
     expect(where()).toBe("/innovate/start");
     expect(tabNames()).toEqual(["Start", "Exploration", "My use cases"]);
     expect(screen.getByRole("button", { name: "+ New AI idea" })).toBeInTheDocument();
@@ -120,30 +129,32 @@ describe("role navigation", () => {
   });
 });
 
-describe("innovator start page", () => {
-  it("shows the path from form 1 to production with figures from the data", async () => {
+describe("innovator start page (from idea to production)", () => {
+  it("shows the 12 stops with figures from the data", async () => {
     mockApi();
     renderAt("/innovate/start");
-    expect(await screen.findByRole("heading", { name: "Every AI use case here started as a few sentences." })).toBeInTheDocument();
-    const path = screen.getByRole("region", { name: "The path of an idea" });
-    const stops = within(path).getAllByRole("listitem");
-    expect(stops.map((s) => within(s).getByRole("heading").textContent)).toEqual([
-      "Form 1", "Needs gate (decision)", "Ideation", "Form 2", "Scope gate (decision)", "PoC", "MVP", "Implementation", "Deploy gate (decision)", "Production",
+    expect(await screen.findByRole("heading", { name: "The path from an idea to AI in production" })).toBeInTheDocument();
+    const stops = screen.getAllByRole("region").filter((r) => r.classList.contains("step"));
+    expect(stops.map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Form 1", "Needs gate", "Ideation", "Form 2", "Scope gate", "PoC", "MVP", "Implementation", "Deploy gate", "Production", "Retire gate", "Retired",
     ]);
     // SAMPLE: 2 in Ideation, 1 in PoC, 1 cancelled -> 1 of 3 moved on from Ideation
+    expect(within(stops[2]).getByRole("heading", { name: "Shape the use case" })).toBeInTheDocument();
     expect(stops[2]).toHaveTextContent("≈ 3 months");
-    expect(stops[2]).toHaveTextContent("move on33 %");
-    expect(stops[9]).toHaveTextContent("live0of all0 %");
+    expect(stops[2]).toHaveTextContent("33 %moved on to PoC or later1 of 3");
+    expect(stops[9]).toHaveTextContent("0solutions live today0 % of all use cases");
+    expect(screen.getByText("Stop 1 of 12")).toBeInTheDocument();
   });
 
-  it("the explore door leads to the exploration", async () => {
-    mockApi();
+  it("ends with two doors; the explore door leads to the exploration", async () => {
+    mockApi({ items: ATLAS });
     renderAt("/innovate/start");
-    const door = await screen.findByRole("button", { name: "Explore the map →" });
-    expect(screen.getByText(/4 use cases from 2 departments/)).toBeInTheDocument();
-    await userEvent.click(door);
+    const next = await screen.findByRole("region", { name: "Where do you go from here?" });
+    expect(within(next).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["See what others are building", "Submit your idea"]);
+    expect(within(next).getAllByRole("article")[0]).toHaveTextContent("4 use cases from 2 departments.");
+    await userEvent.click(within(next).getByRole("button", { name: "Explore the map →" }));
     expect(where()).toBe("/innovate/explore");
-    expect(screen.getByRole("heading", { name: "Exploration" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Find use cases related to your idea" })).toBeInTheDocument();
   });
 
   it("the submit door opens form 1 in a drawer over the page; Escape closes it", async () => {
@@ -154,7 +165,7 @@ describe("innovator start page", () => {
     const drawer = screen.getByRole("dialog", { name: "New AI idea" });
     expect(await within(drawer).findByRole("heading", { name: "Add a new AI idea" })).toBeInTheDocument();
     // the path stays behind it
-    expect(screen.getByRole("region", { name: "The path of an idea" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "The path from an idea to AI in production" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Close" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -186,30 +197,71 @@ describe("innovator start page", () => {
   });
 });
 
-describe("innovator exploration", () => {
-  it("groups the use cases by department, filters by search and shows a use case's details", async () => {
-    mockApi();
-    renderAt("/innovate/explore");
-    await screen.findByRole("heading", { name: "Exploration" });
-    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["Assets", "Innovation", "No department"]);
-    expect(within(screen.getByRole("region", { name: "Assets" })).getAllByRole("button")).toHaveLength(2);
+describe("innovator exploration (use case atlas)", () => {
+  const territories = (c: HTMLElement) => [...c.querySelectorAll("text.buname")].map((t) => t.textContent);
+  const also = () => screen.getByTestId("atlas-also").textContent;
 
+  it("draws the departments as territories with one hexagon per use case", async () => {
+    mockApi({ items: ATLAS });
+    const { container } = renderAt("/innovate/explore");
+    await screen.findByRole("heading", { name: "Find use cases related to your idea" });
+    // ASSETS and Asset Management are one area (Alpha, Beta), Innovation is Data & AI (Gamma), No owner yet (Delta) last
+    expect(territories(container)).toEqual(["Assets", "Data & AI", "No owner yet"]);
+    expect(container.querySelectorAll("path.hex")).toHaveLength(4);
+    expect(screen.getByRole("heading", { name: "Topics by department" })).toBeInTheDocument();
+  });
+
+  it("search narrows the results, also by department name; a row opens the use case", async () => {
+    mockApi({ items: ATLAS });
+    const { container } = renderAt("/innovate/explore");
     const user = userEvent.setup();
-    await user.type(screen.getByRole("searchbox", { name: "Search use cases" }), "capex");
-    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["Assets"]);
+    const q = await screen.findByRole("textbox", { name: "Search use cases by keyword" });
 
-    await user.click(screen.getByRole("button", { name: "Alpha · Ideation" }));
-    const detail = screen.getByRole("complementary", { name: "Use case details" });
-    expect(detail).toHaveTextContent("Alpha");
-    expect(detail).toHaveTextContent("DepartmentAssets");
-    expect(detail).toHaveTextContent("TopicCAPEX delivery");
-    expect(detail).toHaveTextContent("Automatisierung");
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("complementary", { name: "Use case details" })).not.toBeInTheDocument();
+    await user.type(q, "automatisierung");
+    expect(also()).toBe("1 of 4 use cases");
+    expect(container.querySelectorAll("path.hex.dim")).toHaveLength(3);
+    const rail = screen.getByRole("complementary", { name: "Use cases" });
+    expect(within(rail).getByRole("heading", { name: "1 use case in Assets" })).toBeInTheDocument();
+
+    await user.clear(q);
+    await user.type(q, "data");
+    expect(also()).toBe("1 of 4 use cases");
+    expect(within(rail).getByText(/names the Data & AI department/)).toBeInTheDocument();
+    expect(within(rail).getByText("In the department")).toBeInTheDocument();
+
+    await user.click(within(rail).getByRole("button", { name: /Gamma/ }));
+    const detail = within(rail).getByText("Selected use case").parentElement!;
+    expect(detail).toHaveTextContent("TopicCode & developer toolsDepartmentData & AITeamInnovation · IT");
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(also()).toBe("");
   });
 });
 
-describe("path figures and departments", () => {
+describe("atlas items", () => {
+  it("maps departments, tokens and topics as the agreed page did", () => {
+    const owner = (department: string | null) => ({ id: 1, name: "x", department, category: "ETB" });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(departmentKeyOf(make({ id: 1, name: "a", owner: owner("INFRA") }))).toBe("infra");
+    expect(departmentKeyOf(make({ id: 2, name: "b", owner: owner("GO‑C") }))).toBe("finance");
+    expect(departmentKeyOf(make({ id: 3, name: "c" }))).toBe("unassigned");
+    expect(warn).not.toHaveBeenCalled();
+    expect(departmentKeyOf(make({ id: 4, name: "d", owner: owner("Somewhere new") }))).toBe("unassigned");
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+    expect(tokens("LLM API", "Make an LLM API available to developers and products in the group")).toEqual([
+      "api", "available", "developers", "group", "llm", "make", "products",
+    ]);
+    const items = atlasItems([
+      make({ id: 1, name: "a", topic: "forecast" }),
+      make({ id: 2, name: "b", topic: null }),
+      make({ id: 3, name: "c", is_active: false }),
+    ]);
+    expect(items.map((i) => i.t)).toEqual(["forecast", "other"]);
+  });
+});
+
+describe("path figures", () => {
   it("counts Idea and Exploration as Ideation and computes how many move on", () => {
     const items = [
       make({ id: 1, name: "a", stage: "Idea" }),
@@ -224,19 +276,5 @@ describe("path figures and departments", () => {
     expect(s.live).toBe(1);
     expect(s.liveShare).toBeCloseTo(0.2);
     expect(pathStats([])).toBe(FALLBACK_STATS);
-  });
-
-  it("treats departments differing only in case or hyphens as one", () => {
-    const owner = (department: string) => ({ id: 1, name: "x", department, category: null });
-    const items = [
-      make({ id: 1, name: "a", owner: owner("Infra") }),
-      make({ id: 2, name: "b", owner: owner("INFRA") }),
-      make({ id: 3, name: "c", owner: owner("Infra") }),
-      make({ id: 4, name: "d", owner: owner("GO‑C") }),
-      make({ id: 5, name: "e", owner: owner("go-c") }),
-      make({ id: 6, name: "f" }),
-    ];
-    expect(groupByDepartment(items).map((g) => [g.label, g.items.length])).toEqual([["Infra", 3], ["go-c", 2], ["No department", 1]]);
-    expect(departmentCount(items)).toBe(2);
   });
 });
