@@ -20,6 +20,13 @@ const ANSWERS: [keyof UseCaseDetail, string][] = [
 const answerText = (v: unknown) => (v === true ? "yes" : v === false ? "no" : v === null || v === undefined ? "–" : String(v));
 const allNo = (d: UseCaseDetail) => ANSWERS.every(([k]) => d[k] === false || d[k] === "no" || d[k] === "none");
 
+// The Approver view is open to everyone (nav/roles.ts), but the server still lets only approvers see the
+// inbox and decide (AI_COCKPIT_DEMO_ALL_APPROVERS on the backend opens that to everyone signed in).
+const NO_INBOX_RIGHTS =
+  "Your account has no approver rights on the server yet, so the inbox cannot be shown. Ask an admin to give you the approver role.";
+const NO_DECISION_RIGHTS =
+  "You can review this idea, but the server only lets approvers decide on it. Ask an admin to give you the approver role.";
+
 function valueLine(d: UseCaseDetail): string | null {
   const buckets: [string, number | null][] = [
     ["efficiency", d.efficiency_score_eur],
@@ -53,7 +60,11 @@ function Decision({ d, lists, onDone }: { d: UseCaseDetail; lists: ReferenceData
       });
       onDone(d.name, decision === "approve");
     } catch (err) {
-      setError(err instanceof ApiError || err instanceof Error ? err.message : "The decision could not be saved.");
+      setError(
+        err instanceof ApiError && err.status === 403
+          ? NO_DECISION_RIGHTS
+          : err instanceof ApiError || err instanceof Error ? err.message : "The decision could not be saved.",
+      );
       setSaving(false);
     }
   }
@@ -110,7 +121,7 @@ export function ApprovalsView() {
       setItems(list);
       setSelected((s) => (s !== null && list.some((i) => i.id === s) ? s : list[0]?.id ?? null));
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 403 ? "Only approvers can see the inbox." : err instanceof Error ? err.message : "The inbox could not be loaded.");
+      setError(err instanceof ApiError && err.status === 403 ? NO_INBOX_RIGHTS : err instanceof Error ? err.message : "The inbox could not be loaded.");
     }
   }, []);
 

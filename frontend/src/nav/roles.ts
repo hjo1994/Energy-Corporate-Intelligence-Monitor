@@ -20,11 +20,19 @@ export function roleOfPath(pathname: string): Role | null {
 }
 
 /**
- * The roles the user may switch to. Everyone is an innovator; the approver role needs the approver
- * rights, management the admin rights. The local dev bypass shows all three.
+ * TEMPORARY (demo, 11/2026): every signed-in user gets all three views and no "Normal user /
+ * Approver (demo)" switch. Build with VITE_ROLE_GATING=true to tie the views to the rights again.
+ * Unset (the default, also in the production build) means off.
  */
-export function allowedRoles(rights: Rights, devBypass: boolean): Role[] {
-  if (devBypass) return ROLES.map((r) => r.id);
+export const roleGating = (): boolean => import.meta.env.VITE_ROLE_GATING === "true";
+
+/**
+ * The roles the user may switch to. Without role gating: all three. With it, everyone is an
+ * innovator; the approver role needs the approver rights, management the admin rights. The local
+ * dev bypass shows all three.
+ */
+export function allowedRoles(rights: Rights, devBypass: boolean, gating = roleGating()): Role[] {
+  if (devBypass || !gating) return ROLES.map((r) => r.id);
   const out: Role[] = ["innovate"];
   if (rights.canApprove) out.push("approve");
   if (rights.canAdmin || rights.canManageUsers) out.push("steer");

@@ -330,8 +330,17 @@ describe("demo role switch", () => {
     }) as never);
 
   beforeEach(() => window.sessionStorage.clear());
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is not shown without role gating (every user has all three views)", async () => {
+    answer({ rights: { canApprove: true, canAdmin: false }, demo_presenter: true, demo_approver: true });
+    renderAt("/approve/approvals");
+    await within(screen.getByRole("navigation", { name: "Views" })).findByRole("link", { name: /Approvals/ });
+    expect(screen.queryByRole("radiogroup", { name: "Demo role" })).not.toBeInTheDocument();
+  });
 
   it("lets a demo presenter switch from normal user to demo approver", async () => {
+    vi.stubEnv("VITE_ROLE_GATING", "true");
     answer({ rights: { canApprove: false, canAdmin: false }, demo_presenter: true, demo_approver: false });
     renderAt("/my");
     const normal = await screen.findByRole("radio", { name: "Normal user" });
@@ -342,6 +351,7 @@ describe("demo role switch", () => {
   });
 
   it("shows the approvals while the presenter is demo approver", async () => {
+    vi.stubEnv("VITE_ROLE_GATING", "true");
     answer({ rights: { canApprove: true, canAdmin: false }, demo_presenter: true, demo_approver: true, user: "Jonas (demo approver)" });
     renderAt("/approvals");
     expect(await screen.findByRole("radio", { name: "Approver (demo)" })).toHaveAttribute("aria-checked", "true");
@@ -349,6 +359,7 @@ describe("demo role switch", () => {
   });
 
   it("is not offered to anyone else, approvers included", async () => {
+    vi.stubEnv("VITE_ROLE_GATING", "true");
     answer({ rights: { canApprove: true, canAdmin: false } });
     renderAt("/approvals");
     await within(screen.getByRole("navigation", { name: "Views" })).findByRole("link", { name: /Approvals/ });

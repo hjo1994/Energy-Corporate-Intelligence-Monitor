@@ -55,6 +55,8 @@ const tabNames = () =>
 const where = () => screen.getByTestId("where").textContent;
 
 describe("role navigation", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("opens as innovator on the start page; each role has its own tabs", async () => {
     mockApi();
     renderAt("/");
@@ -117,7 +119,20 @@ describe("role navigation", () => {
     expect(await within(approver).findByLabelText("2 waiting")).toBeInTheDocument();
   });
 
-  it("hides the switch for users with one role and keeps them out of the other roles' pages", async () => {
+  it("gives every signed-in user all three views, whatever their rights (no role gating)", async () => {
+    mockApi({ rights: { canApprove: false, canAdmin: false } });
+    renderAt("/steer/value");
+    const roles = await screen.findByRole("group", { name: "Role" });
+    expect(within(roles).getAllByRole("button").map((b) => b.textContent)).toEqual(["Innovator", "Approver", "Management"]);
+    expect(where()).toBe("/steer/value");
+    expect(tabNames()).toEqual(["Value dashboard"]); // Users stays for those who manage users
+    await userEvent.click(within(roles).getByRole("button", { name: "Approver" }));
+    await vi.waitFor(() => expect(where()).toBe("/approve/overview/list"));
+    expect(tabNames()).toEqual(["Use cases", "Approvals"]);
+  });
+
+  it("with role gating: hides the switch for users with one role and keeps them out of the other roles' pages", async () => {
+    vi.stubEnv("VITE_ROLE_GATING", "true");
     mockApi({ rights: { canApprove: false, canAdmin: false } });
     renderAt("/steer/value");
     await vi.waitFor(() => expect(where()).toBe("/innovate/start"));
@@ -125,7 +140,8 @@ describe("role navigation", () => {
     expect(tabNames()).toEqual(["Start", "Exploration", "My use cases"]);
   });
 
-  it("offers only the roles the user has", async () => {
+  it("with role gating: offers only the roles the user has", async () => {
+    vi.stubEnv("VITE_ROLE_GATING", "true");
     mockApi({ rights: { canApprove: true, canAdmin: false } });
     renderAt("/");
     const roles = await screen.findByRole("group", { name: "Role" });

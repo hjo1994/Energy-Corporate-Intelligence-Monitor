@@ -8,10 +8,12 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { applyDemoApprover, storedDemoApprover } from "./shared/api/demoRole";
+import { roleGating } from "./nav/roles";
 
 const root = createRoot(document.getElementById("root")!);
-// demo presenters: the role this tab was switched to (the backend ignores it for everyone else)
-applyDemoApprover(storedDemoApprover());
+// demo presenters: the role this tab was switched to (the backend ignores it for everyone else);
+// without role gating there is no switch and presenters always act as approvers
+applyDemoApprover(roleGating() ? storedDemoApprover() : true);
 
 if (AUTH_DEV_BYPASS) {
   root.render(

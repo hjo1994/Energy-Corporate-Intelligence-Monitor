@@ -5,7 +5,7 @@ import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { DemoRoleSwitch } from "./components/DemoRoleSwitch";
 import { Drawer } from "./components/Drawer";
 import { FormDrawerCtx, OpenFormRoute } from "./nav/formDrawer";
-import { allowedRoles, roleHome, roleOfPath, ROLES, storedRole, storeRole, type Role } from "./nav/roles";
+import { allowedRoles, roleGating, roleHome, roleOfPath, ROLES, storedRole, storeRole, type Role } from "./nav/roles";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
 import { ListView } from "./views/ListView";
@@ -172,7 +172,7 @@ function Shell() {
               + New AI idea
             </button>
           )}
-          <DemoRoleSwitch />
+          {roleGating() && <DemoRoleSwitch />}
           {!AUTH_DEV_BYPASS && (
             <NavLink to="/logout" className="logout">
               Sign out

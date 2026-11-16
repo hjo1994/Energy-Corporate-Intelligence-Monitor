@@ -275,4 +275,30 @@ describe("approvals", () => {
     expect(post).toHaveBeenCalledWith("/use-cases/9/decision", { decision: "approve", lead_id: 3, base_revision: "0-5" });
     expect(await screen.findByText(/was approved/)).toBeInTheDocument();
   });
+  it("explains it when the server keeps the inbox for approvers", async () => {
+    mockApi({});
+    get.mockImplementation(((orig) => async (path: string) => {
+      if (path === "/approvals") throw { response: { status: 403, data: { detail: "Only approvers can see the approval inbox." } } };
+      return orig(path);
+    })(get.getMockImplementation()!) as never);
+    renderAt("/approve/approvals");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your account has no approver rights on the server yet");
+  });
+
+  it("explains it when the server refuses a decision", async () => {
+    mockApi({
+      "/approvals": [inboxItem],
+      "/use-cases/9": detail({ id: 9, name: "Vegetation risk", approval_status: "pending", lead: null, can_decide: true, revision: "0-5" }),
+    });
+    post.mockReset();
+    post.mockImplementation((async () => {
+      throw { response: { status: 403, data: { detail: "Only approvers can decide on ideas." } } };
+    }) as never);
+    renderAt("/approve/approvals");
+    const panel = await screen.findByRole("region", { name: "Selected idea" });
+    const user = userEvent.setup();
+    await user.type(await within(panel).findByRole("textbox", { name: /comment/i }), "Not now");
+    await user.click(within(panel).getByRole("button", { name: "Reject" }));
+    expect(await within(panel).findByRole("alert")).toHaveTextContent("the server only lets approvers decide on it");
+  });
 });
