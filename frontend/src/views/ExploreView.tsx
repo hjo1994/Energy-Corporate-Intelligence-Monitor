@@ -310,7 +310,7 @@ export function ExploreView() {
   const cardRef = useRef<HTMLDivElement>(null);
   const qRef = useRef<HTMLInputElement>(null);
   const mapRef = useRef<AtlasMap | null>(null);
-  useFullBleed("#f2eee4");
+  useFullBleed();
 
   const select = (id: number | null) => {
     setF((s) => ({ ...s, sel: id }));

@@ -1,9 +1,9 @@
-/* "Use Case Atlas" (Innovator exploration), ported from the agreed reference page in its topographic style;
+/* "Use Case Atlas" (Innovator exploration), ported from the agreed reference page (topographic layout, cockpit colours since 16.11.2026);
    everything is scoped to .atlas. Search band on top, hex atlas of departments (left) beside a results/detail rail (right). */
 .atlas {
-  --ink: #2b2a26; --ink-soft: #6c665a; --ink-faint: #b3ab96; --paper: #f2eee4; --surface: #fbf8f1; --border: #ddd4c1; --grid: #ebe5d7; --mute: #e7e0d0;
-  --accent: #2f6b5a; --accent-soft: #dfeae4; --on-ink: #fbf8f1; --hi: #2f6b5a; --dot: transparent;
-  --c1: #2f6b5a; --c2: #c07a2c; --c3: #3f6f8f; --c4: #7d5f8c; --c5: #a5483b; --c6: #6f8a3a; --c7: #b4607a; --c8: #5f6b6e; --c9: #aaa08a; --c10: #8c7a3a;
+  /* the cockpit's colours: --ink, --ink-soft, --paper, --surface, --border, --accent and --accent-soft come from styles.css */
+  --ink-faint: #a39d93; --grid: #efebe5; --mute: #e9e5df; --on-ink: #ffffff; --hi: var(--accent); --dot: transparent;
+  --c1: #0f6e6e; --c2: #c2843a; --c3: #3b6fa0; --c4: #8a5fa8; --c5: #a8483e; --c6: #5d8a3a; --c7: #c46a96; --c8: #5f6b7a; --c9: #b8b2a8; --c10: #8f7a3e;
   --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   margin-inline: calc(50% - 50vw);
@@ -43,7 +43,7 @@
 
 .atlas .main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
 .atlas .mapcard { border: 1px solid var(--border); border-radius: 14px; position: relative; overflow: hidden; min-width: 0;
-  background-color: #f8f4ea; background-image: linear-gradient(#e9e2d2 1px, transparent 1px), linear-gradient(90deg, #e9e2d2 1px, transparent 1px); background-size: 40px 40px; }
+  background-color: var(--surface); background-image: linear-gradient(#f3efe9 1px, transparent 1px), linear-gradient(90deg, #f3efe9 1px, transparent 1px); background-size: 40px 40px; }
 .atlas .map { display: block; width: 100%; height: auto; max-width: 100%; touch-action: none; cursor: grab; }
 .atlas .map:active { cursor: grabbing; }
 .atlas .maptools { position: absolute; top: 12px; right: calc(12px + env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 4px; }
@@ -63,18 +63,18 @@
 .atlas .tip .tbars { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; } .atlas .tip .tbars span { display: flex; align-items: center; gap: 6px; font-size: 11px; } .atlas .tip .tbars i { height: 6px; border-radius: 3px; display: inline-block; }
 
 .atlas svg text { font-family: var(--font); }
-.atlas .hex { fill: var(--f); stroke: #fbf8f1; stroke-width: 1.6; cursor: pointer; transform-box: fill-box; transform-origin: center; transition: opacity .25s, fill .25s, transform .22s cubic-bezier(.3, 1.6, .5, 1), filter .2s; }
+.atlas .hex { fill: var(--f); stroke: #ffffff; stroke-width: 1.6; cursor: pointer; transform-box: fill-box; transform-origin: center; transition: opacity .25s, fill .25s, transform .22s cubic-bezier(.3, 1.6, .5, 1), filter .2s; }
 .atlas svg.hovering .hex:not(.echo):not(.hit):not(.sel):not(.dim) { opacity: .32; }
 .atlas .hex.pop { transform: scale(1.6); stroke-width: 1.2; filter: drop-shadow(0 3px 6px rgb(0 0 0 / .28)); }
 .atlas .contour { fill: none; stroke: var(--ink-faint); stroke-width: .8; pointer-events: none; }
-.atlas .terr { fill: rgb(255 255 255 / .35); stroke: #8f8672; stroke-opacity: .9; stroke-width: 1; cursor: pointer; transition: fill .25s, stroke .25s, stroke-width .25s, opacity .25s; }
-.atlas .terr.lit { fill: rgb(47 107 90 / .08); stroke: var(--accent); stroke-width: 2; }
+.atlas .terr { fill: rgb(250 248 245 / .7); stroke: #bfb8ac; stroke-opacity: .9; stroke-width: 1; cursor: pointer; transition: fill .25s, stroke .25s, stroke-width .25s, opacity .25s; }
+.atlas .terr.lit { fill: rgb(15 110 110 / .07); stroke: var(--accent); stroke-width: 2; }
 .atlas .ring { fill: transparent; stroke: var(--tc); stroke-opacity: .5; stroke-dasharray: 1 2.5; cursor: pointer; transition: stroke-opacity .2s, stroke-width .2s, fill .2s; }
 .atlas .ring.lit { stroke-opacity: 1; stroke-dasharray: none; stroke-width: 1.6; fill: color-mix(in srgb, var(--tc) 10%, transparent); }
 .atlas .ring.home { stroke-width: 2.6; fill: color-mix(in srgb, var(--tc) 16%, transparent); }
-.atlas .dlabel { font-family: var(--mono); font-size: 9px; letter-spacing: .04em; fill: var(--ink-soft); font-weight: 500; pointer-events: none; stroke: #f8f4ea; }
+.atlas .dlabel { font-family: var(--mono); font-size: 9px; letter-spacing: .04em; fill: var(--ink-soft); font-weight: 500; pointer-events: none; stroke: #ffffff; }
 .atlas .dlabel.lit { fill: var(--ink); font-weight: 700; }
-.atlas .buname { font-family: var(--mono); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 600; fill: #4a463d; stroke: #f8f4ea; transition: fill .2s; }
+.atlas .buname { font-family: var(--mono); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 600; fill: var(--ink); stroke: #ffffff; transition: fill .2s; }
 .atlas .buname.lit { fill: var(--accent); }
 .atlas .hex.dim { opacity: .14; }
 .atlas .hex.hit { stroke: var(--ink); stroke-width: 1.6; }
