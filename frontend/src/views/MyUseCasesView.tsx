@@ -4,7 +4,7 @@ import { fetchMyUseCases } from "../api/client";
 import type { MyUseCase } from "../api/types";
 import { PendingTag } from "../components/small";
 import { GATE_FIELD, ROLE_LABEL, approvalLabel, keur, shortDate } from "../domain/lifecycle";
-import { useFormDrawer } from "../nav/formDrawer";
+import { FORM1_PATH } from "../nav/form1";
 import { useApp } from "../store";
 
 type Role = "all" | "owner" | "lead" | "submitter";
@@ -43,7 +43,6 @@ function attention(u: MyUseCase): { title: string; detail: string; button: strin
 
 export function MyUseCasesView() {
   const { rights } = useApp();
-  const form = useFormDrawer();
   const location = useLocation();
   const created = (location.state as { created?: string } | null)?.created;
   const [items, setItems] = useState<MyUseCase[] | null>(null);
@@ -158,11 +157,7 @@ export function MyUseCasesView() {
         {shown.length === 0 ? (
           <div className="state">
             <p>No use cases yet.</p>
-            {form.enabled && (
-              <button type="button" className="link-btn primary-link" onClick={form.open}>
-                Add a new AI idea
-              </button>
-            )}
+            <Link className="primary-link" to={FORM1_PATH}>Add a new AI idea</Link>
           </div>
         ) : (
           <table className="lc-table">

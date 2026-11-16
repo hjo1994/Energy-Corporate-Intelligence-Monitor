@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { atlasItems } from "../domain/atlas";
 import { pathStats, percent, type PathStats } from "../domain/path";
-import { useFormDrawer } from "../nav/formDrawer";
+import { useForm1 } from "../nav/form1";
 import { useApp } from "../store";
 import { useFullBleed } from "./fullBleed";
 import "./journey.css";
@@ -232,7 +232,7 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
 export function StartView() {
   const { all } = useApp();
   const navigate = useNavigate();
-  const form = useFormDrawer();
+  const form = useForm1();
   const stats = useMemo(() => pathStats(all), [all]);
   const items = useMemo(() => atlasItems(all), [all]);
   const departments = useMemo(() => new Set(items.map((i) => i.dv).filter((d) => d !== "unassigned")).size, [items]);
@@ -355,7 +355,7 @@ export function StartView() {
             </article>
             <article className="door primary">
               <h3>Submit your idea</h3>
-              <p>Form 1 asks for ranges, not exact numbers. You can save a draft and come back.</p>
+              <p>Form 1 takes about 10 minutes.</p>
               <button type="button" className="btn" disabled={!form.enabled} onClick={form.open}>
                 Start Form 1 →
               </button>

@@ -3,8 +3,7 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "reac
 import { fetchApprovals, fetchFeatures, fetchMyUseCases } from "./api/client";
 import { AUTH_DEV_BYPASS } from "./shared/auth/devBypass";
 import { DemoRoleSwitch } from "./components/DemoRoleSwitch";
-import { Drawer } from "./components/Drawer";
-import { FormDrawerCtx, OpenFormRoute } from "./nav/formDrawer";
+import { FORM1_PATH, Form1Ctx } from "./nav/form1";
 import { allowedRoles, roleGating, roleHome, roleOfPath, ROLES, storedRole, storeRole, type Role } from "./nav/roles";
 import { AppProvider, useApp } from "./store";
 import { BoardView } from "./views/BoardView";
@@ -115,18 +114,18 @@ function Shell() {
   const role = pathRole ?? lastRole;
 
   // AI_COCKPIT_ENABLE_INITIATIVE_INPUT on the backend; hidden until it says yes
-  const [inputEnabled, setInputEnabled] = useState(false);
+  // null until the backend has answered
+  const [features, setFeatures] = useState<boolean | null>(null);
+  const inputEnabled = features === true;
   useEffect(() => {
     let cancelled = false;
-    fetchFeatures().then((f) => !cancelled && setInputEnabled(f.initiative_input));
+    fetchFeatures().then((f) => !cancelled && setFeatures(f.initiative_input));
     return () => {
       cancelled = true;
     };
   }, []);
-  const [formOpen, setFormOpen] = useState(false);
-  const openForm = useCallback(() => setFormOpen(true), []);
-  const closeForm = useCallback(() => setFormOpen(false), []);
-  const drawer = useMemo(() => ({ enabled: inputEnabled, open: openForm }), [inputEnabled, openForm]);
+  const openForm = useCallback(() => navigate(FORM1_PATH), [navigate]);
+  const form1 = useMemo(() => ({ enabled: inputEnabled, open: openForm }), [inputEnabled, openForm]);
 
   const tabs: { to: string; label: string; count?: ReactNode }[] =
     role === "innovate"
@@ -152,7 +151,7 @@ function Shell() {
   );
 
   return (
-    <FormDrawerCtx.Provider value={drawer}>
+    <Form1Ctx.Provider value={form1}>
       <div className="page">
         <header className="topbar">
           <div className="brand">
@@ -208,6 +207,18 @@ function Shell() {
               <Route path="/innovate/start" element={<StartView />} />
               <Route path="/innovate/explore" element={<ExploreView />} />
               <Route path="/innovate/my" element={<MyUseCasesView />} />
+              <Route
+                path={FORM1_PATH}
+                element={
+                  features === null ? (
+                    <p className="state" role="status">Loading …</p>
+                  ) : inputEnabled ? (
+                    <NewInitiativeView />
+                  ) : (
+                    <Navigate to="/innovate/start" replace />
+                  )
+                }
+              />
               <Route path="/approve" element={<Navigate to="/approve/overview/list" replace />} />
               <Route path="/approve/overview/*" element={inRole("approve", <Overview />)} />
               <Route path="/approve/approvals" element={inRole("approve", <ApprovalsView />)} />
@@ -222,18 +233,13 @@ function Shell() {
               <Route path="/approvals" element={<Navigate to="/approve/approvals" replace />} />
               <Route path="/users" element={<Navigate to="/steer/users" replace />} />
               <Route path="/value" element={<Navigate to="/steer/value" replace />} />
-              <Route path="/new" element={<OpenFormRoute />} />
+              <Route path="/new" element={<Navigate to={FORM1_PATH} replace />} />
               <Route path="*" element={<Home role={lastRole} roles={roles} />} />
             </Routes>
           )}
         </main>
       </div>
-      {formOpen && inputEnabled && (
-        <Drawer label="New AI idea" kicker="Form 1 · New AI idea" onClose={closeForm}>
-          <NewInitiativeView onClose={closeForm} />
-        </Drawer>
-      )}
-    </FormDrawerCtx.Provider>
+    </Form1Ctx.Provider>
   );
 }
 

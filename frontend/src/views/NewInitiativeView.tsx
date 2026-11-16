@@ -78,29 +78,7 @@ function Segmented<T extends string>({ name, label, value, options, onChange }: 
 const yesNo = (v: boolean): "yes" | "no" => (v ? "yes" : "no");
 const ownerLabel = (o: { name: string; category: string | null }) => (o.category ? `${o.name} · ${o.category}` : o.name);
 
-// Form 1 is kept as a draft on this device until it is submitted.
-const DRAFT_KEY = "ai-cockpit.form1-draft";
-
-function readDraft(): FormState {
-  try {
-    const raw = window.localStorage.getItem(DRAFT_KEY);
-    return raw ? { ...EMPTY_FORM, ...(JSON.parse(raw) as Partial<FormState>) } : EMPTY_FORM;
-  } catch {
-    return EMPTY_FORM;
-  }
-}
-
-function writeDraft(form: FormState | null): void {
-  try {
-    if (form === null || JSON.stringify(form) === JSON.stringify(EMPTY_FORM)) window.localStorage.removeItem(DRAFT_KEY);
-    else window.localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
-  } catch {
-    // no storage: no draft
-  }
-}
-
-/** Form 1. `onClose` when it is shown in the drawer: Cancel and a successful submit close it. */
-export function NewInitiativeView({ onClose }: { onClose?: () => void } = {}) {
+export function NewInitiativeView() {
   const navigate = useNavigate();
   const { addInitiative, rights, reloadRights } = useApp();
   // The owner is a user (Users table), by default the signed-in one. A user without an owner row
@@ -108,12 +86,7 @@ export function NewInitiativeView({ onClose }: { onClose?: () => void } = {}) {
   const myOwner = rights.owner ?? null;
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [refError, setRefError] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(readDraft);
-  const [submitted, setSubmitted] = useState(false);
-  useEffect(() => {
-    if (!submitted) writeDraft(form);
-  }, [form, submitted]);
-  const hasDraft = JSON.stringify(form) !== JSON.stringify(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -170,9 +143,6 @@ export function NewInitiativeView({ onClose }: { onClose?: () => void } = {}) {
       const created = await createInitiative(input);
       addInitiative(created);
       if (!myOwner && !form.ownerUserId) reloadRights();
-      setSubmitted(true);
-      writeDraft(null);
-      onClose?.();
       navigate("/innovate/my", { state: { created: created.name } });
     } catch (err) {
       setSaveError(err instanceof ApiError || err instanceof Error ? err.message : "The idea could not be saved.");
@@ -465,16 +435,10 @@ export function NewInitiativeView({ onClose }: { onClose?: () => void } = {}) {
           <button type="button" className="nf-btn nf-primary" disabled={saving} onClick={() => void save()}>
             {saving ? "Submitting …" : "Submit idea"}
           </button>
-          <button type="button" className="nf-btn nf-secondary" onClick={() => (onClose ? onClose() : navigate(-1))}>
-            {hasDraft ? "Close, keep draft" : "Cancel"}
+          <button type="button" className="nf-btn nf-secondary" onClick={() => navigate(-1)}>
+            Cancel
           </button>
-          {hasDraft && (
-            <button type="button" className="link-btn nf-discard" onClick={() => setForm(EMPTY_FORM)}>
-              Discard draft
-            </button>
-          )}
           <span className="nf-side-small">
-            {hasDraft && "Your entries are kept as a draft on this device until you submit. "}
             The idea goes to the approvers. Final values are calculated by the pipeline within about a minute.
           </span>
         </aside>

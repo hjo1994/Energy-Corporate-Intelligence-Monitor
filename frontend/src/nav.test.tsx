@@ -93,7 +93,7 @@ describe("role navigation", () => {
     ["/my", "/innovate/my"],
     ["/approvals", "/approve/approvals"],
     ["/value", "/steer/value"],
-    ["/new", "/innovate/start"],
+    ["/new", "/innovate/new"],
   ])("redirects the former route %s to %s", async (from, to) => {
     mockApi();
     renderAt(from);
@@ -177,43 +177,28 @@ describe("innovator start page (from idea to production)", () => {
     expect(screen.getByRole("heading", { name: "Find use cases related to your idea" })).toBeInTheDocument();
   });
 
-  it("the submit door opens form 1 in a drawer over the page; Escape closes it", async () => {
+  it("the submit door opens form 1 as its own page with the live estimate beside it", async () => {
     mockApi();
     renderAt("/innovate/start");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Start Form 1 →" }));
-    const drawer = screen.getByRole("dialog", { name: "New AI idea" });
-    expect(await within(drawer).findByRole("heading", { name: "Add a new AI idea" })).toBeInTheDocument();
-    // the path stays behind it
-    expect(screen.getByRole("heading", { name: "The path from an idea to AI in production" })).toBeInTheDocument();
-    expect(within(drawer).getByRole("button", { name: "Close" })).toHaveFocus();
-    await user.keyboard("{Escape}");
+    expect(where()).toBe("/innovate/new");
+    expect(await screen.findByRole("heading", { name: "Add a new AI idea" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Estimate preview" })).toHaveTextContent("Potential per year");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(where()).toBe("/innovate/start");
+    // a full page in the Innovator view: the top bar and role switch stay
+    expect(tabNames()).toEqual(["Start", "Exploration", "My use cases"]);
+    expect(screen.getByRole("group", { name: "Role" })).toBeInTheDocument();
   });
 
-  it("the top bar button opens the same drawer from any innovator tab; × closes it", async () => {
+  it("the top bar button opens form 1 from any innovator tab", async () => {
     mockApi();
     renderAt("/innovate/explore");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "+ New AI idea" }));
-    const drawer = screen.getByRole("dialog", { name: "New AI idea" });
-    await user.click(within(drawer).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(where()).toBe("/innovate/explore");
-  });
-
-  it("keeps Tab inside the drawer", async () => {
-    mockApi();
-    renderAt("/innovate/start");
-    const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Start Form 1 →" }));
-    const drawer = screen.getByRole("dialog", { name: "New AI idea" });
-    await within(drawer).findByRole("heading", { name: "Add a new AI idea" });
-    for (let k = 0; k < 60; k++) {
-      await user.tab();
-      expect(drawer).toContainElement(document.activeElement as HTMLElement);
-    }
+    expect(where()).toBe("/innovate/new");
+    expect(await screen.findByRole("heading", { name: "Add a new AI idea" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Estimate preview" })).toBeInTheDocument();
   });
 });
 
