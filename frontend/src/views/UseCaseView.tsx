@@ -176,7 +176,7 @@ export function UseCaseView() {
     return (
       <div className="state card" role="alert">
         <p>{error}</p>
-        <Link className="primary-link" to="/my">Back to my use cases</Link>
+        <Link className="primary-link" to="/innovate/my">Back to my use cases</Link>
       </div>
     );
   }
@@ -248,7 +248,7 @@ export function UseCaseView() {
     <div className="lc">
       <header className="lc-head">
         <div>
-          <span className="nf-crumb"><Link to="/my">My use cases</Link> / {d.id > 0 ? `AI-${String(d.id).padStart(4, "0")}` : "new idea"}</span>
+          <span className="nf-crumb"><Link to="/innovate/my">My use cases</Link> / {d.id > 0 ? `AI-${String(d.id).padStart(4, "0")}` : "new idea"}</span>
           <h1>{d.name} <PendingTag initiative={d} /></h1>
           <p className="muted">{d.owner?.category ?? "–"} · {d.value_type ? flagshipLabel(d.value_type.name) : "–"}</p>
         </div>

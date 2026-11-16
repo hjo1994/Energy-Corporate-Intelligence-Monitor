@@ -11,7 +11,10 @@ vi.mock("./shared/api/serviceApi", () => ({ serviceApi: { get: vi.fn(), post: vi
 
 const get = vi.mocked(serviceApi.get);
 const post = vi.mocked(serviceApi.post);
-const ok = async () => ({ items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 });
+// every role: approver and admin rights
+const ALL_RIGHTS = { user: "Jonas", rights: { canApprove: true, canAdmin: true } };
+const ok = async (path?: string) =>
+  path === "/auth/rights" ? ALL_RIGHTS : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 };
 const failWith = (status?: number) => async () => {
   throw status === undefined ? new Error("Network Error") : { response: { status } };
 };
@@ -30,9 +33,9 @@ function renderAt(path: string) {
 
 
 describe("app", () => {
-  it("opens on the value cockpit with the estimated value and the top initiatives", async () => {
+  it("shows the value cockpit with the estimated value and the top initiatives", async () => {
     mockApi(ok);
-    renderAt("/");
+    renderAt("/steer/value");
     const hero = await screen.findByRole("region", { name: "Estimated value" });
     expect(hero).toHaveTextContent("Our 4 AI initiatives are estimated to create");
     // only Alpha has potential and cost estimated: 54k potential - 44k cost
@@ -51,7 +54,7 @@ describe("app", () => {
 
   it("a click on a row or a dot highlights the initiative in both", async () => {
     mockApi(ok);
-    renderAt("/");
+    renderAt("/approve/overview");
     const matrix = await screen.findByRole("region", { name: "Where the value lies" });
     const row = within(matrix).getByRole("button", { name: /^2Beta/ });
     const dot = within(matrix).getByRole("button", { name: "#2 Beta" });
@@ -64,16 +67,16 @@ describe("app", () => {
 
   it("shows value by business unit and by value driver", async () => {
     mockApi(ok);
-    renderAt("/");
+    renderAt("/steer/value");
     expect(await screen.findByRole("region", { name: "Value by business unit" })).toHaveTextContent("ETB0.1 M€");
     expect(screen.getByRole("region", { name: "What drives the value" })).toHaveTextContent(
       "Efficiency0.0 M€Quality0.0 M€Risk reduction0.0 M€Strategic0.0 M€",
     );
   });
 
-  it("keeps the filter chips and key figures on the start page; the cockpit follows the filters", async () => {
+  it("keeps the filter chips and key figures on the value dashboard; the cockpit follows the filters", async () => {
     mockApi(ok);
-    renderAt("/");
+    renderAt("/steer/value");
     const kpis = await screen.findByRole("region", { name: "Key figures" });
     expect(kpis).toHaveTextContent("4matching the filters");
     await userEvent.click(screen.getByRole("button", { name: "IT" }));
@@ -82,11 +85,11 @@ describe("app", () => {
     expect(screen.getByRole("region", { name: "Where the value lies" })).toHaveTextContent("0 of 1 initiatives have an effort estimate");
   });
 
-  it("redirects the former value tab to the start page", async () => {
+  it("redirects the former value tab to the management value dashboard", async () => {
     mockApi(ok);
     renderAt("/value");
     expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Value" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Value dashboard" })).toHaveClass("active");
   });
 
   it("filters by business unit across views and keeps them in sync", async () => {
@@ -111,8 +114,8 @@ describe("app", () => {
     let calls = 0;
     get.mockReset();
     get.mockImplementation(((path: string) =>
-      path === "/features" ? Promise.resolve({ initiative_input: false }) : path === "/initiatives" && ++calls === 1 ? failWith(503)() : ok()) as never);
-    renderAt("/");
+      path === "/features" ? Promise.resolve({ initiative_input: false }) : path === "/initiatives" && ++calls === 1 ? failWith(503)() : ok(path)) as never);
+    renderAt("/steer/value");
     expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
@@ -133,7 +136,7 @@ describe("api errors", () => {
 
   it("asks the backend for the whole data set page by page", async () => {
     mockApi(ok);
-    renderAt("/");
+    renderAt("/steer/value");
     await screen.findByRole("region", { name: "Estimated value" });
     expect(get).toHaveBeenCalledWith("/initiatives", { limit: 500, offset: 0, sort: "name" });
   });
@@ -302,8 +305,10 @@ describe("feature switch", () => {
     get.mockImplementation((async (path: string) =>
       path === "/features" ? { initiative_input: false } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
     renderAt("/new");
-    expect(await screen.findByRole("region", { name: "Estimated value" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "+ New AI idea" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "The path of an idea" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ New AI idea" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start Form 1 →" })).toBeDisabled();
   });
 
   it("shows the button when it is on", async () => {
@@ -311,7 +316,7 @@ describe("feature switch", () => {
     get.mockImplementation((async (path: string) =>
       path === "/features" ? { initiative_input: true } : { items: SAMPLE, total: SAMPLE.length, limit: 500, offset: 0 }) as never);
     renderAt("/");
-    expect(await screen.findByRole("link", { name: "+ New AI idea" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "+ New AI idea" })).toBeInTheDocument();
   });
 });
 
@@ -338,14 +343,14 @@ describe("demo role switch", () => {
 
   it("shows the approvals while the presenter is demo approver", async () => {
     answer({ rights: { canApprove: true, canAdmin: false }, demo_presenter: true, demo_approver: true, user: "Jonas (demo approver)" });
-    renderAt("/my");
+    renderAt("/approvals");
     expect(await screen.findByRole("radio", { name: "Approver (demo)" })).toHaveAttribute("aria-checked", "true");
-    expect(within(screen.getByRole("navigation", { name: "Views" })).getByRole("link", { name: /Approvals/ })).toBeInTheDocument();
+    expect(await within(screen.getByRole("navigation", { name: "Views" })).findByRole("link", { name: /Approvals/ })).toBeInTheDocument();
   });
 
   it("is not offered to anyone else, approvers included", async () => {
     answer({ rights: { canApprove: true, canAdmin: false } });
-    renderAt("/my");
+    renderAt("/approvals");
     await within(screen.getByRole("navigation", { name: "Views" })).findByRole("link", { name: /Approvals/ });
     expect(screen.queryByRole("radiogroup", { name: "Demo role" })).not.toBeInTheDocument();
   });

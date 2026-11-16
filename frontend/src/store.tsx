@@ -21,6 +21,8 @@ interface AppState {
   addInitiative: (initiative: Initiative) => void;
   /** what the signed-in user may do (approver inbox, admin) */
   rights: Rights;
+  /** the first answer about the rights has arrived (until then `rights` are the empty defaults) */
+  rightsReady: boolean;
   /** re-read the rights, e.g. after the first use case made the user an owner */
   reloadRights: () => void;
 }
@@ -37,10 +39,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
   const [rights, setRights] = useState<Rights>({ canApprove: false, canAdmin: false });
 
+  const [rightsReady, setRightsReady] = useState(false);
   const [rightsAttempt, setRightsAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    fetchRights().then((r) => !cancelled && setRights(r));
+    fetchRights().then((r) => {
+      if (cancelled) return;
+      setRights(r);
+      setRightsReady(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -96,8 +103,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const visible = useMemo(() => applyFilters(all, filters), [all, filters]);
 
   const value = useMemo(
-    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights, reloadRights }),
-    [load, reload, filters, setFilters, all, visible, addInitiative, rights, reloadRights],
+    () => ({ load, reload, filters, setFilters, all, visible, addInitiative, rights, rightsReady, reloadRights }),
+    [load, reload, filters, setFilters, all, visible, addInitiative, rights, rightsReady, reloadRights],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

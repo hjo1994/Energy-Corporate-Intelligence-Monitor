@@ -257,7 +257,8 @@ describe("approvals", () => {
     post.mockReset();
     post.mockImplementation((async () => detail({ id: 9, approval_status: "approved" })) as never);
     renderAt("/approvals");
-    expect(await screen.findByLabelText("1 waiting")).toBeInTheDocument();
+    const tab = await screen.findByRole("link", { name: /Approvals/ });
+    expect(await within(tab).findByLabelText("1 waiting")).toBeInTheDocument();
     const panel = await screen.findByRole("region", { name: "Selected idea" });
     expect(await within(panel).findByText("€ 1,000k × 0.60 × 0.65", { exact: false })).toBeInTheDocument();
 
