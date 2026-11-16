@@ -65,12 +65,14 @@ describe("role navigation", () => {
 
     const roles = screen.getByRole("group", { name: "Role" });
     await userEvent.click(within(roles).getByRole("button", { name: "Approver" }));
-    expect(where()).toBe("/approve/overview");
+    await vi.waitFor(() => expect(where()).toBe("/approve/overview/list"));
     expect(tabNames()).toEqual(["Use cases", "Approvals"]);
     expect(within(roles).getByRole("button", { name: "Approver" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "+ New AI idea" })).not.toBeInTheDocument();
-    // the overview keeps its cockpit, list and board
+    // the overview has the list and the board; the value dashboard is Management's only
     const sub = screen.getByRole("navigation", { name: "Overview" });
+    expect(within(sub).getAllByRole("link").map((a) => a.textContent)).toEqual(["List", "Board"]);
+    expect(screen.queryByRole("region", { name: "Estimated value" })).not.toBeInTheDocument();
     await userEvent.click(within(sub).getByRole("link", { name: "Board" }));
     expect(where()).toBe("/approve/overview/board");
     expect(screen.getByRole("link", { name: "Use cases" })).toHaveClass("active");
@@ -84,6 +86,8 @@ describe("role navigation", () => {
   it.each([
     ["/list", "/approve/overview/list"],
     ["/board", "/approve/overview/board"],
+    ["/approve", "/approve/overview/list"],
+    ["/approve/overview", "/approve/overview/list"],
     ["/my", "/innovate/my"],
     ["/approvals", "/approve/approvals"],
     ["/value", "/steer/value"],
@@ -103,7 +107,7 @@ describe("role navigation", () => {
     first.unmount();
 
     renderAt("/");
-    await vi.waitFor(() => expect(where()).toBe("/approve/overview"));
+    await vi.waitFor(() => expect(where()).toBe("/approve/overview/list"));
   });
 
   it("shows the waiting ideas on the approver segment while another role is active", async () => {

@@ -54,7 +54,7 @@ describe("app", () => {
 
   it("a click on a row or a dot highlights the initiative in both", async () => {
     mockApi(ok);
-    renderAt("/approve/overview");
+    renderAt("/steer/value");
     const matrix = await screen.findByRole("region", { name: "Where the value lies" });
     const row = within(matrix).getByRole("button", { name: /^2Beta/ });
     const dot = within(matrix).getByRole("button", { name: "#2 Beta" });

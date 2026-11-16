@@ -65,22 +65,19 @@ function RoleSwitch({ roles, current, approvals, onChoose }: { roles: Role[]; cu
   );
 }
 
-/** Approver overview: the cockpit matrix, the list and the board. */
+/** Approver overview: the list and the board (the value dashboard is Management's only). */
 function Overview() {
   return (
     <>
       <nav className="subtabs" aria-label="Overview">
-        <NavLink to="/approve/overview" end>
-          Cockpit
-        </NavLink>
         <NavLink to="/approve/overview/list">List</NavLink>
         <NavLink to="/approve/overview/board">Board</NavLink>
       </nav>
       <Routes>
-        <Route index element={<CockpitView />} />
+        <Route index element={<Navigate to="/approve/overview/list" replace />} />
         <Route path="list" element={<ListView />} />
         <Route path="board" element={<BoardView />} />
-        <Route path="*" element={<Navigate to="/approve/overview" replace />} />
+        <Route path="*" element={<Navigate to="/approve/overview/list" replace />} />
       </Routes>
     </>
   );
@@ -211,7 +208,7 @@ function Shell() {
               <Route path="/innovate/start" element={<StartView />} />
               <Route path="/innovate/explore" element={<ExploreView />} />
               <Route path="/innovate/my" element={<MyUseCasesView />} />
-              <Route path="/approve" element={<Navigate to="/approve/overview" replace />} />
+              <Route path="/approve" element={<Navigate to="/approve/overview/list" replace />} />
               <Route path="/approve/overview/*" element={inRole("approve", <Overview />)} />
               <Route path="/approve/approvals" element={inRole("approve", <ApprovalsView />)} />
               <Route path="/steer" element={<Navigate to="/steer/value" replace />} />

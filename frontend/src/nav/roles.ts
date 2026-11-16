@@ -8,7 +8,7 @@ export type Role = "innovate" | "approve" | "steer";
 
 export const ROLES: { id: Role; label: string; home: string }[] = [
   { id: "innovate", label: "Innovator", home: "/innovate/start" },
-  { id: "approve", label: "Approver", home: "/approve/overview" },
+  { id: "approve", label: "Approver", home: "/approve/overview/list" },
   { id: "steer", label: "Management", home: "/steer/value" },
 ];
 
